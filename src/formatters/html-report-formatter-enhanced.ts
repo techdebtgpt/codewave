@@ -1,7 +1,9 @@
 // src/formatters/html-report-formatter-enhanced.ts
 // Enhanced HTML report with conversation timeline, concern tracking, and metric evolution
 import fs from 'fs';
+import path from 'path';
 import { AgentResult } from '../agents/agent.interface';
+import { EvaluationHistoryEntry } from '../types/output.types';
 
 interface AgentEvaluation {
   agentName: string;
@@ -361,6 +363,160 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
 }
 
 /**
+ * Load evaluation history from disk
+ */
+function loadEvaluationHistory(outputDir: string): EvaluationHistoryEntry[] {
+  try {
+    const historyPath = path.join(outputDir, 'history.json');
+    const content = fs.readFileSync(historyPath, 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Generate history comparison HTML
+ */
+function generateHistoryHtml(history: EvaluationHistoryEntry[]): string {
+  if (history.length === 0) {
+    return '<p class="text-muted">No re-evaluation history available yet. This is the first evaluation.</p>';
+  }
+
+  if (history.length === 1) {
+    return '<p class="text-muted">Only one evaluation recorded. History comparison will appear after re-evaluations.</p>';
+  }
+
+  // Build comparison table
+  const metrics = ['functionalImpact', 'testCoverage', 'codeQuality', 'codeComplexity', 'technicalDebtHours'];
+  const tokens = ['inputTokens', 'outputTokens', 'totalCost'];
+
+  const metricRows = metrics
+    .map((metric) => {
+      const label = metric.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()).trim();
+      const values = history.map((h) => {
+        const val = (h.metrics as any)[metric];
+        return typeof val === 'number' ? val.toFixed(metric === 'technicalDebtHours' ? 2 : 1) : 'N/A';
+      });
+
+      const changes = values.map((val, idx) => {
+        if (idx === 0) return '—';
+        const curr = parseFloat(val);
+        const prev = parseFloat(values[idx - 1]);
+        if (isNaN(curr) || isNaN(prev)) return '—';
+        const diff = curr - prev;
+        const direction = diff > 0 ? '📈' : diff < 0 ? '📉' : '→';
+        return `${direction} ${Math.abs(diff).toFixed(1)}`;
+      });
+
+      return `
+        <tr>
+          <td><strong>${label}</strong></td>
+          ${values.map((v) => `<td class="text-center">${v}</td>`).join('')}
+          ${changes.map((c) => `<td class="text-center small">${c}</td>`).join('')}
+        </tr>
+      `;
+    })
+    .join('');
+
+  const tokenRows = tokens
+    .map((token) => {
+      const label = token === 'totalCost' ? 'Total Cost ($)' : token === 'inputTokens' ? 'Input Tokens' : 'Output Tokens';
+      const values = history.map((h) => {
+        const val = (h.tokens as any)[token];
+        if (token === 'totalCost') {
+          return typeof val === 'number' ? `$${val.toFixed(4)}` : 'N/A';
+        }
+        return typeof val === 'number' ? val.toLocaleString() : 'N/A';
+      });
+
+      const changes = values.map((val, idx) => {
+        if (idx === 0) return '—';
+        const currStr = val.replace(/[^0-9.]/g, '');
+        const prevStr = values[idx - 1].replace(/[^0-9.]/g, '');
+        const curr = parseFloat(currStr);
+        const prev = parseFloat(prevStr);
+        if (isNaN(curr) || isNaN(prev)) return '—';
+        const diff = curr - prev;
+        const direction = diff > 0 ? '📈' : diff < 0 ? '📉' : '→';
+        return `${direction} ${Math.abs(diff).toFixed(0)}`;
+      });
+
+      return `
+        <tr>
+          <td><strong>${label}</strong></td>
+          ${values.map((v) => `<td class="text-center">${v}</td>`).join('')}
+          ${changes.map((c) => `<td class="text-center small">${c}</td>`).join('')}
+        </tr>
+      `;
+    })
+    .join('');
+
+  const headers = history.map((h, idx) => `<th class="text-center">Eval #${h.evaluationNumber}</th>`).join('');
+  const changeHeaders = history
+    .slice(1)
+    .map((h, idx) => `<th class="text-center text-muted small">vs Eval #${idx + 1}</th>`)
+    .join('');
+
+  return `
+    <div class="card mb-4">
+      <div class="card-header bg-info text-white">
+        <h5 class="mb-0">📊 Evaluation History (${history.length} evaluations)</h5>
+      </div>
+      <div class="card-body">
+        <h6 class="mb-3">Metrics Evolution</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead class="table-light">
+              <tr>
+                <th>Metric</th>
+                ${headers}
+                ${changeHeaders}
+              </tr>
+            </thead>
+            <tbody>
+              ${metricRows}
+            </tbody>
+          </table>
+        </div>
+
+        <h6 class="mb-3 mt-4">Token Usage & Cost Evolution</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover">
+            <thead class="table-light">
+              <tr>
+                <th>Metric</th>
+                ${headers}
+                ${changeHeaders}
+              </tr>
+            </thead>
+            <tbody>
+              ${tokenRows}
+            </tbody>
+          </table>
+        </div>
+
+        <h6 class="mb-3 mt-4">Convergence Scores</h6>
+        <div class="row">
+          ${history
+            .map(
+              (h, idx) => `
+            <div class="col-md-3 mb-2">
+              <div class="p-2 bg-light rounded text-center">
+                <small class="text-muted d-block">Eval #${h.evaluationNumber}</small>
+                <strong class="text-primary">${(h.convergenceScore * 100).toFixed(0)}%</strong>
+              </div>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
  * Generate enhanced HTML report with conversation timeline
  */
 export function generateEnhancedHtmlReport(
@@ -371,6 +527,11 @@ export function generateEnhancedHtmlReport(
   const groupedResults = groupResultsByAgent(results);
   const metricEvolution = calculateMetricEvolution(groupedResults);
   const comprehensiveMetricsHtml = buildMetricsTable(groupedResults);
+
+  // Load and generate evaluation history
+  const outputDir = path.dirname(outputPath);
+  const evaluationHistory = loadEvaluationHistory(outputDir);
+  const historyHtml = generateHistoryHtml(evaluationHistory);
 
   // Aggregate final pillar scores
   const finalPillarScores: Record<string, { value: number; agent: string }> = {};
@@ -789,6 +950,13 @@ export function generateEnhancedHtmlReport(
           📊 Metric Evolution
         </button>
       </li>
+      ${evaluationHistory.length > 0 ? `
+      <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#history">
+          📈 Evaluation History
+        </button>
+      </li>
+      ` : ''}
     </ul>
 
     <!-- Tab Content -->
@@ -813,10 +981,22 @@ export function generateEnhancedHtmlReport(
       <div class="tab-pane fade" id="metrics">
         <h2 class="mb-4">📊 Comprehensive Metrics Analysis</h2>
         ${comprehensiveMetricsHtml}
-        
+
         <h3 class="mt-5 mb-3">📈 Metric Evolution Across Rounds</h3>
         ${evolutionHtml}
       </div>
+
+      ${evaluationHistory.length > 0 ? `
+      <!-- Evaluation History Tab -->
+      <div class="tab-pane fade" id="history">
+        <h2 class="mb-4">📈 Evaluation History & Comparisons</h2>
+        <p class="text-muted mb-4">
+          Track how metrics and costs have changed across multiple evaluations of this commit.
+          This helps identify consistency, model drift, and cost optimization opportunities.
+        </p>
+        ${historyHtml}
+      </div>
+      ` : ''}
     </div>
 
     <div class="text-center mt-5 pt-4 border-top">

@@ -11,6 +11,7 @@ import { AppConfig } from '../../src/config/config.interface';
 import { generateEnhancedHtmlReport } from '../../src/formatters/html-report-formatter-enhanced';
 import { generateConversationTranscript } from '../../src/formatters/conversation-transcript-formatter';
 import { AgentResult } from '../../src/agents/agent.interface';
+import { TokenSnapshot, MetricsSnapshot, EvaluationHistoryEntry } from '../../src/types/output.types';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -79,8 +80,8 @@ export async function saveEvaluationReports(options: SaveReportsOptions): Promis
     // Ensure output directory exists
     await fs.mkdir(outputDir, { recursive: true });
 
-    // Track evaluation history
-    await trackEvaluationHistory(outputDir, metadata);
+    // Track evaluation history with metrics and tokens
+    await trackEvaluationHistory(outputDir, metadata, agentResults);
 
     // 1. Save results.json
     const resultsJson = {
@@ -134,16 +135,128 @@ export async function saveEvaluationReports(options: SaveReportsOptions): Promis
 }
 
 /**
+ * Extract metrics from final round agent results (last 5 agents)
+ */
+function extractMetricsSnapshot(agentResults: AgentResult[]): MetricsSnapshot {
+    // Get final round agents (last 5)
+    const finalAgents = agentResults.slice(-5);
+
+    const metricSums = {
+        functionalImpact: 0,
+        idealTimeHours: 0,
+        testCoverage: 0,
+        codeQuality: 0,
+        codeComplexity: 0,
+        actualTimeHours: 0,
+        technicalDebtHours: 0,
+    };
+
+    let count = 0;
+    finalAgents.forEach((agent) => {
+        if (agent.metrics) {
+            metricSums.functionalImpact += agent.metrics.functionalImpact || 0;
+            metricSums.idealTimeHours += agent.metrics.idealTimeHours || 0;
+            metricSums.testCoverage += agent.metrics.testCoverage || 0;
+            metricSums.codeQuality += agent.metrics.codeQuality || 0;
+            metricSums.codeComplexity += agent.metrics.codeComplexity || 0;
+            metricSums.actualTimeHours += agent.metrics.actualTimeHours || 0;
+            metricSums.technicalDebtHours += agent.metrics.technicalDebtHours || 0;
+            count++;
+        }
+    });
+
+    if (count === 0) {
+        return {
+            functionalImpact: 0,
+            idealTimeHours: 0,
+            testCoverage: 0,
+            codeQuality: 0,
+            codeComplexity: 0,
+            actualTimeHours: 0,
+            technicalDebtHours: 0,
+        };
+    }
+
+    return {
+        functionalImpact: Number((metricSums.functionalImpact / count).toFixed(1)),
+        idealTimeHours: Number((metricSums.idealTimeHours / count).toFixed(2)),
+        testCoverage: Number((metricSums.testCoverage / count).toFixed(1)),
+        codeQuality: Number((metricSums.codeQuality / count).toFixed(1)),
+        codeComplexity: Number((metricSums.codeComplexity / count).toFixed(1)),
+        actualTimeHours: Number((metricSums.actualTimeHours / count).toFixed(2)),
+        technicalDebtHours: Number((metricSums.technicalDebtHours / count).toFixed(2)),
+    };
+}
+
+/**
+ * Extract token usage from all agent results
+ */
+function extractTokenSnapshot(agentResults: AgentResult[]): TokenSnapshot {
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalCost = 0;
+
+    agentResults.forEach((agent) => {
+        if (agent.tokenUsage) {
+            totalInputTokens += agent.tokenUsage.inputTokens || 0;
+            totalOutputTokens += agent.tokenUsage.outputTokens || 0;
+        }
+    });
+
+    // Calculate cost based on provider and model
+    const inputPrice = 3.0; // Anthropic Claude 3.5 Sonnet: $3/1M
+    const outputPrice = 15.0; // $15/1M
+    totalCost =
+        (totalInputTokens / 1000000) * inputPrice +
+        (totalOutputTokens / 1000000) * outputPrice;
+
+    return {
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        totalTokens: totalInputTokens + totalOutputTokens,
+        totalCost: Number(totalCost.toFixed(4)),
+    };
+}
+
+/**
+ * Calculate convergence score from agent results
+ */
+function calculateConvergenceScore(agentResults: AgentResult[]): number {
+    if (agentResults.length < 5) return 0;
+
+    // Get final round agents
+    const finalAgents = agentResults.slice(-5);
+
+    // Simple convergence check: measure variance in code quality scores
+    const qualityScores = finalAgents
+        .filter((a) => a.metrics && a.metrics.codeQuality)
+        .map((a) => a.metrics!.codeQuality);
+
+    if (qualityScores.length < 2) return 0;
+
+    const mean = qualityScores.reduce((a, b) => a + b, 0) / qualityScores.length;
+    const variance =
+        qualityScores.reduce((sum, score) => sum + Math.pow(score - mean, 2), 0) /
+        qualityScores.length;
+    const stdDev = Math.sqrt(variance);
+
+    // Convergence score: 0 if stdDev > 2, 1 if stdDev == 0, linear in between
+    const convergence = Math.max(0, 1 - stdDev / 2);
+    return Number(convergence.toFixed(2));
+}
+
+/**
  * Track evaluation history for re-evaluations
- * Maintains a history.json file showing when the same commit was re-evaluated
+ * Maintains a history.json file with full metrics snapshots for each evaluation
  */
 async function trackEvaluationHistory(
     outputDir: string,
-    metadata: EvaluationMetadata
+    metadata: EvaluationMetadata,
+    agentResults?: AgentResult[]
 ): Promise<void> {
     const historyPath = path.join(outputDir, 'history.json');
 
-    let history: any[] = [];
+    let history: EvaluationHistoryEntry[] = [];
 
     // Read existing history
     try {
@@ -154,12 +267,34 @@ async function trackEvaluationHistory(
         history = [];
     }
 
-    // Add new evaluation entry
-    history.push({
+    // Extract metrics and tokens if agent results provided
+    const newEntry: EvaluationHistoryEntry = {
         timestamp: metadata.timestamp || new Date().toISOString(),
-        source: metadata.source,
+        source: metadata.source || 'unknown',
         evaluationNumber: history.length + 1,
-    });
+        metrics: agentResults
+            ? extractMetricsSnapshot(agentResults)
+            : {
+                  functionalImpact: 0,
+                  idealTimeHours: 0,
+                  testCoverage: 0,
+                  codeQuality: 0,
+                  codeComplexity: 0,
+                  actualTimeHours: 0,
+                  technicalDebtHours: 0,
+              },
+        tokens: agentResults
+            ? extractTokenSnapshot(agentResults)
+            : {
+                  inputTokens: 0,
+                  outputTokens: 0,
+                  totalTokens: 0,
+                  totalCost: 0,
+              },
+        convergenceScore: agentResults ? calculateConvergenceScore(agentResults) : 0,
+    };
+
+    history.push(newEntry);
 
     // Write back
     await fs.writeFile(historyPath, JSON.stringify(history, null, 2));

@@ -1,9 +1,8 @@
 /**
  * ANSI Progress Tracker for Parallel Commit Evaluation
- * Uses cli-progress MultiBar to display updating rows without duplication
+ * Each commit on its own line with direct stderr output
+ * Similar to Docker pull - each item updates independently on separate lines
  */
-
-import { MultiBar, SingleBar, Presets } from 'cli-progress';
 
 interface CommitProgress {
     hash: string;
@@ -18,20 +17,16 @@ interface CommitProgress {
     inputTokens?: number;
     outputTokens?: number;
     totalCost?: number;
-}
-
-interface BarPayload {
-    commit: string;
-    status: string;
+    lastDisplayLine?: string; // Track last displayed line to detect changes
 }
 
 export class ProgressTracker {
     private commits: Map<string, CommitProgress> = new Map();
     private isActive = false;
     private displayOrder: string[] = [];
-    private multiBar: MultiBar | null = null;
-    private bars: Map<string, SingleBar> = new Map();
     public originalConsoleLog?: (...args: any[]) => void;
+    private lastUpdateTime: Map<string, number> = new Map();
+    private UPDATE_THROTTLE_MS = 200;
 
     // Totals across all commits
     private totalInputTokens = 0;
@@ -54,28 +49,20 @@ export class ProgressTracker {
     }
 
     /**
+     * Helper to write directly to stderr
+     */
+    private writeProgress(text: string) {
+        process.stderr.write(text + '\n');
+    }
+
+    /**
      * Initialize tracker with commits
      */
     initialize(commitHashes: Array<{ hash: string; shortHash: string; author: string; date: string }>) {
         this.displayOrder = commitHashes.map((c) => c.hash);
 
-        // Print header
-        this.log('\n\x1B[1m\x1B[36mParallel Commit Evaluation Progress:\x1B[0m');
-
-        // Initialize multi-bar display
-        this.multiBar = new MultiBar(
-            {
-                clearOnComplete: false,
-                hideCursor: true,
-                format: '{commit} | {bar} {percentage}% | {status}',
-                barCompleteChar: '█',
-                barIncompleteChar: '░',
-                barsize: 25,
-                fps: 5,
-                stream: process.stderr,
-            },
-            Presets.shades_grey,
-        );
+        // Print header to console (not stderr, so it's visible)
+        this.log('\n\x1B[1m\x1B[36mParallel Commit Evaluation Progress:\x1B[0m\n');
 
         // Initialize all commits with pending status
         commitHashes.forEach((c) => {
@@ -89,26 +76,37 @@ export class ProgressTracker {
                 currentStep: 'Waiting...',
             });
 
-            // Create progress bar for this commit
-            const commitLabel = this.formatCommitLabel(c);
-            const bar = this.multiBar!.create(100, 0, {
-                commit: commitLabel,
-                status: 'Pending',
-            } as BarPayload);
-
-            this.bars.set(c.hash, bar);
+            // Print initial line for this commit to stderr
+            const initialLine = this.formatProgressLine(c.hash);
+            this.writeProgress(initialLine);
         });
 
         this.isActive = true;
     }
 
     /**
-     * Format commit label for display
+     * Format progress line for display
      */
-    private formatCommitLabel(commit: { shortHash: string; author: string }): string {
+    private formatProgressLine(commitHash: string): string {
+        const commit = this.commits.get(commitHash);
+        if (!commit) return '';
+
         const shortHash = commit.shortHash.padEnd(9);
         const author = commit.author.substring(0, 16).padEnd(16);
-        return `${shortHash} | ${author}`;
+        const tokens = commit.inputTokens || commit.outputTokens
+            ? `${(commit.inputTokens || 0).toLocaleString()}/${(commit.outputTokens || 0).toLocaleString()}`.padEnd(18)
+            : '─/─'.padEnd(18);
+        const cost = commit.totalCost
+            ? `$${(commit.totalCost).toFixed(4)}`.padEnd(10)
+            : '─'.padEnd(10);
+        const barLength = 20;
+        const filledBars = Math.round((commit.progress / 100) * barLength);
+        const emptyBars = barLength - filledBars;
+        const bar = '█'.repeat(filledBars) + '░'.repeat(emptyBars);
+        const percentage = `${commit.progress}%`.padStart(3);
+        const status = this.getStatusText(commit.status).padEnd(12);
+
+        return `${shortHash} | ${author} | ${tokens} | ${cost} | ${bar} ${percentage} | ${status}`;
     }
 
     /**
@@ -128,7 +126,17 @@ export class ProgressTracker {
         },
     ) {
         const commit = this.commits.get(commitHash);
-        if (!commit || !this.bars.has(commitHash)) return;
+        if (!commit) return;
+
+        // Throttle rapid updates (except for completion)
+        const now = Date.now();
+        const lastUpdate = this.lastUpdateTime.get(commitHash) || 0;
+        const isComplete = update.status === 'complete' || update.progress === 100;
+
+        if (!isComplete && now - lastUpdate < this.UPDATE_THROTTLE_MS) {
+            return;
+        }
+        this.lastUpdateTime.set(commitHash, now);
 
         if (update.status !== undefined) commit.status = update.status;
         if (update.progress !== undefined) commit.progress = update.progress;
@@ -153,16 +161,13 @@ export class ProgressTracker {
             this.totalCost += delta;
         }
 
-        // Update progress bar
-        const bar = this.bars.get(commitHash)!;
-        const statusText = this.getStatusText(commit.status);
-        const tokensInfo = `${(commit.inputTokens || 0).toLocaleString()}/${(commit.outputTokens || 0).toLocaleString()}`;
-        const costInfo = `$${(commit.totalCost || 0).toFixed(4)}`;
+        // Format new line and only write if it has changed
+        const newLine = this.formatProgressLine(commitHash);
 
-        bar.update(commit.progress, {
-            commit: this.formatCommitLabel({ shortHash: commit.shortHash, author: commit.author }),
-            status: `${tokensInfo} | ${costInfo} | ${statusText}`,
-        } as BarPayload);
+        if (commit.lastDisplayLine !== newLine) {
+            commit.lastDisplayLine = newLine;
+            this.writeProgress(newLine);
+        }
     }
 
     /**
@@ -186,17 +191,21 @@ export class ProgressTracker {
     }
 
     /**
-     * Finalize and show cursor again
+     * Finalize progress tracking
      */
     finalize() {
         this.isActive = false;
 
-        if (this.multiBar) {
-            this.multiBar.stop();
-        }
+        // Print summary totals
+        const inputTokensFormatted = this.totalInputTokens.toLocaleString();
+        const outputTokensFormatted = this.totalOutputTokens.toLocaleString();
+        const costFormatted = `$${this.totalCost.toFixed(4)}`;
+
+        this.log(
+            `\n\x1B[1m\x1B[36mTotal:\x1B[0m ${inputTokensFormatted} input | ${outputTokensFormatted} output | ${costFormatted}`
+        );
 
         // Add spacing
-        this.log('');
         this.log('');
     }
 
