@@ -1,4 +1,22 @@
 #!/usr/bin/env node
+
+// Suppress the punycode deprecation warning from node-fetch@2/whatwg-url
+// This is a known issue with the openai package's dependency on old node-fetch
+// See: https://github.com/openai/node-sdk/issues
+// TODO: Remove this when openai package updates to node-fetch@3
+if (process.env.NODE_NO_DEPRECATION === undefined) {
+    const originalEmitWarning = process.emitWarning;
+    process.emitWarning = function(warning: string | Error, ...args: any[]) {
+        if (
+            typeof warning === 'string' && warning.includes('punycode') ||
+            (warning instanceof Error && warning.message.includes('punycode'))
+        ) {
+            return;
+        }
+        return originalEmitWarning.call(process, warning, ...(args || []));
+    } as any;
+}
+
 import { runEvaluateCommand } from './commands/evaluate-command';
 import { runConfigCommand } from './commands/config.command';
 import { runBatchEvaluateCommand } from './commands/batch-evaluate-command';

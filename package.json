@@ -1,6 +1,6 @@
 {
   "name": "codewave",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "CodeWave - AI-Powered Commit Intelligence. Multi-agent system for comprehensive code quality evaluation using 7-pillar methodology.",
   "main": "dist/index.js",
   "scripts": {
@@ -39,7 +39,7 @@
     "langgraph"
   ],
   "author": "TechDebtGPT",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/techdebtgpt/codewave.git"

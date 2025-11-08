@@ -800,6 +800,60 @@ Times out after 120 seconds
 - Tried smaller commits (works fine)
 ```
 
+### Problem: LLM JSON Parsing Errors
+
+```
+Failed to parse LLM output: Unexpected non-whitespace character after JSON
+Unexpected token '#'
+```
+
+#### Cause
+Any model (Haiku, Sonnet, GPT, Gemini, Grok) can generate responses that are truncated or include extra content after JSON when approaching token limits.
+
+#### Solution
+
+**Option 1: Already Fixed (v0.0.1+)**
+Automatic JSON recovery is built in for all models:
+- Extracts JSON even if extra markdown content follows
+- Auto-closes incomplete JSON structures
+- Provides detailed error logging for debugging
+
+The system gracefully handles truncated responses by:
+1. Extracting the JSON object using regex
+2. Closing incomplete braces
+3. Falling back to text summary if JSON parsing completely fails
+
+No action needed - evaluation continues with best-effort parsing.
+
+**Option 2: Default Configuration (Recommended)**
+- **maxTokens**: Now set to 16000 for all models
+  - Increased from 8000 to prevent truncation
+  - Applies to all LLM providers (Anthropic, OpenAI, Google, xAI)
+  - Should eliminate most JSON parsing errors
+
+**Option 3: Use Better Model (if issues persist)**
+```bash
+# Try a more capable model with better JSON output
+codewave config set model claude-sonnet-4-5-20250929  # Sonnet (~4x cost)
+codewave config set model gpt-4o                       # OpenAI GPT-4o
+codewave config set model gemini-2.5-pro               # Google Gemini
+```
+
+**Option 4: Manually Increase maxTokens Further**
+```bash
+# View current settings
+codewave config show
+
+# If issues still persist, increase maxTokens further
+# (This may increase API costs depending on provider)
+```
+
+#### Why This Happens with Any Model
+- Models can generate verbose responses that approach token limits
+- Default maxTokens increased to 16000 to prevent truncation across all providers
+- JSON recovery system handles any remaining edge cases
+- Multi-agent discussion provides additional refinement opportunities
+
 ---
 
 ## Quick Fix Checklist
@@ -813,7 +867,7 @@ Times out after 120 seconds
 - [ ] Check permissions: `ls -la ~/.codewave`
 - [ ] Check disk space: `df -h`
 - [ ] Verify Git repo: `git status`
-- [ ] Try different model: `codewave config set model claude-3-haiku-20240307`
+- [ ] Try different model: `codewave config set model claude-sonnet-4-5-20250929`
 
 ---
 

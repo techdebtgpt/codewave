@@ -18,9 +18,15 @@ export interface CostCalculation {
  */
 export const TOKEN_PRICING = {
     anthropic: {
+        // Haiku 4.5 - Most cost-effective, ideal for multi-agent discussion
+        'claude-haiku-4-5-20251001': {
+            input: 0.80,
+            output: 4.00,
+        },
+        // Sonnet 4.5 - Latest, best balance of quality and cost
         'claude-sonnet-4-5-20250929': {
-            input: 3.00,  // $3 per million input tokens
-            output: 15.00, // $15 per million output tokens
+            input: 3.00,
+            output: 15.00,
         },
         'claude-sonnet-4-20250514': {
             input: 3.00,
@@ -30,32 +36,95 @@ export const TOKEN_PRICING = {
             input: 3.00,
             output: 15.00,
         },
+        // Opus 4.1 - Maximum quality
+        'claude-opus-4-1-20250805': {
+            input: 15.00,
+            output: 75.00,
+        },
     },
     openai: {
-        'gpt-4o': {
-            input: 2.50,
-            output: 10.00,
-        },
+        // GPT-4o Mini - Cost-effective for multi-agent discussion
         'gpt-4o-mini': {
             input: 0.15,
             output: 0.60,
         },
+        // GPT-4o - Latest multimodal model
+        'gpt-4o': {
+            input: 2.50,
+            output: 10.00,
+        },
+        // o3-mini - Advanced reasoning, cost-efficient
+        'o3-mini-2025-01-31': {
+            input: 2.00,
+            output: 8.00,
+        },
+        // o3 - Most powerful reasoning
+        'o3': {
+            input: 20.00,
+            output: 80.00,
+        },
+        // Legacy o1-mini
+        'o1-mini': {
+            input: 3.00,
+            output: 12.00,
+        },
     },
     google: {
+        // Gemini 2.5 Flash - Best cost-performance ratio
+        'gemini-2.5-flash': {
+            input: 0.075,
+            output: 0.30,
+        },
+        // Gemini 2.5 Flash-Lite - Fastest and most efficient
+        'gemini-2.5-flash-lite': {
+            input: 0.0375,
+            output: 0.15,
+        },
+        // Gemini 2.5 Pro - Best reasoning
+        'gemini-2.5-pro': {
+            input: 1.50,
+            output: 6.00,
+        },
+        // Legacy models
         'gemini-2.0-flash-exp': {
-            input: 0.00,  // Free tier
+            input: 0.00,
             output: 0.00,
+        },
+        'gemini-1.5-flash': {
+            input: 0.075,
+            output: 0.30,
         },
         'gemini-1.5-pro': {
             input: 1.25,
             output: 5.00,
+        },
+        'gemini-2.0-pro': {
+            input: 2.50,
+            output: 10.00,
+        },
+    },
+    xai: {
+        // Grok 4 Fast (non-reasoning) - Latest, 40% fewer tokens than Grok 4
+        'grok-4-fast-non-reasoning': {
+            input: 5.00,
+            output: 15.00,
+        },
+        // Grok 4.2 - Polished version
+        'grok-4.2': {
+            input: 5.00,
+            output: 15.00,
+        },
+        // Grok 4 - Advanced reasoning model
+        'grok-4-0709': {
+            input: 5.00,
+            output: 15.00,
         },
     },
 };
 
 /**
  * Calculate cost for token usage
- * @param provider LLM provider (anthropic, openai, google)
+ * @param provider LLM provider (anthropic, openai, google, xai)
  * @param model Model name
  * @param tokenUsage Token usage statistics
  * @returns Cost calculation

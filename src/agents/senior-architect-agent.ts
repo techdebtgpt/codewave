@@ -5,6 +5,7 @@ import { AppConfig } from '../config/config.interface';
 import { BaseAgentWorkflow } from './base-agent-workflow';
 import { AgentContext, AgentResult } from './agent.interface';
 
+import { PromptBuilderService } from '../services/prompt-builder.service';
 export class SeniorArchitectAgent extends BaseAgentWorkflow {
     private config: AppConfig;
 
@@ -30,110 +31,35 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
     }
 
     protected buildSystemPrompt(context: AgentContext): string {
-        const roundPurpose = context.roundPurpose || 'initial';
+        const roundPurpose = (context.roundPurpose || 'initial') as 'initial' | 'concerns' | 'validation';
         const previousContext =
             context.agentResults && context.agentResults.length > 0
-                ? '\n\n## Team Discussion So Far\n\n' +
-                context.agentResults
-                    .map((r: AgentResult, idx: number) => `**${this.detectAgentRole(r)}**: ${r.summary}`)
+                ? context.agentResults
+                    .map((r: AgentResult) => `**${r.agentName}**: ${r.summary}`)
                     .join('\n\n')
                 : '';
 
-        // Round-specific instructions
-        const roundInstructions = roundPurpose === 'initial'
-            ? '## Round 1: Initial Analysis\nProvide your independent architectural assessment of all 7 metrics.'
-            : roundPurpose === 'concerns'
-                ? '## Round 2: Raise Concerns & Questions\nReview other agents\' scores. If complexity/debt scores seem inconsistent (e.g., QA says simple tests but you see high complexity, Author claims quick work but architecture is complex), raise questions. Defend your complexity and debt assessments if challenged.'
-                : '## Round 3: Validation & Final Scores\nRespond to concerns about YOUR complexity and technical debt scores. Validate or adjust other metrics based on agent responses. Provide final refined scores.';
-
-        return [
-            '# Role: Senior Architect',
-            '',
-            'You are a Senior Architect participating in a code review discussion.',
-            'Your task is to evaluate the commit across ALL 7 pillars, with special focus on complexity and technical debt.',
-            '',
-            roundInstructions,
-            '',
-            '## Scoring Philosophy',
-            'You will score ALL 7 metrics below. Your PRIMARY expertise (⭐) carries 41-44% weight in final calculation.',
-            'Your secondary opinions (16-21% weight) provide valuable architectural insights.',
-            '',
-            '## Metrics to Score',
-            '',
-            '### ⭐ 1. Code Complexity (1-10, lower is better) - YOUR PRIMARY EXPERTISE (41.7% weight)',
-            '**Definition**: Overall complexity of the implementation',
-            '- **1-2 (Minimal)**: Very simple, straightforward code, easy to understand',
-            '- **3-4 (Low)**: Simple logic, clean structure, few dependencies',
-            '- **5-6 (Moderate)**: Some complexity, multiple components, manageable',
-            '- **7-8 (High)**: Complex logic, many interdependencies, hard to follow',
-            '- **9-10 (Extreme)**: Highly complex, convoluted, very difficult to understand',
-            '**IMPORTANT**: Score 1 is BEST (simplest), score 10 is WORST (most complex)',
-            '',
-            '### ⭐ 2. Technical Debt Hours - YOUR PRIMARY EXPERTISE (43.5% weight)',
-            '**Definition**: Time debt introduced (+) or reduced (-) by this change',
-            '- **Negative values (debt reduced)**: -8h or lower (major cleanup), -4 to -1h (minor cleanup)',
-            '- **Zero (0)**: Neutral, no debt added or removed',
-            '- **Positive values (debt added)**: +1 to +4h (minor shortcuts), +4 to +8h (moderate debt), +8h+ (significant debt)',
-            '',
-            '### 3. Functional Impact (1-10) - Secondary Opinion (17.4% weight)',
-            '**Definition**: Architectural significance of functionality',
-            '- **9-10**: Core architecture change',
-            '- **5-6**: Moderate architectural impact',
-            '- **1-2**: Minor implementation detail',
-            '',
-            '### 4. Ideal Time Hours - Secondary Opinion (20.8% weight)',
-            '**Definition**: Optimal implementation time from architecture perspective',
-            'Consider complexity needed - simple architecture should be quick.',
-            '',
-            '### 5. Test Coverage (1-10) - Secondary Opinion (16% weight)',
-            '**Definition**: Architecture testability and NEW tests added (not existing test pass-through)',
-            '- **9-10**: Highly testable design with comprehensive NEW tests',
-            '- **5-6**: Moderately testable with some NEW tests',
-            '- **1-2**: Hard to test OR no new tests added (score 1-2 for cosmetic/config changes)',
-            '',
-            '### 6. Code Quality (1-10) - Secondary Opinion (20.8% weight)',
-            '**Definition**: Architectural quality and design patterns',
-            '- **9-10**: Excellent architecture, solid patterns',
-            '- **5-6**: Acceptable design',
-            '- **1-2**: Poor architecture, anti-patterns',
-            '',
-            '### 7. Actual Time Hours - Secondary Opinion (18.2% weight)',
-            '**Definition**: Was the complexity justified by time spent?',
-            'Provide estimate based on architectural scope.',
-            '',
-            '## Output Requirements',
-            '',
-            '**You MUST return ONLY valid JSON** in the following format:',
-            '',
-            '{',
-            '  "summary": "A conversational 2-3 sentence overview (e.g., \'From an architecture perspective...\')",',
-            '  "details": "Detailed analysis of architecture, complexity drivers, and debt. Reference your PRIMARY expertise areas.",',
-            '  "metrics": {',
-            '    "codeComplexity": <number 1-10, where 1=simplest, 10=most complex>,',
-            '    "technicalDebtHours": <number in hours, can be negative>,',
-            '    "functionalImpact": <number 1-10>,',
-            '    "idealTimeHours": <number in hours>,',
-            '    "testCoverage": <number 1-10>,',
-            '    "codeQuality": <number 1-10>,',
-            '    "actualTimeHours": <number in hours>',
-            '  }',
-            '}',
-            '',
-            '## Important Notes',
-            '- Be confident in YOUR PRIMARY areas (codeComplexity, technicalDebtHours)',
-            '- ALL 7 metrics are required',
-            '- Speak conversationally, as if you\'re in a code review meeting',
-            '- Reference other team members\' concerns (e.g., "I agree with the developer that...")',
-            '- Complexity score is INVERTED: 1=best (simple), 10=worst (complex)',
-            '- Technical debt can be positive (bad) or negative (good)',
-            '- Consider long-term maintainability, not just immediate functionality',
-            '- Evaluate design patterns, SOLID principles, and architectural best practices',
-            previousContext,
-        ].join('\n');
+        return PromptBuilderService.buildCompleteSystemPrompt(
+            {
+                role: 'Senior Architect',
+                description: 'Evaluates architecture, design patterns, code complexity, and technical debt',
+                roleDetailedDescription: `You are a Senior Architect participating in a code review discussion. Your role is to evaluate the commit across ALL 7 pillars, with special focus on complexity and technical debt. You assess whether the architectural design is sound, identify technical debt introduced or eliminated, and ensure the implementation follows SOLID principles and established design patterns. Your PRIMARY expertise is in evaluating code complexity and technical debt implications.`,
+                agentKey: 'senior-architect',
+                primaryMetrics: ['codeComplexity', 'technicalDebtHours'],
+                secondaryMetrics: ['functionalImpact', 'idealTimeHours', 'testCoverage', 'codeQuality', 'actualTimeHours'],
+            },
+            roundPurpose,
+            previousContext
+        );
     }
 
     protected async buildHumanPrompt(context: AgentContext): Promise<string> {
         const filesChanged = context.filesChanged?.join(', ') || 'unknown files';
+
+        // Prepare developer overview section if available
+        const developerContextSection = context.developerOverview
+            ? `${context.developerOverview}\n\n---\n\n`
+            : '';
 
         // Use RAG if available for large diffs (skip in subsequent rounds to save tokens)
         const isFirstRound = !context.agentResults || context.agentResults.length === 0;
@@ -152,6 +78,7 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
             const ragContext = results.map(r => r.results).join('\n\n');
 
             return [
+                developerContextSection,
                 '## Architecture Review Request (RAG Mode - Large Diff)',
                 '',
                 `**Files Changed:** ${filesChanged}`,
@@ -183,6 +110,7 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
                 .join('\n\n---\n\n');
 
             return [
+                developerContextSection,
                 '## Architecture Review - Round 2: Raise Concerns & Questions',
                 '',
                 `**Files Changed:** ${filesChanged}`,
@@ -209,6 +137,7 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
                 .join('\n\n---\n\n');
 
             return [
+                developerContextSection,
                 '## Architecture Review - Round 3: Validation & Final Scores',
                 '',
                 `**Files Changed:** ${filesChanged}`,
@@ -228,6 +157,7 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
 
         // Fallback to full diff for small commits (no RAG needed)
         return [
+            developerContextSection,
             '## Architecture Review Request',
             '',
             `**Files Changed:** ${filesChanged}`,
@@ -252,6 +182,9 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
     }
 
     protected parseLLMResult(output: any): AgentResult {
+        // Import centralized pillar constants
+        const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+
         // Try to parse JSON output from LLM
         if (typeof output === 'string') {
             try {
@@ -259,6 +192,19 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
                 let cleanOutput = output.trim();
                 if (cleanOutput.startsWith('```json') || cleanOutput.startsWith('```')) {
                     cleanOutput = cleanOutput.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+                }
+
+                // Extract JSON object if there's extra content (markdown headers, etc.)
+                const jsonMatch = cleanOutput.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    cleanOutput = jsonMatch[0];
+                }
+
+                // Try to close incomplete JSON if needed
+                let braceCount = (cleanOutput.match(/\{/g) || []).length;
+                let closingBraces = (cleanOutput.match(/\}/g) || []).length;
+                if (braceCount > closingBraces) {
+                    cleanOutput += '}'.repeat(braceCount - closingBraces);
                 }
 
                 const parsed = JSON.parse(cleanOutput);
@@ -269,21 +215,34 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
                     throw new Error('Missing or invalid summary field');
                 }
 
+                // Handle metrics: ensure it's an object with 7 pillars, filter out extras
+                let metrics = parsed.metrics || {};
+
+                // If metrics is an array, convert to object
+                if (Array.isArray(metrics)) {
+                    console.warn(`Senior Architect: Metrics returned as array, converting to object`);
+                    metrics = {};
+                }
+
+                // Filter metrics to ONLY the 7 pillars
+                const filteredMetrics: Record<string, number> = {};
+                for (const pillar of SEVEN_PILLARS) {
+                    if (pillar in metrics && typeof metrics[pillar] === 'number') {
+                        filteredMetrics[pillar] = metrics[pillar];
+                    } else {
+                        // Use default value if missing
+                        filteredMetrics[pillar] = pillar === 'codeComplexity' || pillar === 'functionalImpact' || pillar === 'testCoverage' || pillar === 'codeQuality' ? 5 : 0;
+                    }
+                }
+
                 return {
                     summary: parsed.summary.trim(),
                     details: (parsed.details || '').trim(),
-                    metrics: parsed.metrics || {
-                        codeComplexity: 5,
-                        technicalDebtHours: 0,
-                        functionalImpact: 5,
-                        idealTimeHours: 0,
-                        testCoverage: 5,
-                        codeQuality: 5,
-                        actualTimeHours: 0,
-                    },
+                    metrics: filteredMetrics,
                 };
             } catch (error) {
                 console.warn(`Senior Architect: Failed to parse LLM output: ${error instanceof Error ? error.message : String(error)}`);
+                console.warn(`Senior Architect: Raw output (first 500 chars): ${output.substring(0, 500)}`);
 
                 // fallback to string summary (if output is long enough)
                 if (output.length > 10) {
@@ -305,7 +264,15 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
                 return {
                     summary: '',
                     details: 'Failed to parse LLM response',
-                    metrics: {},
+                    metrics: {
+                        codeComplexity: 5,
+                        technicalDebtHours: 0,
+                        functionalImpact: 5,
+                        idealTimeHours: 0,
+                        testCoverage: 5,
+                        codeQuality: 5,
+                        actualTimeHours: 0,
+                    },
                 };
             }
         }
@@ -319,5 +286,105 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
         if (combined.includes('author') || combined.includes('developer')) return 'Developer';
         if (combined.includes('reviewer')) return 'Code Reviewer';
         return 'Team Member';
+    }
+
+    /**
+     * Self-evaluate analysis completeness from Senior Architect perspective
+     * Focus: Complexity assessment and technical debt evaluation accuracy
+     */
+    protected evaluateAnalysis(result: AgentResult): { clarityScore: number; missingInformation: string[] } {
+        const summary = (result.summary || '').toLowerCase();
+        const details = (result.details || '').toLowerCase();
+        const metrics = result.metrics || {};
+
+        let clarityScore = 50;
+        const gaps: string[] = [];
+
+        // Check if complexity is well-justified
+        if (typeof metrics.codeComplexity === 'number') {
+            const hasComplexityJustification = summary.includes('complex') || details.includes('simple') || details.includes('logic') || details.includes('interdepend');
+            if (!hasComplexityJustification) {
+                gaps.push('Complexity score should be justified with architectural reasoning');
+            } else {
+                clarityScore += 12;
+            }
+        } else {
+            gaps.push('Code complexity score is missing');
+        }
+
+        // Check if technical debt is clearly assessed
+        if (typeof metrics.technicalDebtHours === 'number') {
+            const hasDebtAnalysis = details.includes('debt') || details.includes('shortcut') || details.includes('technical') || details.includes('maintainability');
+            if (!hasDebtAnalysis) {
+                gaps.push('Technical debt assessment should explain what debt was introduced or eliminated');
+            } else {
+                clarityScore += 12;
+            }
+        } else {
+            gaps.push('Technical debt hours score is missing');
+        }
+
+        // Check if architecture patterns are discussed
+        if (summary.length > 100 && details.length > 250) {
+            const hasPatterns = details.includes('pattern') || details.includes('design') || details.includes('architecture') || details.includes('principle');
+            if (!hasPatterns) {
+                gaps.push('Architectural assessment should mention design patterns or SOLID principles');
+            } else {
+                clarityScore += 12;
+            }
+        }
+
+        // Check all required metrics are present
+        const requiredMetrics = ['codeComplexity', 'technicalDebtHours', 'functionalImpact', 'idealTimeHours', 'testCoverage', 'codeQuality', 'actualTimeHours'];
+        const missingMetrics = requiredMetrics.filter(m => !(m in metrics));
+        if (missingMetrics.length > 0) {
+            gaps.push(`Missing metric scores: ${missingMetrics.join(', ')}`);
+        } else {
+            clarityScore += 8;
+        }
+
+        // Bonus for comprehensive analysis
+        if (details.length > 400) {
+            clarityScore += 15;
+        }
+
+        return {
+            clarityScore: Math.min(100, clarityScore),
+            missingInformation: gaps,
+        };
+    }
+
+    /**
+     * Generate self-questions for refinement from Senior Architect perspective
+     */
+    protected generateSelfQuestions(result: AgentResult, gaps: string[]): string[] {
+        const questions: string[] = [];
+
+        // Ask about complexity justification
+        if (gaps.some(g => g.includes('complexity'))) {
+            questions.push('Can I better explain the architectural drivers of complexity and interdependencies?');
+        }
+
+        // Ask about technical debt details
+        if (gaps.some(g => g.includes('debt'))) {
+            questions.push('What specific technical debt was introduced, and what are the long-term maintenance implications?');
+        }
+
+        // Ask about design patterns
+        if (gaps.some(g => g.includes('pattern') || g.includes('design'))) {
+            questions.push('How well does this implementation align with SOLID principles and established design patterns?');
+        }
+
+        // Ask about maintainability
+        if (gaps.some(g => g.includes('maintainability'))) {
+            questions.push('From an architecture perspective, how maintainable and extensible is this solution?');
+        }
+
+        // Generic refinement question
+        if (questions.length === 0 && gaps.length > 0) {
+            questions.push('How can I provide more rigorous architectural assessment of this change?');
+        }
+
+        return questions;
     }
 }

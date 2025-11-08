@@ -13,6 +13,7 @@ import {
     saveEvaluationReports,
     createEvaluationDirectory,
     EvaluationMetadata,
+    printEvaluateCompletionMessage,
 } from '../utils/shared.utils';
 
 /**
@@ -262,7 +263,7 @@ export async function runEvaluateCommand(args: string[]) {
     // Check for --stream flag
     const streamingEnabled = args.includes('--stream');
 
-    const results = await orchestrator.evaluateCommit(context, {
+    const evaluationResult = await orchestrator.evaluateCommit(context, {
         streaming: streamingEnabled,
         threadId: `eval-${Date.now()}`,
         onProgress: (state) => {
@@ -272,15 +273,20 @@ export async function runEvaluateCommand(args: string[]) {
             }
         },
     });
+    const results = evaluationResult.agentResults || [];
 
     // Determine commit hash and metadata for directory naming
     let commitHash = extractCommitHash(diff);
     let commitAuthor: string | undefined;
     let commitMessage: string | undefined;
     let commitDate: string | undefined;
+    let fullCommitHash: string | undefined; // Store full hash for metadata
 
     if (source === 'commit' && sourceDescription) {
-        commitHash = sourceDescription;
+        // Use sourceDescription for fetching metadata, but ensure 8-char short hash for directory
+        fullCommitHash = sourceDescription;
+        commitHash = sourceDescription.substring(0, 8); // Ensure 8 chars for consistency
+
         // Get commit metadata
         const showResult = spawnSync('git', ['show', '--no-patch', '--format=%an|||%s|||%aI', sourceDescription], {
             cwd: repoPath,
@@ -303,11 +309,12 @@ export async function runEvaluateCommand(args: string[]) {
     // Prepare metadata
     const metadata: EvaluationMetadata = {
         timestamp: new Date().toISOString(),
-        commitHash,
+        commitHash: fullCommitHash || commitHash, // Use full hash if available, otherwise short hash
         commitAuthor,
         commitMessage,
         commitDate,
         source,
+        developerOverview: evaluationResult.developerOverview,
     };
 
     // Save all reports using shared utility
@@ -316,23 +323,9 @@ export async function runEvaluateCommand(args: string[]) {
         outputDir,
         metadata,
         diff,
+        developerOverview: evaluationResult.developerOverview,
     });
 
-    console.log(chalk.green(`\n✅ Evaluation complete!`));
-    console.log(chalk.cyan(`📁 Output directory: ${chalk.bold(outputDir)}`));
-    console.log(chalk.white(`   📄 report-enhanced.html  - 🌟 Conversation Timeline (Interactive)`));
-    console.log(chalk.white(`   📝 conversation.md       - 🌟 Markdown Transcript`));
-    console.log(chalk.gray(`   📄 report.html           - Standard HTML report`));
-    console.log(chalk.gray(`   📋 results.json          - Full JSON results`));
-    console.log(chalk.gray(`   📝 commit.diff           - Original diff`));
-    console.log(chalk.gray(`   📊 summary.txt           - Quick summary`));
-    console.log(chalk.yellow(`\n💡 Open ${chalk.bold('report-enhanced.html')} for interactive view or ${chalk.bold('conversation.md')} for transcript!\n`));
-
-    // Cross-platform file:// URL (works on Windows, macOS, Linux)
-    const indexPath = path.join(process.cwd(), '.evaluated-commits', 'index.html');
-    const normalizedPath = indexPath.replace(/\\/g, '/');
-    const indexUrl = process.platform === 'win32'
-        ? `file:///${normalizedPath}`
-        : `file://${normalizedPath}`;
-    console.log(chalk.cyan(`\n🌐 View all evaluations: ${indexUrl}\n`));
+    // Print completion message using shared function
+    printEvaluateCompletionMessage(outputDir);
 }

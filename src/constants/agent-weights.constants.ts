@@ -1,12 +1,28 @@
 // src/constants/agent-weights.constants.ts
 // Agent Expertise Weights for Weighted Scoring
-// 
+//
 // Each agent provides scores for all 7 pillars, but with different confidence levels.
 // Weights are NORMALIZED per pillar (sum to 1.0 across all agents).
-// 
+//
 // Primary expertise (~40-45%): Agent's specialized area
 // Secondary expertise (~15-20%): Related areas where agent has insight
 // Tertiary expertise (~8-13%): Areas where agent has limited but valuable perspective
+
+/**
+ * The 7 immutable evaluation pillars
+ * All agents MUST return scores for all 7 pillars and ONLY these pillars
+ */
+export const SEVEN_PILLARS = [
+    'functionalImpact',
+    'idealTimeHours',
+    'testCoverage',
+    'codeQuality',
+    'codeComplexity',
+    'actualTimeHours',
+    'technicalDebtHours',
+] as const;
+
+export type PillarName = typeof SEVEN_PILLARS[number];
 
 export interface AgentWeights {
     functionalImpact: number;
@@ -28,14 +44,14 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
         actualTimeHours: 0.136,     // TERTIARY (13.6%) - Observes implementation time
         technicalDebtHours: 0.130,  // TERTIARY (13%) - Limited debt assessment
     },
-    'qa-engineer': {
-        functionalImpact: 0.130,    // TERTIARY (13%) - Validates functional behavior
+    'sdet': {
+        functionalImpact: 0.130,    // TERTIARY (13%) - Validates test automation strategy
         idealTimeHours: 0.083,      // TERTIARY (8.3%) - Limited estimation insight
-        testCoverage: 0.400,        // PRIMARY (40%) - Testing expert
-        codeQuality: 0.167,         // SECONDARY (16.7%) - Reviews for testability
-        codeComplexity: 0.125,      // TERTIARY (12.5%) - Understands test complexity
+        testCoverage: 0.400,        // PRIMARY (40%) - Test automation & framework expert
+        codeQuality: 0.167,         // SECONDARY (16.7%) - Reviews test code quality
+        codeComplexity: 0.125,      // TERTIARY (12.5%) - Understands test framework complexity
         actualTimeHours: 0.091,     // TERTIARY (9.1%) - Limited implementation insight
-        technicalDebtHours: 0.130,  // TERTIARY (13%) - Identifies test debt
+        technicalDebtHours: 0.130,  // TERTIARY (13%) - Identifies test automation debt
     },
     'developer-author': {
         functionalImpact: 0.130,    // TERTIARY (13%) - Implements features

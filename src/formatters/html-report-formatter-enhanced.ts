@@ -29,7 +29,7 @@ interface MetricEvolution {
  */
 const AGENT_NAME_MAP: Record<string, string> = {
   'Evaluates business value, functional impact, and estimates ideal implementation time': 'Business Analyst',
-  'Evaluates test coverage, identifies testing gaps, and assesses quality assurance': 'QA Engineer',
+  'Evaluates test automation quality, testing frameworks, and automated test infrastructure': 'SDET',
   'Explains implementation decisions, trade-offs, and estimates actual time spent': 'Developer Author',
   'Evaluates architecture, design patterns, code complexity, and technical debt': 'Senior Architect',
   'Reviews code quality, suggests improvements, and evaluates implementation details': 'Developer Reviewer',
@@ -40,7 +40,7 @@ const AGENT_NAME_MAP: Record<string, string> = {
  */
 const AGENT_DESCRIPTIONS: Record<string, string> = {
   'Business Analyst': 'Evaluates business value, functional impact, and ideal time estimates',
-  'QA Engineer': 'Evaluates test coverage, quality assurance, and testing completeness',
+  'SDET': 'Evaluates test automation quality, testing frameworks, and infrastructure maturity',
   'Developer Author': 'Evaluates actual time spent, implementation approach, and development effort',
   'Senior Architect': 'Evaluates code complexity, architecture design, and technical debt',
   'Developer Reviewer': 'Evaluates code quality, best practices, and maintainability',
@@ -64,8 +64,8 @@ function detectAgentName(result: AgentResult, idx: number): string {
   if (combined.includes('business analyst') || combined.includes('functional impact') || combined.includes('ideal time')) {
     return 'Business Analyst';
   }
-  if (combined.includes('qa engineer') || combined.includes('test coverage') || combined.includes('testing')) {
-    return 'QA Engineer';
+  if (combined.includes('sdet') || combined.includes('test automation') || combined.includes('testing framework') || combined.includes('test infrastructure')) {
+    return 'SDET';
   }
   if (combined.includes('developer author') || combined.includes('actual time') || combined.includes('spent about')) {
     return 'Developer Author';
@@ -106,7 +106,7 @@ function extractReferences(summary: string, details: string): string[] {
   const combined = summary + ' ' + details;
   const references: string[] = [];
 
-  const agentNames = ['Business Analyst', 'QA Engineer', 'Developer Author', 'Senior Architect', 'Developer Reviewer'];
+  const agentNames = ['Business Analyst', 'SDET', 'Developer Author', 'Senior Architect', 'Developer Reviewer'];
   agentNames.forEach(name => {
     if (combined.toLowerCase().includes(name.toLowerCase())) {
       references.push(name);
@@ -125,7 +125,7 @@ function groupResultsByAgent(results: AgentResult[]): Map<string, AgentEvaluatio
 
   const iconMap: Record<string, string> = {
     'Business Analyst': '👔',
-    'QA Engineer': '🧪',
+    'SDET': '🤖',
     'Developer Author': '👨‍💻',
     'Senior Architect': '🏛️',
     'Developer Reviewer': '💻',
@@ -133,7 +133,7 @@ function groupResultsByAgent(results: AgentResult[]): Map<string, AgentEvaluatio
 
   const colorMap: Record<string, string> = {
     'Business Analyst': 'info',
-    'QA Engineer': 'warning',
+    'SDET': 'warning',
     'Developer Author': 'success',
     'Senior Architect': 'primary',
     'Developer Reviewer': 'secondary',
@@ -200,31 +200,36 @@ function groupResultsByAgent(results: AgentResult[]): Map<string, AgentEvaluatio
  * Calculate metric evolution across rounds (dynamic for ANY number of rounds)
  */
 function calculateMetricEvolution(groupedResults: Map<string, AgentEvaluation[]>): MetricEvolution[] {
+  // Import centralized pillar constants
+  const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+
   const metricMap = new Map<string, MetricEvolution>();
 
   groupedResults.forEach(evaluations => {
     evaluations.forEach(evaluation => {
       if (evaluation.metrics) {
-        Object.entries(evaluation.metrics).forEach(([metric, value]) => {
-          if (!metricMap.has(metric)) {
-            metricMap.set(metric, {
-              metric,
-              rounds: new Map<number, number>(),
-              changed: false
-            });
-          }
-          const evolution = metricMap.get(metric)!;
+        Object.entries(evaluation.metrics)
+          .filter(([metric]) => SEVEN_PILLARS.includes(metric))
+          .forEach(([metric, value]) => {
+            if (!metricMap.has(metric)) {
+              metricMap.set(metric, {
+                metric,
+                rounds: new Map<number, number>(),
+                changed: false
+              });
+            }
+            const evolution = metricMap.get(metric)!;
 
-          // Store value for this round
-          evolution.rounds.set(evaluation.round, value);
+            // Store value for this round
+            evolution.rounds.set(evaluation.round, value);
 
-          // Check if value changed from first round
-          const firstRound = Math.min(...Array.from(evolution.rounds.keys()));
-          const firstValue = evolution.rounds.get(firstRound);
-          if (evaluation.round > firstRound && firstValue !== undefined) {
-            evolution.changed = evolution.changed || firstValue !== value;
-          }
-        });
+            // Check if value changed from first round
+            const firstRound = Math.min(...Array.from(evolution.rounds.keys()));
+            const firstValue = evolution.rounds.get(firstRound);
+            if (evaluation.round > firstRound && firstValue !== undefined) {
+              evolution.changed = evolution.changed || firstValue !== value;
+            }
+          });
       }
     });
   });
@@ -236,15 +241,17 @@ function calculateMetricEvolution(groupedResults: Map<string, AgentEvaluation[]>
  * Build comprehensive metrics table showing all agent contributions
  */
 function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): string {
-  // Import agent weights for display
-  const { getAgentWeight, calculateWeightedAverage, AGENT_EXPERTISE_WEIGHTS } = require('../constants/agent-weights.constants');
+  // Import agent weights and centralized pillar constants
+  const { getAgentWeight, calculateWeightedAverage, AGENT_EXPERTISE_WEIGHTS, SEVEN_PILLARS } = require('../constants/agent-weights.constants');
 
-  // Collect all unique metrics
+  // Collect metrics, filtering to ONLY the 7 pillars
   const allMetrics = new Set<string>();
   groupedResults.forEach(evaluations => {
     evaluations.forEach(evaluation => {
       if (evaluation.metrics) {
-        Object.keys(evaluation.metrics).forEach(metric => allMetrics.add(metric));
+        Object.keys(evaluation.metrics)
+          .filter(metric => SEVEN_PILLARS.includes(metric))
+          .forEach(metric => allMetrics.add(metric));
       }
     });
   });
@@ -255,7 +262,12 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
   groupedResults.forEach((evaluations, agentName) => {
     const latestEval = evaluations[evaluations.length - 1]; // Use latest response
     if (latestEval.metrics) {
-      agentMetrics.set(agentName, new Map(Object.entries(latestEval.metrics)));
+      // Filter metrics to ONLY the 7 pillars and ensure they are numeric
+      const filteredMetrics = Object.fromEntries(
+        Object.entries(latestEval.metrics)
+          .filter(([metric, value]) => SEVEN_PILLARS.includes(metric) && typeof value === 'number')
+      );
+      agentMetrics.set(agentName, new Map(Object.entries(filteredMetrics)));
     }
     // Store agentRole for weight lookup
     if (latestEval.agentRole) {
@@ -312,7 +324,7 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
           </thead>
           <tbody>
             ${Array.from(allMetrics).map((metric, idx) => {
-    const final = finalValues.get(metric)!;
+    const final = finalValues.get(metric);
     return `
                 <tr>
                   <td><strong>${metricLabels[idx]}</strong></td>
@@ -321,11 +333,17 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
       // Use agentRole for weight lookup
       const agentKey = agentRoleMap.get(agent) || agent;
       const weight = getAgentWeight(agentKey, metric);
+
+      // Ensure weight is a number before calling toFixed
+      if (typeof weight !== 'number') {
+        return `<td class="text-center text-muted">-</td>`;
+      }
+
       const weightPercent = (weight * 100).toFixed(1);
       const isPrimary = weight >= 0.40; // Primary expertise threshold
       const badgeClass = isPrimary ? 'badge bg-warning text-dark' : 'badge bg-secondary';
 
-      if (value !== undefined) {
+      if (value !== undefined && typeof value === 'number') {
         return `<td class="text-center">
                           <div>${value.toFixed(2)}</div>
                           <small class="${badgeClass}">${weightPercent}%</small>
@@ -334,9 +352,7 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
       return `<td class="text-center text-muted">-</td>`;
     }).join('')}
                   <td class="text-center bg-success bg-opacity-10">
-                    <strong>${final.value.toFixed(2)}</strong>
-                    <br><small class="text-muted">(weighted avg from ${final.contributors.length} agent${final.contributors.length > 1 ? 's' : ''})</small>
-                  </td>
+                    ${final && typeof final.value === 'number' ? `<strong>${final.value.toFixed(2)}</strong><br><small class="text-muted">(weighted avg from ${final.contributors.length} agent${final.contributors.length > 1 ? 's' : ''})</small>` : '<strong>-</strong><br><small class="text-muted">(no data)</small>'}
                 </tr>
                 `;
   }).join('')}
@@ -400,20 +416,22 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[]): string {
       });
 
       const changes = values.map((val, idx) => {
-        if (idx === 0) return '—';
+        if (idx === 0) return '<span class="badge bg-secondary">baseline</span>';
         const curr = parseFloat(val);
         const prev = parseFloat(values[idx - 1]);
         if (isNaN(curr) || isNaN(prev)) return '—';
         const diff = curr - prev;
+        const pct = Math.abs((diff / prev) * 100);
         const direction = diff > 0 ? '📈' : diff < 0 ? '📉' : '→';
-        return `${direction} ${Math.abs(diff).toFixed(1)}`;
+        const badgeClass = diff > 0.1 ? 'bg-danger' : diff < -0.1 ? 'bg-success' : 'bg-secondary';
+        return `<span class="badge ${badgeClass}">${direction} ${Math.abs(diff).toFixed(1)} (${pct.toFixed(0)}%)</span>`;
       });
 
       return `
         <tr>
           <td><strong>${label}</strong></td>
-          ${values.map((v) => `<td class="text-center">${v}</td>`).join('')}
-          ${changes.map((c) => `<td class="text-center small">${c}</td>`).join('')}
+          ${values.map((v) => `<td class="text-center fw-bold">${v}</td>`).join('')}
+          ${changes.map((c) => `<td class="text-center" style="background-color: #f8f9fa;">${c}</td>`).join('')}
         </tr>
       `;
     })
@@ -431,45 +449,51 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[]): string {
       });
 
       const changes = values.map((val, idx) => {
-        if (idx === 0) return '—';
+        if (idx === 0) return '<span class="badge bg-secondary">baseline</span>';
         const currStr = val.replace(/[^0-9.]/g, '');
         const prevStr = values[idx - 1].replace(/[^0-9.]/g, '');
         const curr = parseFloat(currStr);
         const prev = parseFloat(prevStr);
         if (isNaN(curr) || isNaN(prev)) return '—';
         const diff = curr - prev;
+        const pct = Math.abs((diff / prev) * 100);
         const direction = diff > 0 ? '📈' : diff < 0 ? '📉' : '→';
-        return `${direction} ${Math.abs(diff).toFixed(0)}`;
+        const badgeClass = diff > Math.abs(prev * 0.05) ? 'bg-danger' : diff < -Math.abs(prev * 0.05) ? 'bg-success' : 'bg-secondary';
+        return `<span class="badge ${badgeClass}">${direction} ${Math.abs(diff).toFixed(0)} (${pct.toFixed(0)}%)</span>`;
       });
 
       return `
         <tr>
           <td><strong>${label}</strong></td>
-          ${values.map((v) => `<td class="text-center">${v}</td>`).join('')}
-          ${changes.map((c) => `<td class="text-center small">${c}</td>`).join('')}
+          ${values.map((v) => `<td class="text-center fw-bold">${v}</td>`).join('')}
+          ${changes.map((c) => `<td class="text-center" style="background-color: #f8f9fa;">${c}</td>`).join('')}
         </tr>
       `;
     })
     .join('');
 
-  const headers = history.map((h, idx) => `<th class="text-center">Eval #${h.evaluationNumber}</th>`).join('');
+  const headers = history.map((h, idx) => `<th class="text-center fw-bold" style="min-width: 90px;">Eval #${h.evaluationNumber}</th>`).join('');
   const changeHeaders = history
     .slice(1)
-    .map((h, idx) => `<th class="text-center text-muted small">vs Eval #${idx + 1}</th>`)
+    .map((h, idx) => `<th class="text-center text-muted small" style="min-width: 100px; background-color: #f8f9fa;">Change from<br/>Previous</th>`)
     .join('');
 
   return `
     <div class="card mb-4">
       <div class="card-header bg-info text-white">
         <h5 class="mb-0">📊 Evaluation History (${history.length} evaluations)</h5>
+        <small class="text-white-50">Track how metrics change across multiple evaluations</small>
       </div>
       <div class="card-body">
-        <h6 class="mb-3">Metrics Evolution</h6>
+        <h6 class="mb-3">
+          <span class="badge bg-light text-info">Metrics Evolution</span>
+          <small class="text-muted ms-2">All values shown | Arrows indicate direction of change</small>
+        </h6>
         <div class="table-responsive">
-          <table class="table table-sm table-hover">
+          <table class="table table-sm table-hover" style="font-size: 0.9rem;">
             <thead class="table-light">
-              <tr>
-                <th>Metric</th>
+              <tr style="border-bottom: 2px solid #dee2e6;">
+                <th style="min-width: 140px;">Metric</th>
                 ${headers}
                 ${changeHeaders}
               </tr>
@@ -480,12 +504,15 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[]): string {
           </table>
         </div>
 
-        <h6 class="mb-3 mt-4">Token Usage & Cost Evolution</h6>
+        <h6 class="mb-3 mt-4">
+          <span class="badge bg-light text-info">Token Usage & Cost Evolution</span>
+          <small class="text-muted ms-2">API resource consumption across evaluations</small>
+        </h6>
         <div class="table-responsive">
-          <table class="table table-sm table-hover">
+          <table class="table table-sm table-hover" style="font-size: 0.9rem;">
             <thead class="table-light">
-              <tr>
-                <th>Metric</th>
+              <tr style="border-bottom: 2px solid #dee2e6;">
+                <th style="min-width: 140px;">Metric</th>
                 ${headers}
                 ${changeHeaders}
               </tr>
@@ -496,21 +523,34 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[]): string {
           </table>
         </div>
 
-        <h6 class="mb-3 mt-4">Convergence Scores</h6>
+        <h6 class="mb-3 mt-4">
+          <span class="badge bg-light text-info">Convergence Scores</span>
+          <small class="text-muted ms-2">Agent consensus percentage per evaluation</small>
+        </h6>
         <div class="row">
           ${history
             .map(
-              (h, idx) => `
-            <div class="col-md-3 mb-2">
-              <div class="p-2 bg-light rounded text-center">
-                <small class="text-muted d-block">Eval #${h.evaluationNumber}</small>
-                <strong class="text-primary">${(h.convergenceScore * 100).toFixed(0)}%</strong>
+              (h, idx) => {
+                const score = h.convergenceScore * 100;
+                const scoreClass = score >= 85 ? 'bg-success' : score >= 70 ? 'bg-info' : 'bg-warning';
+                const scoreLabel = score >= 85 ? 'Excellent' : score >= 70 ? 'Good' : 'Fair';
+                return `
+            <div class="col-md-3 mb-3">
+              <div class="p-3 ${scoreClass} text-white rounded text-center">
+                <small class="d-block opacity-75">Evaluation #${h.evaluationNumber}</small>
+                <strong style="font-size: 1.8rem;">${score.toFixed(0)}%</strong>
+                <small class="d-block opacity-75">${scoreLabel} Consensus</small>
               </div>
             </div>
-          `
+          `;
+              }
             )
             .join('')}
         </div>
+        <p class="small text-muted mt-3">
+          <strong>📊 What this means:</strong> Higher convergence scores indicate greater agreement among agents about code metrics.
+          <strong>85%+</strong> = Excellent consensus | <strong>70-84%</strong> = Good consensus | <strong>&lt;70%</strong> = More discussion needed
+        </p>
       </div>
     </div>
   `;
@@ -522,7 +562,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[]): string {
 export function generateEnhancedHtmlReport(
   results: AgentResult[],
   outputPath: string,
-  metadata?: { commitHash?: string; timestamp?: string; commitAuthor?: string; commitMessage?: string; commitDate?: string }
+  metadata?: { commitHash?: string; timestamp?: string; commitAuthor?: string; commitMessage?: string; commitDate?: string; developerOverview?: string }
 ) {
   const groupedResults = groupResultsByAgent(results);
   const metricEvolution = calculateMetricEvolution(groupedResults);
@@ -915,6 +955,23 @@ export function generateEnhancedHtmlReport(
     </div>
     ` : ''}
 
+    <!-- Developer Overview Card -->
+    ${metadata?.developerOverview ? `
+    <div class="card mb-4 shadow-sm border-info">
+      <div class="card-header bg-info text-white">
+        <h5 class="mb-0">
+          <span class="me-2">👨‍💻</span>
+          Developer Overview
+        </h5>
+      </div>
+      <div class="card-body">
+        <div class="alert alert-light mb-0">
+          <div style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 0.95rem; line-height: 1.6;">${metadata.developerOverview}</div>
+        </div>
+      </div>
+    </div>
+    ` : ''}
+
     <!-- Evaluation Process Explanation -->
     <div class="alert alert-info mb-4">
       <h5 class="alert-heading">
@@ -950,6 +1007,13 @@ export function generateEnhancedHtmlReport(
           📊 Metric Evolution
         </button>
       </li>
+      ${results.some((r: AgentResult) => r.internalIterations !== undefined) ? `
+      <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#refinement">
+          🔄 Refinement Journey
+        </button>
+      </li>
+      ` : ''}
       ${evaluationHistory.length > 0 ? `
       <li class="nav-item">
         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#history">
@@ -985,6 +1049,72 @@ export function generateEnhancedHtmlReport(
         <h3 class="mt-5 mb-3">📈 Metric Evolution Across Rounds</h3>
         ${evolutionHtml}
       </div>
+
+      ${results.some((r: AgentResult) => r.internalIterations !== undefined) ? `
+      <!-- Refinement Journey Tab -->
+      <div class="tab-pane fade" id="refinement">
+        <h2 class="mb-4">🔄 Agent Refinement Journey</h2>
+        <p class="text-muted mb-4">
+          Each agent iteratively refines their analysis to reach confidence in their assessment.
+          This tab shows the self-refinement process and clarity progression for each agent.
+        </p>
+        <div class="row">
+          ${Array.from(groupedResults.entries()).map(([agentName, evals]) => {
+            const latestEval = evals[evals.length - 1];
+            const result = results.find(r => {
+              const rAgentName = detectAgentName(r, 0);
+              return rAgentName === agentName;
+            });
+            const iterations = result?.internalIterations || 0;
+            const clarity = result?.clarityScore || 0;
+
+            return iterations > 0 ? `
+              <div class="col-md-6 mb-4">
+                <div class="card h-100 shadow-sm border-${latestEval.color}">
+                  <div class="card-header bg-${latestEval.color} text-white">
+                    <h6 class="mb-0">
+                      <span class="me-2" style="font-size: 1.2rem;">${latestEval.icon}</span>
+                      ${agentName}
+                      <span class="badge bg-light text-dark ms-2">🔄 ${iterations} iterations</span>
+                    </h6>
+                  </div>
+                  <div class="card-body">
+                    <div class="mb-3">
+                      <strong>Clarity Score:</strong>
+                      <div class="progress mt-2">
+                        <div class="progress-bar bg-${latestEval.color}" style="width: ${clarity}%">
+                          ${clarity}%
+                        </div>
+                      </div>
+                    </div>
+                    <p class="small text-muted">
+                      This agent refined their analysis through <strong>${iterations}</strong> self-iteration cycles,
+                      progressively improving their confidence from internal gap analysis and question generation.
+                    </p>
+                    ${result?.refinementNotes && result.refinementNotes.length > 0 ? `
+                      <div class="mt-3">
+                        <strong class="small">Refinement Notes:</strong>
+                        <ul class="small mt-2">
+                          ${result.refinementNotes.map(note => `<li>${note}</li>`).join('')}
+                        </ul>
+                      </div>
+                    ` : ''}
+                    ${result?.missingInformation && result.missingInformation.length > 0 ? `
+                      <div class="mt-3 alert alert-warning p-2">
+                        <strong class="small">Final Gaps Identified:</strong>
+                        <ul class="small mt-2 mb-0">
+                          ${result.missingInformation.slice(0, 3).map(gap => `<li>${gap}</li>`).join('')}
+                        </ul>
+                      </div>
+                    ` : ''}
+                  </div>
+                </div>
+              </div>
+            ` : '';
+          }).join('')}
+        </div>
+      </div>
+      ` : ''}
 
       ${evaluationHistory.length > 0 ? `
       <!-- Evaluation History Tab -->

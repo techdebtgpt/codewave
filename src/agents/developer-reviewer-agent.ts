@@ -5,6 +5,7 @@ import { AppConfig } from '../config/config.interface';
 import { BaseAgentWorkflow } from './base-agent-workflow';
 import { AgentContext, AgentResult } from './agent.interface';
 
+import { PromptBuilderService } from '../services/prompt-builder.service';
 export class DeveloperReviewerAgent extends BaseAgentWorkflow {
     private config: AppConfig;
 
@@ -30,105 +31,35 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
     }
 
     protected buildSystemPrompt(context: AgentContext): string {
-        const roundPurpose = context.roundPurpose || 'initial';
+        const roundPurpose = (context.roundPurpose || 'initial') as 'initial' | 'concerns' | 'validation';
         const previousContext =
             context.agentResults && context.agentResults.length > 0
-                ? '\n\n## Team Discussion So Far\n\n' +
-                context.agentResults
-                    .map((r: AgentResult, idx: number) => `**${this.detectAgentRole(r)}**: ${r.summary}`)
+                ? context.agentResults
+                    .map((r: AgentResult) => `**${r.agentName}**: ${r.summary}`)
                     .join('\n\n')
                 : '';
 
-        // Round-specific instructions
-        const roundInstructions = roundPurpose === 'initial'
-            ? '## Round 1: Initial Analysis\nProvide your independent code review of all 7 metrics.'
-            : roundPurpose === 'concerns'
-                ? '## Round 2: Raise Concerns & Questions\nReview other agents\' scores. If you have concerns about code quality implications (e.g., test adequacy from QA, complexity from Architect, implementation approach from Author), raise specific questions. Defend your code quality assessment if challenged.'
-                : '## Round 3: Validation & Final Scores\nRespond to concerns about YOUR code quality score. Validate or adjust other metrics based on agent responses. Provide final refined scores.';
-
-        return [
-            '# Role: Developer Reviewer',
-            '',
-            'You are a Developer Reviewer participating in a code review discussion.',
-            'Your task is to evaluate the commit across ALL 7 pillars, with special focus on code quality.',
-            '',
-            roundInstructions,
-            '',
-            '## Scoring Philosophy',
-            'You will score ALL 7 metrics below. Your PRIMARY expertise (⭐) carries 41.7% weight in final calculation.',
-            'Your secondary opinions (17-21% weight) provide valuable review insights.',
-            '',
-            '## Metrics to Score',
-            '',
-            '### ⭐ 1. Code Quality (1-10) - YOUR PRIMARY EXPERTISE (41.7% weight)',
-            '**Definition**: Overall code quality, readability, and maintainability',
-            '- **9-10 (Excellent)**: Exemplary code, crystal-clear logic, perfect naming, idiomatic',
-            '- **7-8 (Very Good)**: Clean, readable code with minor style inconsistencies',
-            '- **5-6 (Good)**: Adequate quality, some readability issues, could be cleaner',
-            '- **3-4 (Average)**: Poor readability, inconsistent style, confusing logic',
-            '- **1-2 (Poor)**: Very poor quality, hard to understand, major issues',
-            '',
-            '### 2. Functional Impact (1-10) - Tertiary Opinion (13% weight)',
-            '**Definition**: Reviewer perspective on functionality',
-            '- **9-10**: Significant feature',
-            '- **5-6**: Moderate change',
-            '- **1-2**: Minor tweak',
-            '',
-            '### 3. Ideal Time Hours - Tertiary Opinion (12.5% weight)',
-            '**Definition**: How long should this quality of code take?',
-            'Provide estimate from code review perspective.',
-            '',
-            '### 4. Test Coverage (1-10) - Secondary Opinion (20% weight)',
-            '**Definition**: Test quality from reviewer perspective',
-            '- **9-10**: Excellent tests, thorough coverage',
-            '- **5-6**: Adequate tests',
-            '- **1-2**: Poor or missing tests',
-            '',
-            '### 5. Code Complexity (1-10, lower is better) - Secondary Opinion (20.8% weight)',
-            '**Definition**: Complexity from readability perspective',
-            '- **1-2**: Very simple, easy to review',
-            '- **5-6**: Moderate complexity',
-            '- **9-10**: Very complex, hard to review',
-            '',
-            '### 6. Actual Time Hours - Tertiary Opinion (13.6% weight)',
-            '**Definition**: Time spent based on code scope',
-            'Provide estimate from review perspective.',
-            '',
-            '### 7. Technical Debt Hours - Secondary Opinion (17.4% weight)',
-            '**Definition**: Code debt from reviewer perspective',
-            '- **Negative**: Improved code quality',
-            '- **0**: Neutral',
-            '- **Positive**: Quality shortcuts taken',
-            '',
-            '## Output Requirements',
-            '',
-            '**You MUST return ONLY valid JSON** in the following format:',
-            '',
-            '{',
-            '  "summary": "A conversational 2-3 sentence overview (e.g., \'Looking at the code quality...\')",',
-            '  "details": "Detailed code review with specific feedback. Reference your PRIMARY expertise in quality assessment.",',
-            '  "metrics": {',
-            '    "codeQuality": <number 1-10>,',
-            '    "functionalImpact": <number 1-10>,',
-            '    "idealTimeHours": <number in hours>,',
-            '    "testCoverage": <number 1-10>,',
-            '    "codeComplexity": <number 1-10>,',
-            '    "actualTimeHours": <number in hours>,',
-            '    "technicalDebtHours": <number in hours, can be negative>',
-            '  }',
-            '}',
-            '',
-            '## Important Notes',
-            '- Be confident in YOUR PRIMARY area (codeQuality)',
-            '- Be constructive: praise good code, suggest improvements',
-            '- ALL 7 metrics are required',
-            '- Reference other team members when relevant',
-            previousContext,
-        ].join('\n');
+        return PromptBuilderService.buildCompleteSystemPrompt(
+            {
+                role: 'Developer Reviewer',
+                description: 'Reviews code quality, suggests improvements, and evaluates implementation details',
+                roleDetailedDescription: `You are a Developer Reviewer participating in a code review discussion. Your role is to evaluate the commit across ALL 7 pillars, with special focus on code quality. You assess code readability, maintainability, adherence to best practices, and provide constructive feedback. Your PRIMARY expertise is in evaluating code quality and identifying code debt, but you also consider test coverage and code complexity from a reviewability perspective.`,
+                agentKey: 'developer-reviewer',
+                primaryMetrics: ['codeQuality'],
+                secondaryMetrics: ['testCoverage', 'codeComplexity', 'technicalDebtHours'],
+            },
+            roundPurpose,
+            previousContext
+        );
     }
 
     protected async buildHumanPrompt(context: AgentContext): Promise<string> {
         const filesChanged = context.filesChanged?.join(', ') || 'unknown files';
+
+        // Prepare developer overview section if available
+        const developerContextSection = context.developerOverview
+            ? `${context.developerOverview}\n\n---\n\n`
+            : '';
 
         // Use RAG if available for large diffs (skip in subsequent rounds to save tokens)
         const isFirstRound = !context.agentResults || context.agentResults.length === 0;
@@ -147,6 +78,7 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
             const ragContext = results.map(r => r.results).join('\n\n');
 
             return [
+                developerContextSection,
                 '## Code Review Request (RAG Mode - Large Diff)',
                 '',
                 `**Files Changed:** ${filesChanged}`,
@@ -178,6 +110,7 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
                 .join('\n\n---\n\n');
 
             return [
+                developerContextSection,
                 '## Code Review - Round 2: Raise Concerns & Questions',
                 '',
                 `**Files Changed:** ${filesChanged}`,
@@ -204,6 +137,7 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
                 .join('\n\n---\n\n');
 
             return [
+                developerContextSection,
                 '## Code Review - Round 3: Validation & Final Scores',
                 '',
                 `**Files Changed:** ${filesChanged}`,
@@ -223,6 +157,7 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
 
         // Fallback to full diff for small commits (no RAG needed)
         return [
+            developerContextSection,
             '## Code Review Request',
             '',
             `**Files Changed:** ${filesChanged}`,
@@ -247,6 +182,9 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
     }
 
     protected parseLLMResult(output: any): AgentResult {
+        // Import centralized pillar constants
+        const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+
         // Try to parse JSON output from LLM
         if (typeof output === 'string') {
             try {
@@ -254,6 +192,19 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
                 let cleanOutput = output.trim();
                 if (cleanOutput.startsWith('```json') || cleanOutput.startsWith('```')) {
                     cleanOutput = cleanOutput.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+                }
+
+                // Extract JSON object if there's extra content (markdown headers, etc.)
+                const jsonMatch = cleanOutput.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    cleanOutput = jsonMatch[0];
+                }
+
+                // Try to close incomplete JSON if needed
+                let braceCount = (cleanOutput.match(/\{/g) || []).length;
+                let closingBraces = (cleanOutput.match(/\}/g) || []).length;
+                if (braceCount > closingBraces) {
+                    cleanOutput += '}'.repeat(braceCount - closingBraces);
                 }
 
                 const parsed = JSON.parse(cleanOutput);
@@ -264,10 +215,56 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
                     throw new Error('Missing or invalid summary field');
                 }
 
+                // Handle metrics: ensure it's an object with 7 pillars, filter out extras
+                let metrics = parsed.metrics || {};
+
+                // If metrics is an array, convert to object
+                if (Array.isArray(metrics)) {
+                    console.warn(`Developer Reviewer: Metrics returned as array, converting to object`);
+                    metrics = {};
+                }
+
+                // Filter metrics to ONLY the 7 pillars
+                const filteredMetrics: Record<string, number> = {};
+                for (const pillar of SEVEN_PILLARS) {
+                    if (pillar in metrics && typeof metrics[pillar] === 'number') {
+                        filteredMetrics[pillar] = metrics[pillar];
+                    } else {
+                        // Use default value if missing
+                        filteredMetrics[pillar] = pillar === 'codeQuality' || pillar === 'functionalImpact' || pillar === 'testCoverage' || pillar === 'codeComplexity' ? 5 : 0;
+                    }
+                }
+
                 return {
                     summary: parsed.summary.trim(),
                     details: (parsed.details || '').trim(),
-                    metrics: parsed.metrics || {
+                    metrics: filteredMetrics,
+                };
+            } catch (error) {
+                console.warn(`Developer Reviewer: Failed to parse LLM output: ${error instanceof Error ? error.message : String(error)}`);
+                console.warn(`Developer Reviewer: Raw output (first 500 chars): ${output.substring(0, 500)}`);
+
+                // fallback to string summary (if output is long enough)
+                if (output.length > 10) {
+                    return {
+                        summary: output.substring(0, 500),
+                        details: '',
+                        metrics: {
+                            codeQuality: 5,
+                            functionalImpact: 5,
+                            idealTimeHours: 0,
+                            testCoverage: 5,
+                            codeComplexity: 5,
+                            actualTimeHours: 0,
+                            technicalDebtHours: 0,
+                        },
+                    };
+                }
+
+                return {
+                    summary: '',
+                    details: 'Failed to parse LLM response',
+                    metrics: {
                         codeQuality: 5,
                         functionalImpact: 5,
                         idealTimeHours: 0,
@@ -276,23 +273,6 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
                         actualTimeHours: 0,
                         technicalDebtHours: 0,
                     },
-                };
-            } catch (error) {
-                console.warn(`Developer Reviewer: Failed to parse LLM output: ${error instanceof Error ? error.message : String(error)}`);
-
-                // fallback to string summary (if output is long enough)
-                if (output.length > 10) {
-                    return {
-                        summary: output.substring(0, 500),
-                        details: '',
-                        metrics: { codeQuality: 5 },
-                    };
-                }
-
-                return {
-                    summary: '',
-                    details: 'Failed to parse LLM response',
-                    metrics: {},
                 };
             }
         }
@@ -306,5 +286,98 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
         if (combined.includes('author') || combined.includes('developer')) return 'Developer';
         if (combined.includes('architect')) return 'Senior Architect';
         return 'Team Member';
+    }
+
+    /**
+     * Self-evaluate analysis completeness from Developer Reviewer perspective
+     * Focus: Code quality assessment and actionable review feedback
+     */
+    protected evaluateAnalysis(result: AgentResult): { clarityScore: number; missingInformation: string[] } {
+        const summary = (result.summary || '').toLowerCase();
+        const details = (result.details || '').toLowerCase();
+        const metrics = result.metrics || {};
+
+        let clarityScore = 50;
+        const gaps: string[] = [];
+
+        // Check if code quality is well-justified with examples
+        if (typeof metrics.codeQuality === 'number') {
+            const hasQualityFeedback = summary.includes('code') || details.includes('readability') || details.includes('maintainability') || details.includes('pattern');
+            if (!hasQualityFeedback) {
+                gaps.push('Code quality assessment should include specific examples or feedback on readability/maintainability');
+            } else {
+                clarityScore += 12;
+            }
+        } else {
+            gaps.push('Code quality score is missing');
+        }
+
+        // Check if complexity assessment is clear
+        if (typeof metrics.codeComplexity === 'number') {
+            const hasComplexityAnalysis = details.includes('complex') || details.includes('simple') || details.includes('understandable');
+            if (details.length > 150 && !hasComplexityAnalysis) {
+                gaps.push('Complexity analysis should explain difficulty of understanding the code');
+            } else {
+                clarityScore += 10;
+            }
+        }
+
+        // Check if specific improvement suggestions are provided
+        if (summary.length > 100 && details.length > 250) {
+            const hasSuggestions = details.includes('suggest') || details.includes('improve') || details.includes('consider') || details.includes('could');
+            if (!hasSuggestions) {
+                gaps.push('Review should include specific suggestions for improvement or praise for good patterns');
+            } else {
+                clarityScore += 12;
+            }
+        }
+
+        // Check all required metrics are present
+        const requiredMetrics = ['codeQuality', 'functionalImpact', 'idealTimeHours', 'testCoverage', 'codeComplexity', 'actualTimeHours', 'technicalDebtHours'];
+        const missingMetrics = requiredMetrics.filter(m => !(m in metrics));
+        if (missingMetrics.length > 0) {
+            gaps.push(`Missing metric scores: ${missingMetrics.join(', ')}`);
+        } else {
+            clarityScore += 8;
+        }
+
+        // Bonus for comprehensive analysis
+        if (details.length > 400) {
+            clarityScore += 15;
+        }
+
+        return {
+            clarityScore: Math.min(100, clarityScore),
+            missingInformation: gaps,
+        };
+    }
+
+    /**
+     * Generate self-questions for refinement from Developer Reviewer perspective
+     */
+    protected generateSelfQuestions(result: AgentResult, gaps: string[]): string[] {
+        const questions: string[] = [];
+
+        // Ask about code quality details
+        if (gaps.some(g => g.includes('quality') || g.includes('readability'))) {
+            questions.push('Can I provide more specific feedback on code patterns, naming conventions, or architectural decisions?');
+        }
+
+        // Ask about complexity analysis
+        if (gaps.some(g => g.includes('complexity') || g.includes('understandable'))) {
+            questions.push('Are there particularly complex sections that would benefit from additional explanation or refactoring?');
+        }
+
+        // Ask about improvement suggestions
+        if (gaps.some(g => g.includes('suggest') || g.includes('improvement'))) {
+            questions.push('What specific improvements would enhance code quality, maintainability, or performance?');
+        }
+
+        // Generic refinement question
+        if (questions.length === 0 && gaps.length > 0) {
+            questions.push('How can I provide more actionable code review feedback to improve quality assessment?');
+        }
+
+        return questions;
     }
 }

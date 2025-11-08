@@ -1,6 +1,8 @@
 // src/config/config.interface.ts
 // Commit Evaluator AppConfig interface (matches architecture-doc-generator pattern)
 
+import { AnalysisDepthMode } from '../types/agent.types';
+
 export interface AppConfig {
     apiKeys: {
         anthropic: string;
@@ -16,9 +18,18 @@ export interface AppConfig {
     };
     agents: {
         enabled: string[];
-        retries: number; // Discussion rounds
+        retries: number; // Max discussion rounds between agents (for backwards compatibility)
         timeout: number;
-        clarityThreshold?: number; // Stop early if convergence detected (0-1)
+        clarityThreshold?: number; // Stop early if team convergence detected (0-1)
+
+        // Discussion rounds configuration (more explicit control)
+        minRounds?: number; // Minimum rounds before allowing early convergence stop (default: 2)
+        maxRounds?: number; // Maximum discussion rounds (default: 3, overrides retries if set)
+
+        // Agent self-iteration depth configuration
+        depthMode?: AnalysisDepthMode; // 'fast' | 'normal' | 'deep'
+        maxInternalIterations?: number; // Max self-refinement loops per agent
+        internalClarityThreshold?: number; // Clarity target for agent to stop iterating (0-100)
     };
     output: {
         directory: string;

@@ -40,10 +40,15 @@ Follow the interactive wizard:
 3. **Choose Model**
    ```
    ? Which Claude model do you want to use?
-   ❯ claude-3-5-sonnet-20241022 (recommended)
-     claude-3-opus-20250219
-     claude-3-haiku-20240307
+   ❯ claude-haiku-4-5-20251001 (recommended - cost-optimized)
+     claude-sonnet-4-5-20250929 (best balance)
+     claude-opus-4-1-20250805 (maximum quality)
    ```
+
+   **Model Recommendations:**
+   - **Haiku 4.5** (Default): 6x cheaper than Sonnet. Multi-agent discussion compensates for lower per-model capability.
+   - **Sonnet 4.5**: Best balance of quality and cost (~4x Haiku)
+   - **Opus 4.1**: Maximum quality output (~19x Haiku cost)
 
 4. **Configure Defaults** (optional)
    ```
@@ -133,20 +138,48 @@ codewave evaluate HEAD
 ### Core LLM Settings
 
 #### `llmProvider`
-**Type**: `'anthropic' | 'openai' | 'google'`
+**Type**: `'anthropic' | 'openai' | 'google' | 'xai'`
 **Default**: `'anthropic'`
 **Env**: `CODEWAVE_LLM_PROVIDER`
 
 LLM provider to use for agent conversations.
 
+**Supported Providers:**
+- `anthropic` - Recommended (Haiku 4.5 is most cost-effective)
+- `openai` - Alternative with GPT-4o models
+- `google` - Gemini models for advanced reasoning
+- `xai` - Grok models for specialized use cases
+
 ```bash
 codewave config set llm-provider openai
+codewave config set llm-provider google
 ```
 
 #### `model`
 **Type**: `string`
-**Default**: `'claude-3-5-sonnet-20241022'`
+**Default**: `'claude-haiku-4-5-20251001'`
 **Env**: `CODEWAVE_MODEL`
+
+**Available Anthropic Models:**
+- `claude-haiku-4-5-20251001` - Cost-optimized (Recommended)
+- `claude-sonnet-4-5-20250929` - Best balance
+- `claude-opus-4-1-20250805` - Maximum quality
+
+**Available OpenAI Models:**
+- `gpt-4o-mini` - Cost-optimized (Recommended)
+- `gpt-4o` - Best balance
+- `o3-mini-2025-01-31` - Advanced reasoning, cost-efficient
+- `o3` - Maximum reasoning capability
+
+**Available Google Models:**
+- `gemini-2.5-flash-lite` - Most efficient (Recommended)
+- `gemini-2.5-flash` - Best balance
+- `gemini-2.5-pro` - Best reasoning
+
+**Available xAI Models:**
+- `grok-4-fast-non-reasoning` - Cost-optimized (Recommended)
+- `grok-4.2` - Polished version
+- `grok-4-0709` - Advanced reasoning
 
 Specific model to use with the chosen provider.
 

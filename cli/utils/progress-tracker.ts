@@ -18,6 +18,8 @@ interface CommitProgress {
     outputTokens?: number;
     totalCost?: number;
     lastDisplayLine?: string; // Track last displayed line to detect changes
+    internalIterations?: number; // Agent self-refinement iterations
+    clarityScore?: number; // Final clarity score (0-100)
 }
 
 export class ProgressTracker {
@@ -100,13 +102,20 @@ export class ProgressTracker {
             ? `$${(commit.totalCost).toFixed(4)}`.padEnd(10)
             : '─'.padEnd(10);
         const barLength = 20;
-        const filledBars = Math.round((commit.progress / 100) * barLength);
-        const emptyBars = barLength - filledBars;
+        const filledBars = Math.max(0, Math.round((commit.progress / 100) * barLength));
+        const emptyBars = Math.max(0, barLength - filledBars);
         const bar = '█'.repeat(filledBars) + '░'.repeat(emptyBars);
         const percentage = `${commit.progress}%`.padStart(3);
         const status = this.getStatusText(commit.status).padEnd(12);
 
-        return `${shortHash} | ${author} | ${tokens} | ${cost} | ${bar} ${percentage} | ${status}`;
+        // Add internal iterations display if available
+        let iterationInfo = '';
+        if (commit.internalIterations !== undefined && commit.internalIterations > 0) {
+            const clarity = commit.clarityScore !== undefined ? ` clarity:${commit.clarityScore}%` : '';
+            iterationInfo = ` | 🔄 ${commit.internalIterations} iter${clarity}`;
+        }
+
+        return `${shortHash} | ${author} | ${tokens} | ${cost} | ${bar} ${percentage} | ${status}${iterationInfo}`;
     }
 
     /**
@@ -123,6 +132,8 @@ export class ProgressTracker {
             inputTokens?: number;
             outputTokens?: number;
             totalCost?: number;
+            internalIterations?: number;
+            clarityScore?: number;
         },
     ) {
         const commit = this.commits.get(commitHash);
@@ -143,6 +154,8 @@ export class ProgressTracker {
         if (update.currentStep !== undefined) commit.currentStep = update.currentStep;
         if (update.totalSteps !== undefined) commit.totalSteps = update.totalSteps;
         if (update.currentStepIndex !== undefined) commit.currentStepIndex = update.currentStepIndex;
+        if (update.internalIterations !== undefined) commit.internalIterations = update.internalIterations;
+        if (update.clarityScore !== undefined) commit.clarityScore = update.clarityScore;
 
         // Update token and cost tracking
         if (update.inputTokens !== undefined) {

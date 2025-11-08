@@ -3,7 +3,7 @@
 
 import { AgentRegistry } from '../../src/agents/agent-registry';
 import { BusinessAnalystAgent } from '../../src/agents/business-analyst-agent';
-import { QAEngineerAgent } from '../../src/agents/qa-engineer-agent';
+import { SDETAgent } from '../../src/agents/sdet-agent';
 import { DeveloperAuthorAgent } from '../../src/agents/developer-author-agent';
 import { SeniorArchitectAgent } from '../../src/agents/senior-architect-agent';
 import { DeveloperReviewerAgent } from '../../src/agents/developer-reviewer-agent';
@@ -35,7 +35,7 @@ export function generateTimestamp(): string {
 export function createAgentRegistry(config: AppConfig): AgentRegistry {
     const agentRegistry = new AgentRegistry();
     agentRegistry.register(new BusinessAnalystAgent(config));
-    agentRegistry.register(new QAEngineerAgent(config));
+    agentRegistry.register(new SDETAgent(config));
     agentRegistry.register(new DeveloperAuthorAgent(config));
     agentRegistry.register(new SeniorArchitectAgent(config));
     agentRegistry.register(new DeveloperReviewerAgent(config));
@@ -52,6 +52,7 @@ export interface EvaluationMetadata {
     commitMessage?: string;
     timestamp?: string;
     source?: string; // 'commit', 'staged', 'current', 'file'
+    developerOverview?: string;
 }
 
 /**
@@ -62,6 +63,7 @@ export interface SaveReportsOptions {
     diff: string;
     agentResults: AgentResult[];
     metadata?: EvaluationMetadata;
+    developerOverview?: string;
 }
 
 /**
@@ -75,7 +77,7 @@ export interface SaveReportsOptions {
  * - history.json (tracks re-evaluations)
  */
 export async function saveEvaluationReports(options: SaveReportsOptions): Promise<void> {
-    const { outputDir, diff, agentResults, metadata = {} } = options;
+    const { outputDir, diff, agentResults, metadata = {}, developerOverview } = options;
 
     // Ensure output directory exists
     await fs.mkdir(outputDir, { recursive: true });
@@ -93,6 +95,7 @@ export async function saveEvaluationReports(options: SaveReportsOptions): Promis
             commitMessage: metadata.commitMessage,
             source: metadata.source,
         },
+        developerOverview: developerOverview || null,
         agents: agentResults,
     };
     await fs.writeFile(
@@ -110,6 +113,7 @@ export async function saveEvaluationReports(options: SaveReportsOptions): Promis
             commitMessage: metadata.commitMessage,
             commitDate: metadata.commitDate,
             timestamp: metadata.timestamp || new Date().toISOString(),
+            developerOverview,
         }
     );
 
@@ -131,7 +135,12 @@ export async function saveEvaluationReports(options: SaveReportsOptions): Promis
     await fs.writeFile(path.join(outputDir, 'summary.txt'), summary);
 
     // 6. Update evaluation index
-    await updateEvaluationIndex(outputDir, metadata);
+    try {
+        await updateEvaluationIndex(outputDir, metadata);
+    } catch (indexError) {
+        console.error('Failed to update evaluation index:', indexError instanceof Error ? indexError.message : String(indexError));
+        throw indexError; // Re-throw to propagate the error
+    }
 }
 
 /**
@@ -1155,4 +1164,54 @@ ${commits.map(item => {
 </html>`;
 
     await fs.writeFile(authorPagePath, html);
+}
+
+/**
+ * Build the index URL for cross-platform access
+ */
+export function buildIndexUrl(): string {
+    const indexPath = path.join(process.cwd(), '.evaluated-commits', 'index.html');
+    const normalizedPath = indexPath.replace(/\\/g, '/');
+    return process.platform === 'win32'
+        ? `file:///${normalizedPath}`
+        : `file://${normalizedPath}`;
+}
+
+/**
+ * Print completion message for evaluate command (single commit)
+ */
+export function printEvaluateCompletionMessage(outputDir: string): void {
+    const chalk = require('chalk').default;
+
+    console.log(chalk.green(`\n✅ Evaluation complete!`));
+    console.log(chalk.cyan(`📁 Output directory: ${chalk.bold(outputDir)}`));
+    console.log(chalk.white(`   📄 report-enhanced.html  - 🌟 Conversation Timeline (Interactive)`));
+    console.log(chalk.white(`   📝 conversation.md       - 🌟 Markdown Transcript`));
+    console.log(chalk.gray(`   📄 report.html           - Standard HTML report`));
+    console.log(chalk.gray(`   📋 results.json          - Full JSON results`));
+    console.log(chalk.gray(`   📝 commit.diff           - Original diff`));
+    console.log(chalk.gray(`   📊 summary.txt           - Quick summary`));
+    console.log(chalk.yellow(`\n💡 Open ${chalk.bold('report-enhanced.html')} for interactive view or ${chalk.bold('conversation.md')} for transcript!\n`));
+
+    const indexUrl = buildIndexUrl();
+    console.log(chalk.cyan(`\n🌐 View all evaluations: ${indexUrl}\n`));
+}
+
+/**
+ * Print completion message for batch command (multiple commits)
+ */
+export function printBatchCompletionMessage(summary: { total: number; complete: number; failed: number }): void {
+    console.log(`${'='.repeat(80)}`);
+    console.log('✅ CodeWave analysis complete!');
+    console.log(`${'='.repeat(80)}\n`);
+    console.log(`📊 Summary:`);
+    console.log(`   Total commits: ${summary.total}`);
+    console.log(`   Successful: ${summary.complete}`);
+    console.log(`   Failed: ${summary.failed}`);
+    console.log(`\n📁 All evaluations saved to: .evaluated-commits/`);
+    console.log(`   🌐 index.html          - Master index of all evaluations`);
+    console.log(`   📂 [commit-hash]/      - Individual commit evaluations`);
+
+    const indexUrl = buildIndexUrl();
+    console.log(`\n💡 Open index: ${indexUrl}\n`);
 }

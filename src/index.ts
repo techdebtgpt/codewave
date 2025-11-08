@@ -1,6 +1,6 @@
 import { AgentRegistry } from './agents/agent-registry';
 import { BusinessAnalystAgent } from './agents/business-analyst-agent';
-import { QAEngineerAgent } from './agents/qa-engineer-agent';
+import { SDETAgent } from './agents/sdet-agent';
 import { DeveloperAuthorAgent } from './agents/developer-author-agent';
 import { SeniorArchitectAgent } from './agents/senior-architect-agent';
 import { DeveloperReviewerAgent } from './agents/developer-reviewer-agent';
@@ -25,7 +25,7 @@ import { loadConfig, configExists } from './config/config-loader';
     const agentRegistry = new AgentRegistry();
     // Register all 5 conversation agents
     agentRegistry.register(new BusinessAnalystAgent(config));
-    agentRegistry.register(new QAEngineerAgent(config));
+    agentRegistry.register(new SDETAgent(config));
     agentRegistry.register(new DeveloperAuthorAgent(config));
     agentRegistry.register(new SeniorArchitectAgent(config));
     agentRegistry.register(new DeveloperReviewerAgent(config));

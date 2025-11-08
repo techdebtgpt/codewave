@@ -13,6 +13,7 @@ import {
     createEvaluationDirectory,
     generateBatchIdentifier,
     EvaluationMetadata,
+    printBatchCompletionMessage,
 } from '../utils/shared.utils';
 import { ProgressTracker } from '../utils/progress-tracker';
 
@@ -59,6 +60,9 @@ export async function runBatchEvaluateCommand(args: string[]) {
     }
     validateConfig(config);
 
+    // Apply depth mode from CLI to config
+    config.agents.depthMode = (options.depth || 'normal') as 'fast' | 'normal' | 'deep';
+
     // Get commits to evaluate
     const commits = await getCommitsToEvaluate(options);
 
@@ -68,6 +72,13 @@ export async function runBatchEvaluateCommand(args: string[]) {
     }
 
     console.log(`📋 Found ${commits.length} commit${commits.length > 1 ? 's' : ''} to evaluate\n`);
+
+    const depthModeLabel = {
+        'fast': '⚡ Fast (minimal refinement)',
+        'normal': '⚙️  Normal (balanced)',
+        'deep': '🔍 Deep (thorough analysis)'
+    };
+    console.log(`📊 Analysis depth: ${depthModeLabel[config.agents.depthMode]}\n`);
 
     console.log(`📁 Evaluating commits into: .evaluated-commits/\n`);
 
@@ -160,7 +171,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
                 let lastRoundReported = -1; // Track last round to avoid duplicate updates
 
                 // Evaluate commit with metadata for better logging and progress tracking
-                const agentResults = await orchestrator.evaluateCommit(
+                const evaluationResult = await orchestrator.evaluateCommit(
                     {
                         commitDiff: diff,
                         filesChanged,
@@ -209,10 +220,14 @@ export async function runBatchEvaluateCommand(args: string[]) {
                     },
                 );
 
-                // Create evaluation directory using commit hash
-                const commitOutputDir = await createEvaluationDirectory(commit.hash);
+                // Extract agent results and metadata from evaluation result
+                const agentResults = evaluationResult.agentResults || [];
 
-                // Prepare metadata
+                // Create evaluation directory using short commit hash (first 8 chars)
+                const shortHash = commit.hash.substring(0, 8);
+                const commitOutputDir = await createEvaluationDirectory(shortHash);
+
+                // Prepare metadata with developer overview
                 const metadata: EvaluationMetadata = {
                     timestamp: new Date().toISOString(),
                     commitHash: commit.hash,
@@ -220,6 +235,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
                     commitMessage: commit.message,
                     commitDate: commit.date,
                     source: 'batch',
+                    developerOverview: evaluationResult.developerOverview, // Include developer overview
                 };
 
                 // Save all reports using shared utility
@@ -233,7 +249,26 @@ export async function runBatchEvaluateCommand(args: string[]) {
                 // Calculate aggregate metrics
                 const metrics = calculateAggregateMetrics(agentResults);
 
-                // Mark as complete with final token/cost info
+                // Extract internal iteration metrics from agent results
+                let totalInternalIterations = 0;
+                let avgClarityScore = 0;
+                let agentCount = 0;
+
+                agentResults.forEach((result: any) => {
+                    if (result.internalIterations !== undefined) {
+                        totalInternalIterations += result.internalIterations;
+                        agentCount++;
+                    }
+                    if (result.clarityScore !== undefined) {
+                        avgClarityScore += result.clarityScore;
+                    }
+                });
+
+                if (agentCount > 0) {
+                    avgClarityScore = Math.round(avgClarityScore / agentCount);
+                }
+
+                // Mark as complete with final token/cost info and internal iteration metrics
                 progressTracker.updateProgress(commit.hash, {
                     status: 'complete',
                     progress: 100,
@@ -241,6 +276,8 @@ export async function runBatchEvaluateCommand(args: string[]) {
                     inputTokens: commitTokensInput,
                     outputTokens: commitTokensOutput,
                     totalCost: commitCost,
+                    internalIterations: agentCount > 0 ? totalInternalIterations : undefined,
+                    clarityScore: agentCount > 0 ? avgClarityScore : undefined,
                 });
 
                 successCount++;
@@ -253,11 +290,19 @@ export async function runBatchEvaluateCommand(args: string[]) {
                 };
 
             } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                const errorStack = error instanceof Error ? error.stack : '';
+                // Log error to console even when suppressed
+                originalConsoleLog(`❌ Error evaluating ${commit.hash}: ${errorMsg}`);
+                if (errorStack) {
+                    originalConsoleLog(`Stack: ${errorStack.substring(0, 300)}`);
+                }
+
                 // Mark as failed
                 progressTracker.updateProgress(commit.hash, {
                     status: 'failed',
                     progress: 0,
-                    currentStep: `Error: ${error instanceof Error ? error.message.substring(0, 30) : 'Unknown'}`,
+                    currentStep: `Error: ${errorMsg.substring(0, 30)}`,
                 });
 
                 failureCount++;
@@ -283,25 +328,8 @@ export async function runBatchEvaluateCommand(args: string[]) {
     // Get summary from tracker
     const summary = progressTracker.getSummary();
 
-    // Print final summary
-    console.log(`${'='.repeat(80)}`);
-    console.log('✅ CodeWave analysis complete!');
-    console.log(`${'='.repeat(80)}\n`);
-    console.log(`📊 Summary:`);
-    console.log(`   Total commits: ${summary.total}`);
-    console.log(`   Successful: ${summary.complete}`);
-    console.log(`   Failed: ${summary.failed}`);
-    console.log(`\n📁 All evaluations saved to: .evaluated-commits/`);
-    console.log(`   🌐 index.html          - Master index of all evaluations`);
-    console.log(`   📂 [commit-hash]/      - Individual commit evaluations`);
-
-    // Cross-platform file:// URL (works on Windows, macOS, Linux)
-    const indexPath = path.join(process.cwd(), '.evaluated-commits', 'index.html');
-    const normalizedPath = indexPath.replace(/\\/g, '/');
-    const indexUrl = process.platform === 'win32'
-        ? `file:///${normalizedPath}`
-        : `file://${normalizedPath}`;
-    console.log(`\n💡 Open index: ${indexUrl}\n`);
+    // Print final summary using shared output function
+    printBatchCompletionMessage(summary);
 }
 
 function parseArguments(args: string[]): any {
@@ -311,6 +339,7 @@ function parseArguments(args: string[]): any {
         until: null,
         count: null,
         branch: 'HEAD',
+        depth: 'normal', // Default depth mode
     };
 
     for (let i = 0; i < args.length; i++) {
@@ -333,6 +362,15 @@ function parseArguments(args: string[]): any {
             case '--branch':
             case '-b':
                 options.branch = args[++i];
+                break;
+            case '--depth':
+            case '-d':
+                const depthValue = args[++i]?.toLowerCase();
+                if (['fast', 'normal', 'deep'].includes(depthValue)) {
+                    options.depth = depthValue;
+                } else {
+                    console.warn(`⚠️  Invalid depth mode: ${depthValue}. Use 'fast', 'normal', or 'deep'. Defaulting to 'normal'.`);
+                }
                 break;
             default:
                 console.warn(`⚠️  Unknown option: ${arg}`);

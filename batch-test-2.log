@@ -1,0 +1,52 @@
+🌊 CodeWave: Starting batch commit analysis...
+
+📋 Found 2 commits to evaluate
+
+📊 Analysis depth: ⚙️  Normal (balanced)
+
+📁 Evaluating commits into: .evaluated-commits/
+
+🔍 LangSmith tracing enabled: commit-evaluator-conversation
+
+[1m[36mParallel Commit Evaluation Progress:[0m
+
+eafb918   | rqirici          | ─/─                | ─          | ░░░░░░░░░░░░░░░░░░░░  0% | Pending     
+52c8ab9   | rqirici          | ─/─                | ─          | ░░░░░░░░░░░░░░░░░░░░  0% | Pending     
+eafb918   | rqirici          | ─/─                | ─          | ░░░░░░░░░░░░░░░░░░░░  0% | Analyzing...
+52c8ab9   | rqirici          | ─/─                | ─          | ░░░░░░░░░░░░░░░░░░░░  0% | Analyzing...
+52c8ab9   | rqirici          | ─/─                | ─          | ████████████████████ 100% | Indexing... 
+eafb918   | rqirici          | ─/─                | ─          | ██████████░░░░░░░░░░ 50% | Analyzing...
+52c8ab9   | rqirici          | ─/─                | ─          | ██████████░░░░░░░░░░ 50% | Analyzing...
+
+52c8ab9   | rqirici          | 12,640/2,718       | $0.0210    | ████████████████████ 100% | Analyzing...
+
+eafb918   | rqirici          | 48,292/8,314       | $0.0719    | ████████████████████ 100% | Analyzing...
+
+52c8ab9   | rqirici          | 25,016/7,901       | $0.0516    | ██████████████████████████████ 150% | Analyzing...
+52c8ab9   | rqirici          | 25,016/7,901       | $0.0516    | ████████████████████ 100% | ✅ Complete   | 🔄 10 iter clarity:88%
+Developer Author: Failed to parse LLM output: Unexpected non-whitespace character after JSON at position 1032 (line 14 column 1)
+Developer Author: Raw output (first 500 chars): ```json
+{
+  "summary": "Solid feature delivery with realistic time investment. The 6.5-8 hour range reflects actual complexity of replacing spinner infrastructure, building history tracking, and implementing interactive UI components. Team consensus on quality is strong.",
+  "details": "Actual time of 8 hours is justified: spinner replacement required careful stderr handling for Docker compatibility (1.5h), history schema design and serialization (2h), metrics snapshot capture across evaluation 
+
+eafb918   | rqirici          | 60,473/12,079      | $0.0967    | ██████████████████████████████ 150% | Analyzing...
+eafb918   | rqirici          | 60,473/12,079      | $0.0967    | ████████████████████ 100% | ✅ Complete   | 🔄 11 iter clarity:89%
+
+[1m[36mTotal:[0m 85,489 input | 19,980 output | $0.1483
+
+================================================================================
+✅ CodeWave analysis complete!
+================================================================================
+
+📊 Summary:
+   Total commits: 2
+   Successful: 2
+   Failed: 0
+
+📁 All evaluations saved to: .evaluated-commits/
+   🌐 index.html          - Master index of all evaluations
+   📂 [commit-hash]/      - Individual commit evaluations
+
+💡 Open index: file:///D:/Projekte/Ritech/TechDebt/codewave/.evaluated-commits/index.html
+

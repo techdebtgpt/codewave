@@ -16,6 +16,7 @@ import { formatTokenUsage, formatCost } from '../utils/token-tracker';
 export class CommitEvaluationOrchestrator {
     private config: AppConfig;
     private graph: ReturnType<typeof createCommitEvaluationGraph>;
+    private lastDeveloperOverview?: string; // Store for external access
 
     constructor(
         private readonly agentRegistry: AgentRegistry,
@@ -38,10 +39,17 @@ export class CommitEvaluationOrchestrator {
     }
 
     /**
+     * Get the last generated developer overview
+     */
+    getDeveloperOverview(): string | undefined {
+        return this.lastDeveloperOverview;
+    }
+
+    /**
      * Evaluate a commit using LangGraph workflow with streaming support
      * @param context Input context with commitDiff and filesChanged
      * @param options Optional configuration (streaming, thread_id)
-     * @returns Array of agent results
+     * @returns Object containing agent results and evaluation metadata
      */
     async evaluateCommit(
         context: AgentContext,
@@ -50,7 +58,7 @@ export class CommitEvaluationOrchestrator {
             threadId?: string;
             onProgress?: (state: any) => void;
         },
-    ): Promise<AgentResult[]> {
+    ): Promise<{ agentResults: AgentResult[]; developerOverview?: string; [key: string]: any }> {
         console.log('\n🚀 Starting commit evaluation with LangGraph workflow...');
 
         const startTime = Date.now();
@@ -89,12 +97,14 @@ export class CommitEvaluationOrchestrator {
         const initialState = {
             commitDiff: context.commitDiff,
             filesChanged: context.filesChanged || [],
+            developerOverview: context.developerOverview, // Include developer overview
             vectorStore: context.vectorStore, // Pass vector store through graph state
             commitHash: context.commitHash, // NEW: For progress logging
             commitIndex: context.commitIndex, // NEW: For batch progress
             totalCommits: context.totalCommits, // NEW: For batch progress
             currentRound: 0,
-            maxRounds: this.config.agents.retries || 3, // Changed to 3 rounds: initial → concerns → validation
+            maxRounds: this.config.agents.maxRounds || this.config.agents.retries || 3, // Use maxRounds if set, fallback to retries for backwards compatibility
+            minRounds: this.config.agents.minRounds || 2, // Minimum rounds before allowing early convergence (default: 2)
             agentResults: [],
             previousRoundResults: [],
             convergenceScore: undefined,
@@ -163,12 +173,27 @@ export class CommitEvaluationOrchestrator {
             console.log(`   💰 ${formatTokenUsage(tokenUsage)} | ${formatCost(finalState.totalCost || 0)}`);
         }
 
+        // Store developer overview from graph execution for later retrieval
+        this.lastDeveloperOverview = finalState?.developerOverview;
+
         // Clean up vector store if it was used
         if (context.vectorStore) {
             context.vectorStore.clear();
         }
 
-        return finalState?.agentResults || [];
+        // Return full state including agent results and developer overview
+        return {
+            agentResults: finalState?.agentResults || [],
+            developerOverview: finalState?.developerOverview,
+            currentRound: finalState?.currentRound,
+            maxRounds: finalState?.maxRounds,
+            converged: finalState?.converged,
+            convergenceScore: finalState?.convergenceScore,
+            pillarScores: finalState?.pillarScores,
+            totalInputTokens: finalState?.totalInputTokens,
+            totalOutputTokens: finalState?.totalOutputTokens,
+            totalCost: finalState?.totalCost,
+        };
     }
 
     /**

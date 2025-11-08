@@ -1,0 +1,262 @@
+// src/services/prompt-builder.service.ts
+// Centralized prompt building for consistent agent communication
+
+import { SEVEN_PILLARS, AgentWeights, AGENT_EXPERTISE_WEIGHTS } from '../constants/agent-weights.constants';
+
+export interface AgentPromptConfig {
+    role: string; // e.g., "Developer Author", "Senior Architect"
+    description: string; // DETAILED role description explaining context, responsibilities, and expertise
+    roleDetailedDescription?: string; // Optional detailed description (overrides default if provided)
+    agentKey: string; // Technical key (e.g., 'developer-author', 'senior-architect')
+    primaryMetrics: string[]; // Agent's primary expertise areas
+    secondaryMetrics: string[]; // Agent's secondary expertise areas
+}
+
+export interface MetricDefinition {
+    name: string;
+    displayName: string;
+    definition: string;
+    examples: string;
+    weight?: string; // e.g., "PRIMARY (45.5%)", "SECONDARY (16.7%)"
+}
+
+/**
+ * Centralized service for building consistent agent prompts
+ * Ensures all agents follow the same rules and structure
+ * Makes it easy to extend with new agents
+ */
+export class PromptBuilderService {
+    /**
+     * Get the metric definitions for an agent based on their expertise
+     */
+    static getMetricDefinitions(agentKey: string): Record<string, MetricDefinition> {
+        const weights = AGENT_EXPERTISE_WEIGHTS[agentKey];
+        if (!weights) {
+            throw new Error(`Unknown agent: ${agentKey}`);
+        }
+
+        const definitions: Record<string, MetricDefinition> = {
+            functionalImpact: {
+                name: 'functionalImpact',
+                displayName: 'Functional Impact',
+                definition: 'User-facing impact and business value of the implementation',
+                examples: '9-10: Major feature affecting many users\n5-6: Moderate feature or improvement\n1-2: Internal change, minimal user impact',
+                weight: this.getWeightLabel(weights.functionalImpact, 'functionalImpact'),
+            },
+            idealTimeHours: {
+                name: 'idealTimeHours',
+                displayName: 'Ideal Time Hours',
+                definition: 'How long this SHOULD have taken ideally (in hours)',
+                examples: 'Compare against actual time spent - was it efficient?',
+                weight: this.getWeightLabel(weights.idealTimeHours, 'idealTimeHours'),
+            },
+            testCoverage: {
+                name: 'testCoverage',
+                displayName: 'Test Coverage',
+                definition: 'Quality and extent of test automation (1-10)',
+                examples: '9-10: Comprehensive tests written\n5-6: Basic tests covered\n1-2: Minimal or no tests',
+                weight: this.getWeightLabel(weights.testCoverage, 'testCoverage'),
+            },
+            codeQuality: {
+                name: 'codeQuality',
+                displayName: 'Code Quality',
+                definition: 'Code cleanliness, best practices, maintainability (1-10)',
+                examples: '9-10: Very clean, well-structured code\n5-6: Acceptable quality, some shortcuts\n1-2: Quick-and-dirty implementation',
+                weight: this.getWeightLabel(weights.codeQuality, 'codeQuality'),
+            },
+            codeComplexity: {
+                name: 'codeComplexity',
+                displayName: 'Code Complexity',
+                definition: 'Complexity of implementation (1-10, lower is better)',
+                examples: '1-2: Simple, straightforward solution\n5-6: Moderate complexity needed\n9-10: Complex implementation required',
+                weight: this.getWeightLabel(weights.codeComplexity, 'codeComplexity'),
+            },
+            actualTimeHours: {
+                name: 'actualTimeHours',
+                displayName: 'Actual Time Hours',
+                definition: 'How much time was ACTUALLY spent implementing this change (in hours)',
+                examples: '0.5-1h: Quick fixes, simple changes\n1-4h: Small features, straightforward implementations\n5-16h: Moderate features, some complexity\n17-40h: Significant features, substantial work\n40h+: Large-scale changes, major effort',
+                weight: this.getWeightLabel(weights.actualTimeHours, 'actualTimeHours'),
+            },
+            technicalDebtHours: {
+                name: 'technicalDebtHours',
+                displayName: 'Technical Debt Hours',
+                definition: 'Technical debt introduced (hours of future work, can be negative if debt paid down)',
+                examples: 'Negative: Cleaned up existing issues\n0: Neutral, no debt added\nPositive: Shortcuts taken, future work needed',
+                weight: this.getWeightLabel(weights.technicalDebtHours, 'technicalDebtHours'),
+            },
+        };
+
+        return definitions;
+    }
+
+    /**
+     * Get weight label for a metric (e.g., "PRIMARY (45.5%)")
+     */
+    private static getWeightLabel(weight: number, metric: string): string {
+        const percent = (weight * 100).toFixed(1);
+        if (weight >= 0.40) {
+            return `PRIMARY (${percent}%)`;
+        } else if (weight >= 0.15) {
+            return `SECONDARY (${percent}%)`;
+        } else {
+            return `TERTIARY (${percent}%)`;
+        }
+    }
+
+    /**
+     * Build system prompt header with detailed role context
+     */
+    static buildSystemPromptHeader(config: AgentPromptConfig): string {
+        // Use roleDetailedDescription if provided, otherwise use the description field
+        const roleDescription = config.roleDetailedDescription || config.description;
+        return [
+            `# Role: ${config.role}`,
+            '',
+            roleDescription,
+            '',
+            `Your task in this code review discussion is to evaluate the commit across ALL 7 pillars, with special focus on your PRIMARY expertise: ${this.formatList(config.primaryMetrics)}.`,
+            '',
+        ].join('\n');
+    }
+
+    /**
+     * Build round-specific instructions
+     */
+    static buildRoundInstructions(roundPurpose: 'initial' | 'concerns' | 'validation'): string {
+        const instructions = {
+            initial: '## Round 1: Initial Analysis\nProvide your independent assessment based on the code changes.',
+            concerns: '## Round 2: Raise Concerns & Questions\nReview other agents\' scores. Raise questions if there are inconsistencies or concerns.',
+            validation: '## Round 3: Validation & Final Scores\nRespond to concerns and provide final refined scores.',
+        };
+
+        return instructions[roundPurpose];
+    }
+
+    /**
+     * Build scoring philosophy section
+     */
+    static buildScoringPhilosophy(agentKey: string): string {
+        const weights = AGENT_EXPERTISE_WEIGHTS[agentKey];
+        if (!weights) {
+            throw new Error(`Unknown agent: ${agentKey}`);
+        }
+
+        return [
+            '## Scoring Philosophy',
+            'You will score ALL 7 metrics below. Your expertise determines the weight of your opinion.',
+            `Your PRIMARY expertise (⭐) on ${this.getPrimaryMetricsText(agentKey)} carries highest weight in final calculation.`,
+            'Your secondary and tertiary opinions provide valuable perspectives.',
+            '',
+        ].join('\n');
+    }
+
+    /**
+     * Build metrics section with definitions
+     */
+    static buildMetricsSection(agentKey: string): string {
+        const defs = this.getMetricDefinitions(agentKey);
+        const metrics = SEVEN_PILLARS.map((pillar, idx) => {
+            const def = defs[pillar];
+            return [
+                `### ${idx + 1}. ${def.displayName}${idx === 0 ? ' - YOUR PRIMARY EXPERTISE (45.5% weight)' : ''}`,
+                `**Definition**: ${def.definition}`,
+                `- ${def.examples.replace(/\n/g, '\n- ')}`,
+                '',
+            ].join('\n');
+        });
+
+        return [
+            '## Metrics to Score',
+            '',
+            ...metrics,
+        ].join('\n');
+    }
+
+    /**
+     * Build output requirements section
+     */
+    static buildOutputRequirements(): string {
+        return [
+            '## Output Requirements',
+            '',
+            '**You MUST return ONLY valid JSON** in the following format (keep details under 500 chars):',
+            '',
+            '{',
+            '  "summary": "A conversational 2-3 sentence overview (max 150 chars)",',
+            '  "details": "Brief explanation of your analysis (max 400 chars). Be concise.",',
+            '  "metrics": {',
+            this.formatMetricsTemplate(),
+            '  }',
+            '}',
+            '',
+        ].join('\n');
+    }
+
+    /**
+     * Build important notes section
+     */
+    static buildImportantNotes(): string {
+        return [
+            '## Important Notes',
+            '- CRITICAL: Return ONLY the JSON object, no markdown, no extra text',
+            '- CRITICAL: Include ONLY these 7 metrics - no additional fields, no extra metrics',
+            '- ALL 7 metrics are required and MUST be the ONLY metrics in your response',
+            '- Be concise: prioritize metrics over lengthy explanations',
+            '- Respond to other team members\' concerns',
+            '',
+        ].join('\n');
+    }
+
+    /**
+     * Format metrics template for JSON output
+     */
+    private static formatMetricsTemplate(): string {
+        return SEVEN_PILLARS.map(pillar => {
+            const type = pillar === 'actualTimeHours' || pillar === 'idealTimeHours' || pillar === 'technicalDebtHours'
+                ? '<number in hours>'
+                : '<number 1-10>';
+            return `    "${pillar}": ${type},`;
+        }).join('\n');
+    }
+
+    /**
+     * Helper: Format list of items
+     */
+    private static formatList(items: string[]): string {
+        if (items.length === 0) return '';
+        if (items.length === 1) return items[0];
+        return items.slice(0, -1).join(', ') + ', and ' + items[items.length - 1];
+    }
+
+    /**
+     * Helper: Get primary metrics text
+     */
+    private static getPrimaryMetricsText(agentKey: string): string {
+        const weights = AGENT_EXPERTISE_WEIGHTS[agentKey];
+        const primary = SEVEN_PILLARS.filter(pillar => weights[pillar as keyof typeof weights] >= 0.40);
+        return this.formatList(primary);
+    }
+
+    /**
+     * Build complete system prompt
+     */
+    static buildCompleteSystemPrompt(
+        config: AgentPromptConfig,
+        roundPurpose: 'initial' | 'concerns' | 'validation' = 'initial',
+        previousContext?: string
+    ): string {
+        return [
+            this.buildSystemPromptHeader(config),
+            this.buildRoundInstructions(roundPurpose),
+            '',
+            this.buildScoringPhilosophy(config.agentKey),
+            this.buildMetricsSection(config.agentKey),
+            this.buildOutputRequirements(),
+            this.buildImportantNotes(),
+            previousContext ? `## Team Discussion So Far\n\n${previousContext}` : '',
+        ]
+            .filter(s => s && s.trim())
+            .join('\n');
+    }
+}

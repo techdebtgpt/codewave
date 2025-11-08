@@ -1,12 +1,12 @@
-// src/agents/developer-author-agent.ts
-// Developer (Commit Author) Agent - Explains implementation decisions and actual time spent
+// src/agents/sdet-agent.ts
+// SDET (Software Development Engineer in Test) Agent - Evaluates test automation, testing frameworks, and code quality of tests
 
 import { AppConfig } from '../config/config.interface';
 import { BaseAgentWorkflow } from './base-agent-workflow';
 import { AgentContext, AgentResult } from './agent.interface';
-import { PromptBuilderService } from '../services/prompt-builder.service';
 
-export class DeveloperAuthorAgent extends BaseAgentWorkflow {
+import { PromptBuilderService } from '../services/prompt-builder.service';
+export class SDETAgent extends BaseAgentWorkflow {
     private config: AppConfig;
 
     constructor(config: AppConfig) {
@@ -16,9 +16,9 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
 
     getMetadata() {
         return {
-            name: 'developer-author',
-            description: 'Explains implementation decisions, trade-offs, and estimates actual time spent',
-            role: 'Developer (Author)',
+            name: 'sdet',
+            description: 'Evaluates test automation quality, testing frameworks, and automated test infrastructure',
+            role: 'SDET (Test Automation Engineer)',
         };
     }
 
@@ -41,11 +41,12 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
 
         return PromptBuilderService.buildCompleteSystemPrompt(
             {
-                role: 'Developer (Author)',
-                description: 'Explains implementation decisions, trade-offs, and estimates actual time spent',
-                agentKey: 'developer-author',
-                primaryMetrics: ['actualTimeHours'],
-                secondaryMetrics: ['idealTimeHours', 'codeComplexity'],
+                role: 'SDET (Test Automation Engineer)',
+                description: 'Evaluates test automation quality, testing frameworks, and automated test infrastructure',
+                roleDetailedDescription: `You are an SDET (Software Development Engineer in Test) participating in a code review discussion. Your role is to evaluate the commit across ALL 7 pillars, with special focus on test automation quality and testing infrastructure. You assess the maturity of the testing framework, the quality and maintainability of test code, and identify test automation debt. Your PRIMARY expertise is in evaluating test coverage and automation framework quality, not just testing numbers.`,
+                agentKey: 'sdet',
+                primaryMetrics: ['testCoverage'],
+                secondaryMetrics: ['codeQuality', 'codeComplexity'],
             },
             roundPurpose,
             previousContext
@@ -66,11 +67,11 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
             const { RAGHelper } = await import('../utils/rag-helper.js');
             const rag = new RAGHelper(context.vectorStore);
 
-            // Ask implementation-focused questions (optimized for cost)
+            // Ask SDET-focused questions (optimized for cost)
             const queries = [
-                { q: 'Show all source code changes excluding tests and documentation', topK: 3 },
-                { q: 'What refactoring or code organization changes occurred?', topK: 2 },
-                { q: 'Show new features or functionality added', topK: 2 },
+                { q: 'Show me all test file changes and test automation code', topK: 3 },
+                { q: 'What testing frameworks or automation infrastructure was modified?', topK: 2 },
+                { q: 'Show test utilities, fixtures, and testing framework changes', topK: 2 },
             ];
 
             const results = await rag.queryMultiple(queries);
@@ -78,27 +79,26 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
 
             return [
                 developerContextSection,
-                '## Implementation Review (RAG Mode - Large Diff)',
+                '## Test Automation Review (RAG Mode - Large Diff)',
                 '',
                 `**Files Changed:** ${filesChanged}`,
                 '',
                 rag.getSummary(),
                 '',
-                '**Your Implementation - Relevant Code:**',
+                '**Relevant Code for Test Automation Analysis:**',
                 ragContext,
                 '',
-                'As the developer who wrote this code, please score ALL 7 metrics based on the relevant code shown above:',
-                '1. **Actual Time Hours** - YOUR PRIMARY EXPERTISE (how long you actually spent)',
+                'Please provide your analysis scoring ALL 7 metrics based on the relevant code shown above:',
+                '1. **Test Coverage** (1-10) - YOUR PRIMARY EXPERTISE (focus on automation quality)',
                 '2. **Functional Impact** (1-10) - your tertiary opinion',
-                '3. **Ideal Time Hours** - your secondary opinion (should it have been faster?)',
-                '4. **Test Coverage** (1-10) - your tertiary opinion (tests you wrote)',
-                '5. **Code Quality** (1-10) - your tertiary assessment',
-                '6. **Code Complexity** (1-10, lower is better) - your secondary opinion',
-                '7. **Technical Debt Hours** - your tertiary assessment (shortcuts taken?)',
+                '3. **Ideal Time Hours** - your tertiary estimate',
+                '4. **Code Quality** (1-10) - your secondary opinion (test framework perspective)',
+                '5. **Code Complexity** (1-10, lower is better) - your tertiary opinion',
+                '6. **Actual Time Hours** - your tertiary estimate',
+                '7. **Technical Debt Hours** - your tertiary assessment (test automation debt)',
                 '',
-                'Explain your implementation decisions, time breakdown, and respond to other team members.',
-                '',
-                'Respond conversationally, as if defending/explaining your work in a code review.',
+                'Focus on your expertise (test automation quality, testing frameworks) but provide scores for all pillars.',
+                'Respond conversationally and reference other team members\' points when relevant.',
             ].join('\n');
         }
 
@@ -111,7 +111,7 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
 
             return [
                 developerContextSection,
-                '## Implementation Review - Round 2: Raise Concerns & Questions',
+                '## Test Automation Review - Round 2: Raise Concerns & Questions',
                 '',
                 `**Files Changed:** ${filesChanged}`,
                 '',
@@ -119,15 +119,15 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
                 teamContext,
                 '',
                 '**Your Task:**',
-                '1. Review other agents\' scores - do they reflect the work you did?',
-                '2. Raise concerns about implementation-related scores:',
-                '   - Complexity → Senior Architect (was it really that complex?)',
-                '   - Code Quality → Developer Reviewer (did they miss context?)',
-                '   - Ideal Time → Business Analyst (did they account for challenges?)',
-                '   - Test Coverage → QA Engineer (did they notice your test approach?)',
-                '3. Defend your Actual Time score - explain what took time',
+                '1. Review other agents\' metrics from Round 1',
+                '2. Identify any scores that seem inconsistent with test automation quality',
+                '3. Raise specific concerns/questions to responsible agents:',
+                '   - Code Quality → Developer Reviewer (is test code quality considered?)',
+                '   - Code Complexity → Senior Architect (test infrastructure complexity?)',
+                '   - Functional Impact → Business Analyst (testability of functionality?)',
+                '4. Defend your Test Automation Quality score if you anticipate questions',
                 '',
-                'Include your refined scores based on team discussion.',
+                'Include your refined scores (can stay the same or adjust based on team context).',
             ].join('\n');
         }
 
@@ -139,7 +139,7 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
 
             return [
                 developerContextSection,
-                '## Implementation Review - Round 3: Validation & Final Scores',
+                '## Test Automation Review - Round 3: Validation & Final Scores',
                 '',
                 `**Files Changed:** ${filesChanged}`,
                 '',
@@ -147,39 +147,38 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
                 teamContext,
                 '',
                 '**Your Task:**',
-                '1. Address concerns about YOUR Actual Time score',
-                '2. Review responses from Architect, Reviewer, QA, BA',
-                '3. Adjust scores if their feedback changes your assessment',
+                '1. Address any concerns raised about YOUR Test Automation Quality score',
+                '2. Review responses from other agents about their metrics',
+                '3. Adjust your secondary/tertiary scores if new evidence convinces you',
                 '4. Provide FINAL refined scores for all 7 metrics',
                 '',
-                'This is the final round - clarify your implementation decisions.',
+                'This is the final round - be confident in your assessment.',
             ].join('\n');
         }
 
         // Fallback to full diff for small commits (no RAG needed)
         return [
             developerContextSection,
-            '## Implementation Review',
+            '## Test Automation Review',
             '',
             `**Files Changed:** ${filesChanged}`,
             '',
-            '**Your Implementation:**',
+            '**Commit Diff:**',
             '```',
             context.commitDiff,
             '```',
             '',
-            'As the developer who wrote this code, please score ALL 7 metrics:',
-            '1. **Actual Time Hours** - YOUR PRIMARY EXPERTISE (how long you actually spent)',
+            'Please provide your analysis scoring ALL 7 metrics:',
+            '1. **Test Coverage** (1-10) - YOUR PRIMARY EXPERTISE (focus on automation quality)',
             '2. **Functional Impact** (1-10) - your tertiary opinion',
-            '3. **Ideal Time Hours** - your secondary opinion (should it have been faster?)',
-            '4. **Test Coverage** (1-10) - your tertiary opinion (tests you wrote)',
-            '5. **Code Quality** (1-10) - your tertiary assessment',
-            '6. **Code Complexity** (1-10, lower is better) - your secondary opinion',
-            '7. **Technical Debt Hours** - your tertiary assessment (shortcuts taken?)',
+            '3. **Ideal Time Hours** - your tertiary estimate',
+            '4. **Code Quality** (1-10) - your secondary opinion (test framework perspective)',
+            '5. **Code Complexity** (1-10, lower is better) - your tertiary opinion',
+            '6. **Actual Time Hours** - your tertiary estimate',
+            '7. **Technical Debt Hours** - your tertiary assessment (test automation debt)',
             '',
-            'Explain your implementation decisions, time breakdown, and respond to other team members.',
-            '',
-            'Respond conversationally, as if defending/explaining your work in a code review.',
+            'Focus on your expertise (test automation quality, testing frameworks) but provide scores for all pillars.',
+            'Respond conversationally and reference other team members\' points when relevant.',
         ].join('\n');
     }
 
@@ -213,16 +212,16 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
 
                 // Validate required fields
                 if (!parsed.summary || typeof parsed.summary !== 'string') {
-                    console.warn(`Developer Author: Invalid summary in LLM response`);
+                    console.warn(`SDET: Invalid summary in LLM response`);
                     throw new Error('Missing or invalid summary field');
                 }
 
                 // Handle metrics: ensure it's an object with 7 pillars, filter out extras
                 let metrics = parsed.metrics || {};
 
-                // If metrics is an array, convert to object (this handles the Round 2 issue)
+                // If metrics is an array, convert to object
                 if (Array.isArray(metrics)) {
-                    console.warn(`Developer Author: Metrics returned as array, converting to object`);
+                    console.warn(`SDET: Metrics returned as array, converting to object`);
                     metrics = {};
                 }
 
@@ -233,7 +232,7 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
                         filteredMetrics[pillar] = metrics[pillar];
                     } else {
                         // Use default value if missing
-                        filteredMetrics[pillar] = pillar === 'actualTimeHours' ? 0 : 5;
+                        filteredMetrics[pillar] = pillar === 'testCoverage' || pillar === 'functionalImpact' || pillar === 'codeQuality' || pillar === 'codeComplexity' ? 5 : 0;
                     }
                 }
 
@@ -243,8 +242,8 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
                     metrics: filteredMetrics,
                 };
             } catch (error) {
-                console.warn(`Developer Author: Failed to parse LLM output: ${error instanceof Error ? error.message : String(error)}`);
-                console.warn(`Developer Author: Raw output (first 500 chars): ${output.substring(0, 500)}`);
+                console.warn(`SDET: Failed to parse LLM output: ${error instanceof Error ? error.message : String(error)}`);
+                console.warn(`SDET: Raw output (first 500 chars): ${output.substring(0, 500)}`);
 
                 // fallback to string summary (if output is long enough)
                 if (output.length > 10) {
@@ -252,12 +251,12 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
                         summary: output.substring(0, 500),
                         details: '',
                         metrics: {
-                            actualTimeHours: 0,
+                            testCoverage: 5,
                             functionalImpact: 5,
                             idealTimeHours: 0,
-                            testCoverage: 5,
                             codeQuality: 5,
                             codeComplexity: 5,
+                            actualTimeHours: 0,
                             technicalDebtHours: 0,
                         },
                     };
@@ -267,12 +266,12 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
                     summary: '',
                     details: 'Failed to parse LLM response',
                     metrics: {
-                        actualTimeHours: 0,
+                        testCoverage: 5,
                         functionalImpact: 5,
                         idealTimeHours: 0,
-                        testCoverage: 5,
                         codeQuality: 5,
                         codeComplexity: 5,
+                        actualTimeHours: 0,
                         technicalDebtHours: 0,
                     },
                 };
@@ -281,18 +280,9 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
         return super.parseLLMResult(output);
     }
 
-    private detectAgentRole(result: AgentResult): string {
-        const combined = (result.summary || '').toLowerCase() + (result.details || '').toLowerCase();
-        if (combined.includes('business') || combined.includes('functional')) return 'Business Analyst';
-        if (combined.includes('qa') || combined.includes('test')) return 'QA Engineer';
-        if (combined.includes('architect')) return 'Senior Architect';
-        if (combined.includes('reviewer')) return 'Code Reviewer';
-        return 'Team Member';
-    }
-
     /**
-     * Self-evaluate analysis completeness from Developer Author perspective
-     * Focus: Actual time estimates and implementation decisions clarity
+     * Self-evaluate analysis completeness from SDET perspective
+     * Focus: Test automation quality and testing infrastructure
      */
     protected evaluateAnalysis(result: AgentResult): { clarityScore: number; missingInformation: string[] } {
         const summary = (result.summary || '').toLowerCase();
@@ -302,49 +292,49 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
         let clarityScore = 50;
         const gaps: string[] = [];
 
-        // Check if actual time is well-justified
-        if (typeof metrics.actualTimeHours === 'number' && metrics.actualTimeHours >= 0) {
-            const hasTimeJustification = summary.includes('spent') || summary.includes('hour') || details.includes('implement') || details.includes('debug');
-            if (!hasTimeJustification) {
-                gaps.push('Actual time estimate needs clearer justification - what took the most time?');
+        // Check if test automation quality is well-justified
+        if (typeof metrics.testCoverage === 'number') {
+            const hasAutomationExplanation = summary.includes('automat') || details.includes('framework') || details.includes('test') || details.includes('infrastructure');
+            if (!hasAutomationExplanation) {
+                gaps.push('Test automation quality score lacks detailed explanation - what is the testing framework maturity?');
             } else {
-                clarityScore += 12;
+                clarityScore += 10;
             }
         } else {
-            gaps.push('Actual time hours is missing or invalid');
+            gaps.push('Test automation/coverage score is missing');
         }
 
-        // Check if implementation decisions are explained
-        if (summary.length > 100 && details.length > 250) {
-            const hasDecisions = details.includes('decision') || details.includes('approach') || details.includes('why') || details.includes('chose');
-            if (!hasDecisions) {
-                gaps.push('Implementation decisions and tradeoffs should be more explicit');
+        // Check if testing framework quality is clear
+        if (summary.length > 100 && details.length > 200) {
+            const hasFrameworkAnalysis = details.includes('framework') || details.includes('utilities') || details.includes('fixtures') || details.includes('infrastructure');
+            if (!hasFrameworkAnalysis) {
+                gaps.push('Testing framework quality should be more specific - test utilities, fixtures, maintainability?');
             } else {
-                clarityScore += 12;
+                clarityScore += 10;
             }
         }
 
-        // Check if challenges/roadblocks are mentioned
-        if (details.length > 200) {
-            const hasChallenges = details.includes('challenge') || details.includes('issue') || details.includes('problem') || details.includes('blocking');
-            if (!hasChallenges) {
-                gaps.push('What challenges or obstacles were encountered during implementation?');
+        // Check if test code quality is addressed
+        if (typeof metrics.codeQuality === 'number') {
+            const hasTestCodeQuality = details.includes('test code') || details.includes('test quality') || details.includes('maintainability');
+            if (details.length > 150 && !hasTestCodeQuality) {
+                gaps.push('Test code quality analysis should address test maintainability and reusability');
             } else {
                 clarityScore += 8;
             }
         }
 
         // Check all required metrics are present
-        const requiredMetrics = ['actualTimeHours', 'functionalImpact', 'idealTimeHours', 'testCoverage', 'codeQuality', 'codeComplexity', 'technicalDebtHours'];
+        const requiredMetrics = ['testCoverage', 'functionalImpact', 'idealTimeHours', 'codeQuality', 'codeComplexity', 'actualTimeHours', 'technicalDebtHours'];
         const missingMetrics = requiredMetrics.filter(m => !(m in metrics));
         if (missingMetrics.length > 0) {
             gaps.push(`Missing metric scores: ${missingMetrics.join(', ')}`);
         } else {
-            clarityScore += 8;
+            clarityScore += 10;
         }
 
         // Bonus for comprehensive analysis
-        if (details.length > 400) {
+        if (details.length > 350) {
             clarityScore += 15;
         }
 
@@ -355,31 +345,40 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
     }
 
     /**
-     * Generate self-questions for refinement from Developer Author perspective
+     * Generate self-questions for refinement from SDET perspective
      */
     protected generateSelfQuestions(result: AgentResult, gaps: string[]): string[] {
         const questions: string[] = [];
 
-        // Ask about time breakdown
-        if (gaps.some(g => g.includes('time'))) {
-            questions.push('Should I provide a clearer breakdown of how time was spent (coding, testing, debugging, deployment)?');
+        // Ask about test automation details
+        if (gaps.some(g => g.includes('automation') || g.includes('framework'))) {
+            questions.push('Can I be more specific about test automation framework maturity and infrastructure quality?');
         }
 
-        // Ask about implementation approach
-        if (gaps.some(g => g.includes('decision'))) {
-            questions.push('What were the key implementation decisions and why were alternative approaches rejected?');
+        // Ask about testing strategy
+        if (gaps.some(g => g.includes('strategy') || g.includes('utilities'))) {
+            questions.push('What testing infrastructure improvements or new utilities were introduced in this change?');
         }
 
-        // Ask about challenges
-        if (gaps.some(g => g.includes('challenge'))) {
-            questions.push('What unexpected challenges or technical difficulties did I encounter during implementation?');
+        // Ask about test code quality
+        if (gaps.some(g => g.includes('code quality') || g.includes('maintainability'))) {
+            questions.push('How maintainable and reusable is the test automation code? Are there better abstraction patterns?');
         }
 
         // Generic refinement question
         if (questions.length === 0 && gaps.length > 0) {
-            questions.push('How can I better explain the implementation details and decisions I made?');
+            questions.push('How can I provide more comprehensive analysis of test automation quality and testing infrastructure?');
         }
 
         return questions;
+    }
+
+    private detectAgentRole(result: AgentResult): string {
+        const combined = (result.summary || '').toLowerCase() + (result.details || '').toLowerCase();
+        if (combined.includes('business') || combined.includes('functional')) return 'Business Analyst';
+        if (combined.includes('architect')) return 'Senior Architect';
+        if (combined.includes('author') || combined.includes('developer')) return 'Developer Author';
+        if (combined.includes('reviewer') || combined.includes('code quality')) return 'Developer Reviewer';
+        return 'Team Member';
     }
 }

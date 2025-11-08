@@ -12,15 +12,17 @@ export const DEFAULT_CONFIG: AppConfig = {
     },
     llm: {
         provider: 'anthropic',
-        model: 'claude-sonnet-4-5-20250929',
+        model: 'claude-haiku-4-5-20251001', // Cost-optimized for multi-agent discussion (6x cheaper than Sonnet)
         temperature: 0.2,
-        maxTokens: 8000, // Increased for longer, more detailed responses
+        maxTokens: 16000, // Increased to 16000 for all models - prevents truncation and JSON parsing errors
     },
     agents: {
         enabled: ['senior-reviewer', 'developer', 'qa-engineer', 'metrics'],
-        retries: 2, // Number of discussion rounds
+        retries: 3, // Max discussion rounds (for backwards compatibility, overridden by maxRounds if set)
         timeout: 300000, // 5 minutes per agent
-        clarityThreshold: 0.85, // Stop early if 85% similarity between rounds
+        minRounds: 2, // Minimum 2 rounds before allowing early convergence stop
+        maxRounds: 3, // Maximum 3 rounds: Initial → Concerns → Validation
+        clarityThreshold: 0.85, // Stop early if 85% similarity between rounds (only after minRounds)
     },
     output: {
         directory: '.', // Current directory

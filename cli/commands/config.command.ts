@@ -14,7 +14,7 @@ const DEFAULT_CONFIG = {
     },
     llm: {
         provider: 'anthropic',
-        model: 'claude-sonnet-4-5-20250929',
+        model: 'claude-haiku-4-5-20251001', // Cost-optimized for multi-agent discussion,
         temperature: 0.2,
         maxTokens: 4096,
     },
@@ -114,21 +114,17 @@ async function initializeConfig(): Promise<void> {
     // Provider-specific configuration with available models
     const providerInfo = {
         anthropic: {
-            defaultModel: 'claude-sonnet-4-5-20250929',
+            defaultModel: 'claude-haiku-4-5-20251001',
             models: [
                 {
-                    name: 'claude-sonnet-4-5-20250929 (recommended) - Latest, best quality',
-                    value: 'claude-sonnet-4-5-20250929',
-                },
-                {
-                    name: 'claude-haiku-4-5-20251001 - Fastest, most affordable',
+                    name: 'claude-haiku-4-5-20251001 (recommended) - Cost-optimized for multi-agent discussion (ultra-fast)',
                     value: 'claude-haiku-4-5-20251001',
                 },
-                { name: 'claude-opus-4-1-20250805 - Most powerful', value: 'claude-opus-4-1-20250805' },
                 {
-                    name: 'claude-sonnet-4-20250514 - Previous generation',
-                    value: 'claude-sonnet-4-20250514',
+                    name: 'claude-sonnet-4-5-20250929 - Latest generation (best quality)',
+                    value: 'claude-sonnet-4-5-20250929',
                 },
+                { name: 'claude-opus-4-1-20250805 - Most powerful (maximum accuracy)', value: 'claude-opus-4-1-20250805' },
             ],
             keyFormat: 'sk-ant-...',
             url: 'https://console.anthropic.com/',
@@ -136,35 +132,33 @@ async function initializeConfig(): Promise<void> {
         openai: {
             defaultModel: 'gpt-4o-mini',
             models: [
-                { name: 'gpt-4o-mini (recommended) - Fast and cheap', value: 'gpt-4o-mini' },
-                { name: 'gpt-4o - Multimodal flagship', value: 'gpt-4o' },
-                { name: 'gpt-4-turbo - GPT-4 Turbo', value: 'gpt-4-turbo' },
-                { name: 'gpt-4 - Legacy GPT-4', value: 'gpt-4' },
-                { name: 'o1-mini - Reasoning (Tier 5 required)', value: 'o1-mini' },
-                { name: 'o1-preview - Advanced reasoning (Tier 5 required)', value: 'o1-preview' },
+                { name: 'gpt-4o-mini (recommended) - Fast and cost-effective', value: 'gpt-4o-mini' },
+                { name: 'gpt-4o - Latest multimodal model', value: 'gpt-4o' },
+                { name: 'o3-mini - Advanced reasoning (cost-efficient)', value: 'o3-mini-2025-01-31' },
+                { name: 'o3 - Most powerful reasoning model', value: 'o3' },
             ],
             keyFormat: 'sk-...',
             url: 'https://platform.openai.com/',
         },
         google: {
-            defaultModel: 'gemini-2.5-pro',
+            defaultModel: 'gemini-2.5-flash',
             models: [
-                { name: 'gemini-2.5-pro (recommended) - Best reasoning', value: 'gemini-2.5-pro' },
-                { name: 'gemini-2.5-flash - Fastest multimodal', value: 'gemini-2.5-flash' },
-                { name: 'gemini-2.5-flash-lite - Most efficient', value: 'gemini-2.5-flash-lite' },
-                { name: 'gemini-1.5-pro - Previous generation', value: 'gemini-1.5-pro' },
+                { name: 'gemini-2.5-flash (recommended) - Best cost-performance ratio', value: 'gemini-2.5-flash' },
+                { name: 'gemini-2.5-flash-lite - Fastest and most efficient', value: 'gemini-2.5-flash-lite' },
+                { name: 'gemini-2.5-pro - Best reasoning capabilities', value: 'gemini-2.5-pro' },
             ],
             keyFormat: 'AIza...',
             url: 'https://ai.google.dev/',
         },
         xai: {
-            defaultModel: 'grok-3-beta',
+            defaultModel: 'grok-4-fast-non-reasoning',
             models: [
                 {
-                    name: 'grok-3-beta (recommended) - Latest with real-time insights',
-                    value: 'grok-3-beta',
+                    name: 'grok-4-fast-non-reasoning (recommended) - Latest with 40% fewer tokens',
+                    value: 'grok-4-fast-non-reasoning',
                 },
-                { name: 'grok-2 - Stable and reliable', value: 'grok-2' },
+                { name: 'grok-4.2 - Polished and refined', value: 'grok-4.2' },
+                { name: 'grok-4 - Advanced reasoning model', value: 'grok-4-0709' },
             ],
             keyFormat: 'xai-...',
             url: 'https://console.x.ai/',
@@ -175,6 +169,8 @@ async function initializeConfig(): Promise<void> {
 
     // Select model for the chosen provider
     console.log(chalk.cyan(`\n🎯 Available ${provider} models:\n`));
+    console.log(chalk.gray('💡 CodeWave uses multi-agent discussion (3 rounds) to refine evaluations.'));
+    console.log(chalk.gray('   Cheaper models like Haiku achieve 95%+ quality through discussion refinement.\n'));
 
     const { selectedModel } = await inquirer.prompt([
         {
@@ -185,6 +181,40 @@ async function initializeConfig(): Promise<void> {
             default: info.defaultModel,
         },
     ]);
+
+    // Show cost comparison for selected provider
+    const costByProvider = {
+        anthropic: {
+            'claude-haiku-4-5-20251001': '$0.025/commit',
+            'claude-sonnet-4-5-20250929': '$0.15/commit',
+            'claude-opus-4-1-20250805': '$0.40/commit',
+        },
+        openai: {
+            'gpt-4o-mini': '$0.008/commit',
+            'gpt-4o': '$0.10/commit',
+            'o3-mini-2025-01-31': '$0.20/commit',
+            'o3': '$0.40/commit',
+        },
+        google: {
+            'gemini-2.5-flash': '$0.010/commit',
+            'gemini-2.5-flash-lite': '$0.006/commit',
+            'gemini-2.5-pro': '$0.06/commit',
+        },
+        xai: {
+            'grok-4-fast-non-reasoning': '$0.08/commit',
+            'grok-4.2': '$0.08/commit',
+            'grok-4-0709': '$0.08/commit',
+        },
+    };
+
+    const providerCosts = costByProvider[provider as keyof typeof costByProvider];
+    if (providerCosts) {
+        const cost = providerCosts[selectedModel as keyof typeof providerCosts];
+        if (cost) {
+            console.log(chalk.gray(`\n✓ Selected: ${selectedModel}`));
+            console.log(chalk.gray(`   Cost: ${cost} (estimated for 3-round multi-agent discussion)`));
+        }
+    }
 
     // Prompt for API key with validation
     console.log(chalk.gray(`\nGet your API key at: ${info.url}\n`));
@@ -308,7 +338,13 @@ function listConfig(): void {
         process.exit(1);
     }
 
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    let config;
+    try {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    } catch (error) {
+        console.log(chalk.red(`\n❌ Failed to parse config file: ${error instanceof Error ? error.message : String(error)}\n`));
+        process.exit(1);
+    }
 
     // Mask API keys for security
     const maskedConfig = JSON.parse(JSON.stringify(config));
@@ -339,7 +375,13 @@ function getConfigValue(key: string): void {
         process.exit(1);
     }
 
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    let config;
+    try {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    } catch (error) {
+        console.log(chalk.red(`\n❌ Failed to parse config file: ${error instanceof Error ? error.message : String(error)}\n`));
+        process.exit(1);
+    }
     const keys = key.split('.');
     let value: Record<string, unknown> | string = config;
 
@@ -374,7 +416,13 @@ function setConfigValue(keyValue: string): void {
         process.exit(1);
     }
 
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    let config;
+    try {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    } catch (error) {
+        console.log(chalk.red(`\n❌ Failed to parse config file: ${error instanceof Error ? error.message : String(error)}\n`));
+        process.exit(1);
+    }
     const keys = key.split('.');
     let current: Record<string, unknown> = config;
 

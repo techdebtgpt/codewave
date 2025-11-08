@@ -13,6 +13,7 @@ export const CommitEvaluationState = Annotation.Root({
     // Input data
     commitDiff: Annotation<string>,
     filesChanged: Annotation<string[]>,
+    developerOverview: Annotation<string | undefined>, // Developer's description of changes
     vectorStore: Annotation<any>, // RAG vector store for large diffs
 
     // Commit metadata for logging
@@ -23,6 +24,7 @@ export const CommitEvaluationState = Annotation.Root({
     // Agent execution state
     currentRound: Annotation<number>,
     maxRounds: Annotation<number>,
+    minRounds: Annotation<number>, // Minimum rounds before allowing early convergence
 
     // Agent results (accumulated)
     agentResults: Annotation<AgentResult[]>({
@@ -200,10 +202,10 @@ function getRoundPurpose(roundNumber: number): 'initial' | 'concerns' | 'validat
 
 /**
  * Create LangGraph-based Commit Evaluation Workflow
- * 
+ *
  * Graph structure:
- *   START → runAgents → shouldContinue? → [YES: runAgents | NO: runMetrics] → END
- * 
+ *   START → generateDeveloperOverview → runAgents → shouldContinue? → [YES: runAgents | NO: END]
+ *
  * 3-Round Discussion:
  *   Round 1: Initial analysis (all agents analyze independently)
  *   Round 2: Concerns (agents raise questions/concerns to responsible agents)
@@ -215,6 +217,76 @@ export function createCommitEvaluationGraph(
 ) {
     const agents = agentRegistry.getAgents();
     const maxRounds = config.agents.retries || 3; // 3-round conversation: initial → concerns → validation
+
+    // Node: Generate developer overview if not provided
+    async function generateDeveloperOverview(state: typeof CommitEvaluationState.State) {
+        try {
+            // Only generate if not already provided
+            if (state.developerOverview && state.developerOverview.trim().length > 0) {
+                // Already have an overview, don't modify state
+                return {};
+            }
+
+            if (!state.commitDiff) {
+                // No diff available, skip overview generation
+                return { developerOverview: undefined };
+            }
+
+            const { DeveloperOverviewGenerator } = await import(
+                '../services/developer-overview-generator.js'
+            );
+            const { LLMService } = await import('../llm/llm-service.js');
+            const generator = new DeveloperOverviewGenerator(config);
+
+            const overview = await generator.generateOverview(
+                state.commitDiff,
+                state.filesChanged || [],
+                undefined, // commitMessage will be extracted from diff if available
+            );
+
+            // Format for prompt
+            const formattedOverview = DeveloperOverviewGenerator.formatForPrompt(overview);
+
+            // Track token usage from the developer overview generation
+            // Get the model instance to access usage information
+            const model = LLMService.getChatModel(config);
+            let devOverviewInputTokens = 0;
+            let devOverviewOutputTokens = 0;
+            let devOverviewCost = 0;
+
+            // If model has token tracking capability, capture it
+            if ((model as any).tokenTracker) {
+                const tracker = (model as any).tokenTracker;
+                devOverviewInputTokens = tracker.totalInputTokens || 0;
+                devOverviewOutputTokens = tracker.totalOutputTokens || 0;
+                devOverviewCost = tracker.totalCost || 0;
+            }
+
+            // If tokens are tracked in response metadata, use that instead
+            if ((model as any).lastTokenUsage) {
+                const usage = (model as any).lastTokenUsage;
+                devOverviewInputTokens = usage.inputTokens || 0;
+                devOverviewOutputTokens = usage.outputTokens || 0;
+                const totalTokens = devOverviewInputTokens + devOverviewOutputTokens;
+                devOverviewCost = calculateCost(config.llm.provider, config.llm.model, {
+                    inputTokens: devOverviewInputTokens,
+                    outputTokens: devOverviewOutputTokens,
+                    totalTokens,
+                }).totalCost;
+            }
+
+            return {
+                developerOverview: formattedOverview,
+                totalInputTokens: devOverviewInputTokens,
+                totalOutputTokens: devOverviewOutputTokens,
+                totalCost: devOverviewCost,
+            };
+        } catch (error) {
+            console.warn(`Failed to generate developer overview: ${error instanceof Error ? error.message : String(error)}`);
+            // Return undefined overview but continue execution
+            return { developerOverview: undefined };
+        }
+    }
 
     // Node: Run all agents in parallel (enabling conversation)
     async function runAgents(state: typeof CommitEvaluationState.State) {
@@ -265,10 +337,21 @@ export function createCommitEvaluationGraph(
                     const result = await agent.execute({
                         commitDiff: state.commitDiff,
                         filesChanged: state.filesChanged,
+                        developerOverview: state.developerOverview, // Developer's description of changes for context
                         agentResults: state.agentResults, // Agents can reference each other's responses
                         conversationHistory: state.conversationHistory, // Pass full conversation
                         vectorStore: state.vectorStore, // RAG support for large diffs
-                        roundPurpose, // NEW: Tell agent what phase we're in (initial/concerns/validation)
+                        roundPurpose, // Tell agent what phase we're in (initial/concerns/validation)
+
+                        // Pass depth configuration for agent self-iteration
+                        depthMode: config.agents.depthMode || 'normal',
+                        maxInternalIterations: config.agents.maxInternalIterations,
+                        internalClarityThreshold: config.agents.internalClarityThreshold,
+
+                        // Batch evaluation metadata
+                        commitHash: state.commitHash,
+                        commitIndex: state.commitIndex,
+                        totalCommits: state.totalCommits,
                     });
 
                     // Update progress inline with \r (same line)
@@ -345,11 +428,25 @@ export function createCommitEvaluationGraph(
             console.warn(`\n⚠️  Warning: ${failedCount} agent(s) failed to return valid results in round ${state.currentRound + 1}`);
         }
 
-        const results = validResponses.map(r => r.result);
-        const conversationMessages = validResponses.map(r => r.conversationMessage);
+        // Import centralized constants and utilities
+        const { SEVEN_PILLARS, calculateWeightedAverage } = require('../constants/agent-weights.constants');
 
-        // Import weighted aggregation utilities
-        const { calculateWeightedAverage } = require('../constants/agent-weights.constants');
+        // Sanitize results: filter metrics to ONLY the 7 pillars
+        const results = validResponses.map(r => {
+            const sanitizedResult = { ...r.result };
+            if (sanitizedResult.metrics && typeof sanitizedResult.metrics === 'object' && !Array.isArray(sanitizedResult.metrics)) {
+                // Filter metrics to only include the 7 pillars
+                const filteredMetrics: Record<string, any> = {};
+                for (const pillar of SEVEN_PILLARS) {
+                    if (pillar in sanitizedResult.metrics) {
+                        filteredMetrics[pillar] = sanitizedResult.metrics[pillar];
+                    }
+                }
+                sanitizedResult.metrics = filteredMetrics;
+            }
+            return sanitizedResult;
+        });
+        const conversationMessages = validResponses.map(r => r.conversationMessage);
 
         // Collect all agent scores for each pillar (for weighted averaging)
         type PillarName = 'functionalImpact' | 'idealTimeHours' | 'testCoverage' | 'codeQuality' | 'codeComplexity' | 'actualTimeHours' | 'technicalDebtHours';
@@ -447,6 +544,7 @@ export function createCommitEvaluationGraph(
         }
 
         return {
+            developerOverview: state.developerOverview, // Preserve developer overview through all rounds
             agentResults: results,
             previousRoundResults: results,
             currentRound: state.currentRound + 1,
@@ -462,9 +560,14 @@ export function createCommitEvaluationGraph(
 
     // Conditional edge: Decide whether to continue discussion rounds or end
     function shouldContinue(state: typeof CommitEvaluationState.State): typeof END | 'runAgents' {
-        // Check if converged (early stopping)
-        if (state.converged && state.currentRound > 0) {
-            console.log(`  ⏭️  Stopping early due to convergence`);
+        // Use configurable minRounds from state (set from config)
+        // Note: currentRound is 0-indexed, so when displayed as "Round N", currentRound is N-1
+        // minRounds=2 means allow early stopping after currentRound >= 1 (which displays as Round 2)
+        const minRoundIndexForEarlyStopping = state.minRounds - 1;
+
+        // Check if converged (early stopping allowed only after minimum rounds)
+        if (state.converged && state.currentRound >= minRoundIndexForEarlyStopping) {
+            console.log(`  ⏭️  Stopping at round ${state.currentRound + 1}/${state.maxRounds} due to convergence (teams agreed, minRounds=${state.minRounds})`);
             return END;
         }
 
@@ -478,8 +581,10 @@ export function createCommitEvaluationGraph(
 
     // Build the graph with checkpointing support
     const graph = new StateGraph(CommitEvaluationState)
+        .addNode('generateDeveloperOverview', generateDeveloperOverview)
         .addNode('runAgents', runAgents)
-        .addEdge(START, 'runAgents')
+        .addEdge(START, 'generateDeveloperOverview')
+        .addEdge('generateDeveloperOverview', 'runAgents')
         .addConditionalEdges('runAgents', shouldContinue, {
             runAgents: 'runAgents',
             [END]: END,
