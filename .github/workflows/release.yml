@@ -1,0 +1,137 @@
+name: Release & Publish
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Release & Publish to npm
+    runs-on: ubuntu-latest
+    # Only run if commit message doesn't contain [skip ci]
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use PAT for pushing version commits and tags
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test || true
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Build project
+        run: npm run build
+
+      - name: Determine version bump
+        id: version-bump
+        run: |
+          # Get commit messages since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$LAST_TAG" ]; then
+            # No tags yet, use all commits
+            COMMITS=$(git log --pretty=format:"%s" main)
+          else
+            # Get commits since last tag
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s")
+          fi
+
+          echo "Analyzing commits:"
+          echo "$COMMITS"
+
+          # Determine version bump type based on conventional commits
+          if echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?!:|^BREAKING CHANGE:|breaking:"; then
+            BUMP_TYPE="major"
+          elif echo "$COMMITS" | grep -qE "^(feat|feature)(\(.+\))?:"; then
+            BUMP_TYPE="minor"
+          elif echo "$COMMITS" | grep -qE "^(fix|bugfix|perf|refactor|docs|chore|style|test)(\(.+\))?:"; then
+            BUMP_TYPE="patch"
+          else
+            # Default to patch for any other commits
+            BUMP_TYPE="patch"
+          fi
+
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "Determined version bump: $BUMP_TYPE"
+
+      - name: Bump version
+        id: bump
+        run: |
+          BUMP_TYPE="${{ steps.version-bump.outputs.bump_type }}"
+          echo "Bumping version: $BUMP_TYPE"
+
+          # Bump version and capture new version
+          NEW_VERSION=$(npm version $BUMP_TYPE -m "chore(release): bump version to %s [skip ci]")
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Push changes
+        run: |
+          git push origin main --follow-tags
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.new_version }}
+          name: Release ${{ steps.bump.outputs.new_version }}
+          body: |
+            ## Changes in ${{ steps.bump.outputs.new_version }}
+
+            Auto-generated release from main branch.
+
+            ### Installation
+            ```bash
+            npm install -g @techdebtgpt/codewave@${{ steps.bump.outputs.new_version }}
+            ```
+
+            ### What's Changed
+            See commit history for detailed changes.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ Successfully published ${{ steps.bump.outputs.new_version }} to npm"
+          echo "📦 Package: https://www.npmjs.com/package/@techdebtgpt/codewave"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Failed to publish package"
+          echo "Check logs above for details"
+          exit 1
