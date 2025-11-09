@@ -170,6 +170,8 @@ codewave --version, -v       Show version number
 ### evaluate - Analyze a Single Commit
 
 ```bash
+codewave evaluate --commit <commit-hash>
+
 codewave evaluate <commit-hash> [options]
 ```
 
