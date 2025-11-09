@@ -1,6 +1,6 @@
 {
   "name": "@techdebtgpt/codewave",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "CodeWave - AI-Powered Commit Intelligence. Multi-agent system for comprehensive code quality evaluation using 7-pillar methodology.",
   "main": "dist/index.js",
   "types": "dist/src/index.d.ts",
