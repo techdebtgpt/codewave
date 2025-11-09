@@ -98,6 +98,12 @@ codewave config show
 ### 3. Evaluate Your First Commit
 
 ```bash
+codewave evaluate --commit HEAD
+```
+
+Or use the shorthand:
+
+```bash
 codewave evaluate HEAD
 ```
 
@@ -172,16 +178,21 @@ codewave --version, -v       Show version number
 ```bash
 codewave evaluate --commit <commit-hash>
 
-codewave evaluate <commit-hash> [options]
+# Alternative (shorthand):
+codewave evaluate <commit-hash>
 ```
 
 **Examples:**
 
 ```bash
-# Evaluate a specific commit (default behavior)
+# Evaluate a specific commit (recommended)
+codewave evaluate --commit HEAD
+codewave evaluate --commit a1b2c3d
+codewave evaluate --commit HEAD~5
+
+# Alternative shorthand syntax
 codewave evaluate HEAD
 codewave evaluate a1b2c3d
-codewave evaluate HEAD~5
 
 # Evaluate staged changes
 codewave evaluate --staged
@@ -244,7 +255,7 @@ codewave config reset              # Reset to defaults
 codewave config
 # OR
 export CODEWAVE_API_KEY=sk-ant-...
-codewave evaluate HEAD
+codewave evaluate --commit HEAD
 ```
 
 **Issue**: "codewave: command not found" (after npm install -g)
@@ -261,7 +272,7 @@ codewave --version
 # Solution: Enable RAG for large commits
 codewave config
 # Then when prompted, enable RAG for large diffs
-codewave evaluate HEAD
+codewave evaluate --commit HEAD
 ```
 
 See [TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for more help.
@@ -325,14 +336,14 @@ You can customize where evaluation results are saved using any of these methods 
 
 #### 1. CLI Flag (Highest Priority)
 
-Use positional argument (or `--commit` for single evaluation):
+Use `--commit` flag for single evaluation:
 
 ```bash
 # Single evaluation (recommended)
-codewave evaluate HEAD
-
-# Alternative (legacy syntax also supported)
 codewave evaluate --commit HEAD
+
+# Alternative shorthand syntax
+codewave evaluate HEAD
 
 # Batch evaluation
 codewave batch --count 10
@@ -344,7 +355,7 @@ Set for current session or script:
 
 ```bash
 export CODEWAVE_OUTPUT_DIR=./reports
-codewave evaluate HEAD
+codewave evaluate --commit HEAD
 codewave batch --count 10
 ```
 
@@ -381,8 +392,8 @@ Control which file formats to generate:
 #### Via CLI Flag
 
 ```bash
-# Evaluate specific commit
-codewave evaluate HEAD
+# Evaluate specific commit (recommended)
+codewave evaluate --commit HEAD
 
 # Evaluate staged changes
 codewave evaluate --staged
@@ -546,7 +557,7 @@ export CODEWAVE_RAG_THRESHOLD=102400
 export CODEWAVE_VERBOSE=true
 
 # Run evaluation
-codewave evaluate HEAD
+codewave evaluate --commit HEAD
 ```
 
 **Priority order** (environment variables override all):
@@ -833,7 +844,7 @@ codewave batch --count 100 --verbose
 All results are saved as JSON files in the evaluation output directory for programmatic access:
 
 ```bash
-codewave evaluate HEAD
+codewave evaluate --commit HEAD
 # Results are in: .evaluated-commits/{commit-hash}_{date}_{time}/
 # Access results.json for structured data
 ```
