@@ -23,10 +23,27 @@ import { runBatchEvaluateCommand } from './commands/batch-evaluate-command';
 
 async function main() {
   const [, , command, ...args] = process.argv;
+
+  // Handle global flags
   if (!command || command === '--help' || command === '-h') {
     printUsage();
     process.exit(0);
   }
+
+  if (command === '--version' || command === '-v') {
+    try {
+      // Try to load package.json from the project root
+      const path = require('path');
+      // __dirname is dist/cli, so go up 2 levels to reach root
+      const packagePath = path.resolve(__dirname, '../../package.json');
+      const packageJson = require(packagePath);
+      console.log(`codewave version ${packageJson.version}`);
+    } catch (error) {
+      console.log('codewave version unknown');
+    }
+    process.exit(0);
+  }
+
   try {
     switch (command) {
       case 'evaluate':
@@ -54,7 +71,11 @@ function printUsage() {
   console.log('║          AI-Powered Commit Intelligence Platform             ║');
   console.log('╚═══════════════════════════════════════════════════════════════╝');
   console.log('');
-  console.log('Usage: codewave <command> [options]');
+  console.log('Usage: codewave [options] <command> [options]');
+  console.log('');
+  console.log('Global Options:');
+  console.log('  -h, --help              Show this help message');
+  console.log('  -v, --version           Show version number');
   console.log('');
   console.log('Commands:');
   console.log('  config <--init|--list|--get|--set|--reset>  Manage configuration');
@@ -64,8 +85,9 @@ function printUsage() {
   );
   console.log('');
   console.log('Evaluate Options:');
-  console.log('  <diffFile>              Evaluate from a diff file');
-  console.log('  --commit <hash>         Evaluate a specific commit');
+  console.log('  <commit-hash>           Evaluate a specific commit (default)');
+  console.log('  --commit <hash>         Evaluate a specific commit (explicit flag)');
+  console.log('  --file <path>           Evaluate from a diff file');
   console.log('  --staged                Evaluate staged changes (git diff --cached)');
   console.log('  --current               Evaluate all current changes (staged + unstaged)');
   console.log('  --repo <path>           Repository path (default: current directory)');

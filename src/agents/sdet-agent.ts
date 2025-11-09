@@ -68,15 +68,38 @@ export class SDETAgent extends BaseAgentWorkflow {
 
     // Use RAG if available for large diffs (skip in subsequent rounds to save tokens)
     const isFirstRound = !context.agentResults || context.agentResults.length === 0;
-    if (context.vectorStore && isFirstRound) {
-      const { RAGHelper } = await import('../utils/rag-helper.js');
-      const rag = new RAGHelper(context.vectorStore);
+    if ((context.vectorStore || context.documentationStore) && isFirstRound) {
+      const { CombinedRAGHelper } = await import('../utils/combined-rag-helper.js');
+      const rag = new CombinedRAGHelper(context.vectorStore, context.documentationStore);
+      rag.setAgentName('SDET (Test Automation Engineer)');
 
       // Ask SDET-focused questions (optimized for cost)
       const queries = [
-        { q: 'Show me all test file changes and test automation code', topK: 3 },
-        { q: 'What testing frameworks or automation infrastructure was modified?', topK: 2 },
-        { q: 'Show test utilities, fixtures, and testing framework changes', topK: 2 },
+        {
+          q: 'Show me all test file changes and test automation code',
+          topK: 3,
+          store: 'diff' as const,
+        },
+        {
+          q: 'What testing frameworks or automation infrastructure was modified?',
+          topK: 2,
+          store: 'diff' as const,
+        },
+        {
+          q: 'What are the documented testing standards and patterns in the repository?',
+          topK: 2,
+          store: 'docs' as const,
+        },
+        {
+          q: 'Show test utilities, fixtures, and testing framework changes',
+          topK: 2,
+          store: 'diff' as const,
+        },
+        {
+          q: 'Are there documented CI/CD patterns or testing guidelines?',
+          topK: 2,
+          store: 'docs' as const,
+        },
       ];
 
       const results = await rag.queryMultiple(queries);

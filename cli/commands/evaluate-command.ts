@@ -144,12 +144,49 @@ function getDiffFromCurrent(repoPath: string = '.'): string {
 export async function runEvaluateCommand(args: string[]) {
   // Parse arguments
   let diff: string | null = null;
-  let source = 'file';
+  let source = 'commit';
   let sourceDescription = '';
   let repoPath = '.';
 
-  // Check for flags
-  if (args.includes('--commit')) {
+  // Handle repo path first (it can appear with any other flag)
+  if (args.includes('--repo')) {
+    const repoIdx = args.indexOf('--repo');
+    repoPath = args[repoIdx + 1];
+    if (!repoPath) {
+      console.error(chalk.red('Error: --repo requires a path'));
+      process.exit(1);
+    }
+  }
+
+  // Check for flags or positional arguments
+  if (args.includes('--staged')) {
+    console.log(chalk.cyan('\n📝 Evaluating staged changes...\n'));
+    diff = getDiffFromStaged(repoPath);
+    source = 'staged';
+    sourceDescription = 'staged changes';
+  } else if (args.includes('--current')) {
+    console.log(chalk.cyan('\n📝 Evaluating current changes...\n'));
+    diff = getDiffFromCurrent(repoPath);
+    source = 'current';
+    sourceDescription = 'current changes';
+  } else if (args.includes('--file')) {
+    const fileIdx = args.indexOf('--file');
+    const diffFile = args[fileIdx + 1];
+    if (!diffFile) {
+      console.error(chalk.red('Error: --file requires a file path'));
+      console.log('\nUsage: codewave evaluate --file <path>');
+      process.exit(1);
+    }
+
+    if (!fs.existsSync(diffFile)) {
+      console.error(chalk.red(`Error: Diff file not found: ${diffFile}`));
+      process.exit(1);
+    }
+    diff = fs.readFileSync(diffFile, 'utf-8');
+    source = 'file';
+    sourceDescription = path.basename(diffFile);
+  } else if (args.includes('--commit')) {
+    // Support legacy --commit flag (backward compatibility)
     const commitIdx = args.indexOf('--commit');
     const commitHash = args[commitIdx + 1];
     if (!commitHash) {
@@ -158,52 +195,31 @@ export async function runEvaluateCommand(args: string[]) {
       process.exit(1);
     }
 
-    if (args.includes('--repo')) {
-      const repoIdx = args.indexOf('--repo');
-      repoPath = args[repoIdx + 1];
-    }
-
     console.log(chalk.cyan(`\n📦 Fetching diff for commit: ${commitHash}\n`));
     diff = getDiffFromCommit(commitHash, repoPath);
     source = 'commit';
     sourceDescription = commitHash;
-  } else if (args.includes('--staged')) {
-    if (args.includes('--repo')) {
-      const repoIdx = args.indexOf('--repo');
-      repoPath = args[repoIdx + 1];
-    }
-
-    console.log(chalk.cyan('\n📝 Evaluating staged changes...\n'));
-    diff = getDiffFromStaged(repoPath);
-    source = 'staged';
-    sourceDescription = 'staged changes';
-  } else if (args.includes('--current')) {
-    if (args.includes('--repo')) {
-      const repoIdx = args.indexOf('--repo');
-      repoPath = args[repoIdx + 1];
-    }
-
-    console.log(chalk.cyan('\n📝 Evaluating current changes...\n'));
-    diff = getDiffFromCurrent(repoPath);
-    source = 'current';
-    sourceDescription = 'current changes';
-  } else if (args[0]) {
-    // Original behavior: diff file
-    const diffFile = args[0];
-    if (!fs.existsSync(diffFile)) {
-      console.error(chalk.red(`Error: Diff file not found: ${diffFile}`));
-      process.exit(1);
-    }
-    diff = fs.readFileSync(diffFile, 'utf-8');
-    source = 'file';
-    sourceDescription = path.basename(diffFile);
+  } else if (args[0] && !args[0].startsWith('--')) {
+    // Positional argument: treat as commit hash (default behavior)
+    const commitHash = args[0];
+    console.log(chalk.cyan(`\n📦 Fetching diff for commit: ${commitHash}\n`));
+    diff = getDiffFromCommit(commitHash, repoPath);
+    source = 'commit';
+    sourceDescription = commitHash;
   } else {
+    // No input provided - show usage
     console.error(chalk.red('Error: No input provided'));
     console.log('\nUsage:');
-    console.log('  codewave evaluate <diffFile>              # Evaluate from diff file');
-    console.log('  codewave evaluate --commit <hash>         # Evaluate specific commit');
-    console.log('  codewave evaluate --staged                # Evaluate staged changes');
-    console.log('  codewave evaluate --current               # Evaluate all current changes');
+    console.log('  codewave evaluate <commit-hash>          # Evaluate specific commit (default)');
+    console.log('  codewave evaluate HEAD                   # Evaluate HEAD commit');
+    console.log(
+      '  codewave evaluate --commit <hash>        # Evaluate with explicit flag (legacy)'
+    );
+    console.log('  codewave evaluate --staged               # Evaluate staged changes');
+    console.log(
+      '  codewave evaluate --current              # Evaluate all current changes (staged + unstaged)'
+    );
+    console.log('  codewave evaluate --file <path>          # Evaluate from diff file');
     console.log('\nOptions:');
     console.log('  --repo <path>   Repository path (default: current directory)');
     console.log('  --no-stream     Disable streaming output (silent mode)');
@@ -262,16 +278,107 @@ export async function runEvaluateCommand(args: string[]) {
   // Check for --no-stream flag (streaming enabled by default)
   const streamingEnabled = !args.includes('--no-stream');
 
+  // Save original console methods before suppressing
+  const originalConsoleLog = console.log;
+  const originalConsoleWarn = console.warn;
+  const originalConsoleError = console.error;
+
+  // Helper to check if a message is a diagnostic log (should be filtered)
+  const isDiagnosticLog = (args: any[]): boolean => {
+    const message = String(args[0] || '');
+    // Filter out vector store diagnostic logs
+    if (message.includes('Found file via diff')) return true;
+    if (message.includes('Line ') && message.includes(':')) return true;
+    if (message.includes('Confirmed file via')) return true;
+    if (message.includes('Building in-memory vector store')) return true;
+    if (message.includes('Vector store ready')) return true;
+    if (message.includes('Parsing ') && message.includes('lines')) return true;
+    if (message.includes('Detecting agent')) return true;
+    if (message.includes('Developer overview generated')) return true;
+    if (message.includes('State update from')) return true;
+    if (message.includes('Streaming enabled')) return true;
+    if (message.includes('Indexing:')) return true;
+    if (message.includes('Cleaning up vector store')) return true;
+    if (message.includes('Detected') && message.includes('unique agents')) return true;
+    if (message.includes('responses (rounds:')) return true;
+    // Filter out orchestrator status messages
+    if (message.includes('🚀 Starting commit evaluation')) return true;
+    if (message.includes('Large diff detected')) return true;
+    if (message.includes('First 3 lines:')) return true;
+    if (message.includes('files | +') && message.includes('-')) return true;
+    if (message.includes('📝 Generating developer overview')) return true;
+    if (message.includes('Round ') && message.includes('Analysis')) return true;
+    if (message.includes('Evaluation complete in')) return true;
+    if (message.includes('Total agents:')) return true;
+    if (message.includes('Discussion rounds:')) return true;
+    if (message.includes('💰')) return true;
+    if (message.includes('Indexed') && message.includes('chunks')) return true;
+    // Filter out round information logs (e.g., "[3/4] 🔄 6b66968 - Round 2/3")
+    if (/\[\d+\/\d+\]\s*🔄/.test(message)) return true;
+    if (message.includes('Round ') && message.includes('Raising Concerns')) return true;
+    if (message.includes('Round ') && message.includes('Validation & Final')) return true;
+    return false;
+  };
+
+  // Buffer for storing diagnostic output
+  let suppressOutput = false;
+  const suppressedOutput: Array<{ type: string; args: any[] }> = [];
+
+  // Override console methods to suppress diagnostic output during evaluation
+  console.log = (...args: any[]) => {
+    if (!suppressOutput) {
+      originalConsoleLog(...args);
+    } else if (!isDiagnosticLog(args)) {
+      // Only buffer non-diagnostic logs (actual errors or important messages)
+      suppressedOutput.push({ type: 'log', args });
+    }
+  };
+
+  console.warn = (...args: any[]) => {
+    if (!suppressOutput) {
+      originalConsoleWarn(...args);
+    } else if (!isDiagnosticLog(args)) {
+      suppressedOutput.push({ type: 'warn', args });
+    }
+  };
+
+  console.error = (...args: any[]) => {
+    if (!suppressOutput) {
+      originalConsoleError(...args);
+    } else if (!isDiagnosticLog(args)) {
+      suppressedOutput.push({ type: 'error', args });
+    }
+  };
+
+  // Start suppressing output during evaluation
+  suppressOutput = true;
+
   const evaluationResult = await orchestrator.evaluateCommit(context, {
     streaming: streamingEnabled,
     threadId: `eval-${Date.now()}`,
     onProgress: (state) => {
       // Optional: emit progress events for UI integration
       if (streamingEnabled && state?.agentResults?.length > 0) {
-        console.log(chalk.gray(`  📦 Intermediate results: ${state.agentResults.length} agents`));
+        // Progress is now suppressed
       }
     },
   });
+
+  // Restore original console methods
+  console.log = originalConsoleLog;
+  console.warn = originalConsoleWarn;
+  console.error = originalConsoleError;
+
+  // Print any buffered non-diagnostic output
+  for (const output of suppressedOutput) {
+    if (output.type === 'log') {
+      originalConsoleLog(...output.args);
+    } else if (output.type === 'warn') {
+      originalConsoleWarn(...output.args);
+    } else if (output.type === 'error') {
+      originalConsoleError(...output.args);
+    }
+  }
   const results = evaluationResult.agentResults || [];
 
   // Determine commit hash and metadata for directory naming
@@ -331,4 +438,6 @@ export async function runEvaluateCommand(args: string[]) {
 
   // Print completion message using shared function
   printEvaluateCompletionMessage(outputDir);
+
+  process.exit(0);
 }

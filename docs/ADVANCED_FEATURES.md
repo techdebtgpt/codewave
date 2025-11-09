@@ -1,6 +1,15 @@
 # CodeWave Advanced Features
 
-Deep dive into CodeWave's sophisticated analysis capabilities: Developer Overview generation, Convergence Detection, and Multi-Round Agent Discussion.
+Deep dive into CodeWave's sophisticated analysis capabilities: Developer Overview generation, Convergence Detection, Multi-Round Agent Discussion, and Agent Query Tracking.
+
+## Table of Contents
+
+- [Developer Overview](#developer-overview) - AI-generated commit summaries
+- [Convergence Detection](#convergence-detection) - Agent consensus measurement
+- [Multi-Round Agent Discussion](#multi-round-agent-discussion) - Structured agent collaboration
+- [Agent RAG Query Tracking](#agent-rag-query-tracking) - Query monitoring and verification
+- [Understanding Evaluation Depth](#understanding-evaluation-depth)
+- [Advanced Usage](#advanced-usage)
 
 ---
 
@@ -603,6 +612,350 @@ done | sort -t: -k2 -rn
 - This is valuable signal! Agents keep finding issues
 - Treat as "needs team discussion"
 - Low convergence is honest evaluation
+
+---
+
+## Agent RAG Query Tracking
+
+Advanced monitoring system that tracks and reports which agents queried the documentation vector store, what queries were executed, and how successful those queries were.
+
+### What is Agent RAG Tracking?
+
+Agent RAG Tracking is an automatic system that monitors all Retrieval-Augmented Generation (RAG) queries made by agents during evaluation. It captures:
+
+- **Which agent** made each query
+- **What query text** was used
+- **Which stores** were searched (diff, documentation, or both)
+- **How many results** were found
+- **Relevance scores** for results
+- **Files referenced** in the results
+- **Timestamp** of execution
+
+### Why Track Agent Queries?
+
+**Quality Assurance:**
+
+- Verify that agents actually used documentation during evaluation
+- Ensure agents checked architecture before making assessments
+- Validate that RAG integration is working correctly
+
+**Performance Analysis:**
+
+- Measure documentation effectiveness
+- Identify gaps in documentation
+- Track query patterns over time
+
+**Compliance & Audit:**
+
+- Document which resources agents consulted
+- Create audit trails for reproducibility
+- Verify evaluation consistency
+
+### How It Works
+
+#### Automatic Tracking
+
+Tracking happens automatically without any manual intervention:
+
+```typescript
+// When an agent creates a RAG helper:
+const rag = new CombinedRAGHelper(diffStore, docStore);
+
+// Set agent name for tracking (required)
+rag.setAgentName('Senior Architect');
+
+// When queries are executed (tracking happens automatically):
+await rag.queryMultiple([
+  { q: 'What design patterns are documented?', store: 'docs' },
+  { q: 'Are there performance guidelines?', store: 'docs' },
+]);
+// ✓ Both queries are automatically tracked
+```
+
+#### Data Captured
+
+For each query, the system captures:
+
+```typescript
+{
+  agentName: 'Senior Architect',           // Which agent ran it
+  query: 'What design patterns are used?', // The query text
+  timestamp: 1730944523000,                // When it ran
+  storeQueried: 'docs',                    // Which stores: 'diff' | 'docs' | 'both'
+  resultCount: 3,                          // Total results found
+  docResultCount: 3,                       // Results from documentation store
+  relevantFiles: ['ARCHITECTURE.md'],      // Files referenced
+  averageRelevanceScore: 0.87,             // Quality of matches (0-1)
+  foundResults: true                       // Whether results were found
+}
+```
+
+### Accessing Tracking Data
+
+After evaluation completes, access tracking data with static methods:
+
+#### Quick Check: Which Agents Used Documentation?
+
+```typescript
+import { CombinedRAGHelper } from './src/utils/combined-rag-helper';
+
+// Get list of agents that checked documentation
+const agentsUsedDocs = CombinedRAGHelper.getAgentsCheckedDocs();
+console.log('Agents that verified documentation:', agentsUsedDocs);
+// Output: ['Senior Architect', 'Business Analyst', 'SDET (Test Automation Engineer)', ...]
+```
+
+#### Coverage Metric: Documentation Usage Percentage
+
+```typescript
+// Get percentage of queries that used documentation
+const coverage = CombinedRAGHelper.getDocumentationCoverage();
+console.log(`Documentation coverage: ${coverage.toFixed(1)}%`);
+// Output: Documentation coverage: 85.5%
+
+if (coverage > 80) {
+  console.log('✅ Excellent documentation usage');
+} else {
+  console.log('⚠️  Low documentation usage');
+}
+```
+
+#### Detailed Report: Full Analysis
+
+```typescript
+// Get comprehensive markdown report with all metrics
+const report = CombinedRAGHelper.getTrackingReport();
+console.log(report);
+
+// Shows:
+// - Total queries executed
+// - Per-agent breakdown
+// - Query success rates
+// - Relevance score statistics
+// - File reference analysis
+```
+
+#### Raw Export: For Further Analysis
+
+```typescript
+// Export all tracking data as JSON
+const data = CombinedRAGHelper.exportTrackingData();
+
+// Data contains:
+// - timestamp: When export was created
+// - totalQueries: How many queries total
+// - agents: Per-agent statistics
+// - allQueries: Full query history
+
+// Save for analysis or persistence
+import * as fs from 'fs';
+fs.writeFileSync('rag-tracking.json', JSON.stringify(data, null, 2));
+```
+
+### Verification Patterns
+
+#### Pattern 1: Verify All Agents Checked Documentation
+
+```typescript
+const agentsUsedDocs = CombinedRAGHelper.getAgentsCheckedDocs();
+const expectedAgents = [
+  'Senior Architect',
+  'Business Analyst',
+  'SDET (Test Automation Engineer)',
+  'Developer (Author)',
+  'Developer Reviewer',
+];
+
+const allChecked = expectedAgents.every((agent) => agentsUsedDocs.includes(agent));
+
+if (allChecked) {
+  console.log('✅ All agents checked documentation');
+} else {
+  const missing = expectedAgents.filter((a) => !agentsUsedDocs.includes(a));
+  console.log('❌ These agents skipped documentation:', missing);
+}
+```
+
+#### Pattern 2: Check Effectiveness of Documentation
+
+```typescript
+const coverage = CombinedRAGHelper.getDocumentationCoverage();
+
+if (coverage >= 80) {
+  console.log('✅ Great documentation coverage:', coverage.toFixed(1) + '%');
+  console.log('   Agents are actively using documentation');
+} else if (coverage >= 50) {
+  console.log('⚠️  Moderate documentation coverage:', coverage.toFixed(1) + '%');
+  console.log('   Some agents may not be checking docs');
+} else {
+  console.log('❌ Low documentation coverage:', coverage.toFixed(1) + '%');
+  console.log('   Most queries are not using documentation');
+}
+```
+
+#### Pattern 3: Analyze Query Details
+
+```typescript
+const report = CombinedRAGHelper.getTrackingReport();
+
+// Find specific sections:
+// 1. Per-Agent Breakdown - See each agent's performance
+// 2. Documentation Coverage Analysis - What files were referenced
+// 3. Query Success Metrics - How well queries performed
+```
+
+#### Pattern 4: Export and Trend Analysis
+
+```typescript
+const data = CombinedRAGHelper.exportTrackingData();
+
+// Analyze patterns:
+// - Which files are most referenced?
+// - Do agents consistently find results?
+// - Are relevance scores improving over time?
+// - Which agents use docs most effectively?
+
+// Compare across multiple evaluations
+const agentStats = data.agents.map((agent) => ({
+  name: agent.agentName,
+  queriesWithDocs: agent.queriesWithDocResults,
+  avgDocResults: (agent.totalDocResults / agent.queriesExecuted).toFixed(1),
+  filesReferenced: agent.relevantDocFiles.length,
+}));
+
+console.table(agentStats);
+```
+
+### Metrics Explained
+
+| Metric                     | Meaning                                     | Good Range          | Examples                               |
+| -------------------------- | ------------------------------------------- | ------------------- | -------------------------------------- |
+| **Agents Checked Docs**    | Agents that executed at least one doc query | All 5               | `['Architect', 'Analyst', ...]`        |
+| **Documentation Coverage** | % of queries that found documentation       | 70-100%             | 85.5% means 85.5% of queries used docs |
+| **Query Success Rate**     | % of queries that returned results          | 80%+                | Indicates doc quality                  |
+| **Avg Relevance Score**    | Average quality of matches (0-1)            | 0.7+                | 0.87 = good matches                    |
+| **Files Referenced**       | How many doc files were used                | Depends on codebase | Higher = more comprehensive            |
+
+### Practical Use Cases
+
+#### Use Case 1: Quality Gate
+
+```typescript
+// Ensure evaluation met documentation standards
+const agentsChecked = CombinedRAGHelper.getAgentsCheckedDocs().length;
+const coverage = CombinedRAGHelper.getDocumentationCoverage();
+
+const qualityGatePass = agentsChecked === 5 && coverage > 75;
+
+if (!qualityGatePass) {
+  console.warn('⚠️  Evaluation did not meet quality standards');
+  console.warn('  - Agents using docs:', agentsChecked + '/5');
+  console.warn('  - Documentation coverage:', coverage.toFixed(1) + '%');
+  process.exit(1);
+}
+```
+
+#### Use Case 2: Continuous Improvement
+
+```typescript
+// Track documentation effectiveness over evaluations
+const data = CombinedRAGHelper.exportTrackingData();
+
+console.log('📊 Documentation Effectiveness Report');
+console.log('=====================================');
+console.log('Total queries:', data.totalQueries);
+console.log('Agents using docs:', data.agents.length);
+console.log('Avg queries per agent:', (data.totalQueries / data.agents.length).toFixed(1));
+
+// Identify weak areas
+const lowPerformers = data.agents.filter((a) => a.queriesWithDocResults / a.queriesExecuted < 0.5);
+
+if (lowPerformers.length > 0) {
+  console.log('⚠️  Agents with low doc usage:');
+  lowPerformers.forEach((a) => {
+    console.log(
+      `   - ${a.agentName}: ${((a.queriesWithDocResults / a.queriesExecuted) * 100).toFixed(1)}%`
+    );
+  });
+}
+```
+
+#### Use Case 3: Debugging Failed Queries
+
+```typescript
+// Find which queries aren't getting results
+const data = CombinedRAGHelper.exportTrackingData();
+
+const failedQueries = data.allQueries.filter((q) => !q.foundResults);
+
+if (failedQueries.length > 0) {
+  console.log('❌ Queries with no results:');
+  failedQueries.forEach((q) => {
+    console.log(`   Agent: ${q.agentName}`);
+    console.log(`   Query: "${q.query}"`);
+    console.log(`   Store: ${q.storeQueried}`);
+  });
+  console.log('💡 Tip: These queries might indicate documentation gaps');
+}
+```
+
+### Clearing Tracking Data
+
+Reset tracking between evaluations:
+
+```typescript
+// Clear all tracking data
+CombinedRAGHelper.clearTracking();
+
+// Useful for:
+// - Starting fresh evaluations
+// - Clearing test data
+// - Resetting for new batch
+```
+
+### Implementation Details
+
+#### Tracking Service
+
+The `AgentRAGTracker` singleton in `src/services/agent-rag-tracker.service.ts` manages all query tracking:
+
+- **Automatic**: Happens transparently during `queryMultiple()`
+- **Efficient**: Minimal performance overhead
+- **Persistent**: Data persists across function calls within same evaluation
+- **Accessible**: Static methods on `CombinedRAGHelper`
+
+#### Agent Integration
+
+All 5 agents automatically support tracking by calling `setAgentName()`:
+
+```typescript
+// In each agent's RAG initialization:
+rag.setAgentName('Agent Name');
+
+// Supported agents:
+// - 'Senior Architect'
+// - 'Business Analyst'
+// - 'SDET (Test Automation Engineer)'
+// - 'Developer (Author)'
+// - 'Developer Reviewer'
+```
+
+### Verification Script
+
+A test verification script demonstrates the full tracking system:
+
+```bash
+npm run build
+npx ts-node test/verify-agent-rag-tracking.ts
+```
+
+This script:
+
+1. Initializes documentation vector store
+2. Simulates multiple agents querying
+3. Displays comprehensive tracking report
+4. Exports data to JSON file
+5. Shows summary statistics
 
 ---
 

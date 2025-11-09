@@ -66,15 +66,34 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
 
     // Use RAG if available for large diffs (skip in subsequent rounds to save tokens)
     const isFirstRound = !context.agentResults || context.agentResults.length === 0;
-    if (context.vectorStore && isFirstRound) {
-      const { RAGHelper } = await import('../utils/rag-helper.js');
-      const rag = new RAGHelper(context.vectorStore);
+    if ((context.vectorStore || context.documentationStore) && isFirstRound) {
+      const { CombinedRAGHelper } = await import('../utils/combined-rag-helper.js');
+      const rag = new CombinedRAGHelper(context.vectorStore, context.documentationStore);
+      rag.setAgentName('Developer (Author)');
 
       // Ask implementation-focused questions (optimized for cost)
       const queries = [
-        { q: 'Show all source code changes excluding tests and documentation', topK: 3 },
-        { q: 'What refactoring or code organization changes occurred?', topK: 2 },
-        { q: 'Show new features or functionality added', topK: 2 },
+        {
+          q: 'Show all source code changes excluding tests and documentation',
+          topK: 3,
+          store: 'diff' as const,
+        },
+        {
+          q: 'What refactoring or code organization changes occurred?',
+          topK: 2,
+          store: 'diff' as const,
+        },
+        {
+          q: 'What coding standards are documented in the repository?',
+          topK: 2,
+          store: 'docs' as const,
+        },
+        { q: 'Show new features or functionality added', topK: 2, store: 'diff' as const },
+        {
+          q: 'Are there documented patterns for this type of code implementation?',
+          topK: 2,
+          store: 'docs' as const,
+        },
       ];
 
       const results = await rag.queryMultiple(queries);
