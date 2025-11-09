@@ -113,7 +113,7 @@ codewave config show
 ### 2. Evaluate a Single Commit (30-60 seconds)
 
 ```bash
-codewave evaluate <commit-hash>
+codewave evaluate --commit <commit-hash>
 ```
 
 **Example:**
