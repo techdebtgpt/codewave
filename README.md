@@ -325,7 +325,7 @@ CodeWave evaluates commits across 7 carefully chosen dimensions, with each pilla
 
 **Agent**: Business Analyst
 **Description**: Estimates ideal development time under optimal conditions (clear requirements, no interruptions).
-**Scale**: Hours (0.5 to 80)
+**Scale**: Hours (0.5 to 80).
 **Weights**: Baseline for productivity metrics.
 
 ### Pillar 4: Actual Time Hours (Estimate)
