@@ -68,15 +68,30 @@ export class BusinessAnalystAgent extends BaseAgentWorkflow {
 
     // Use RAG if available for large diffs (skip in subsequent rounds to save tokens)
     const isFirstRound = !context.agentResults || context.agentResults.length === 0;
-    if (context.vectorStore && isFirstRound) {
-      const { RAGHelper } = await import('../utils/rag-helper.js');
-      const rag = new RAGHelper(context.vectorStore);
+    if ((context.vectorStore || context.documentationStore) && isFirstRound) {
+      const { CombinedRAGHelper } = await import('../utils/combined-rag-helper.js');
+      const rag = new CombinedRAGHelper(context.vectorStore, context.documentationStore);
+      rag.setAgentName('Business Analyst');
 
       // Ask business-focused questions (optimized for cost)
       const queries = [
-        { q: 'What functional changes or user-facing features were modified?', topK: 3 },
-        { q: 'Show API or interface changes', topK: 2 },
-        { q: 'Show configuration or business rule changes', topK: 2 },
+        {
+          q: 'What functional changes or user-facing features were modified?',
+          topK: 3,
+          store: 'diff' as const,
+        },
+        { q: 'Show API or interface changes', topK: 2, store: 'diff' as const },
+        {
+          q: 'What business domain patterns are documented in the repository?',
+          topK: 2,
+          store: 'docs' as const,
+        },
+        { q: 'Show configuration or business rule changes', topK: 2, store: 'diff' as const },
+        {
+          q: 'Are there documented business requirements or domain constraints?',
+          topK: 2,
+          store: 'docs' as const,
+        },
       ];
 
       const results = await rag.queryMultiple(queries);

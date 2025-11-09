@@ -3,6 +3,7 @@ import { AgentContext, AgentResult } from '../agents/agent.interface';
 import { AppConfig } from '../config/config.interface';
 import { createCommitEvaluationGraph } from './commit-evaluation-graph';
 import { formatTokenUsage, formatCost } from '../utils/token-tracker';
+import { DocumentationVectorStoreService } from '../services/documentation-vector-store.service';
 
 /**
  * Commit Evaluation Orchestrator using LangGraph
@@ -17,6 +18,7 @@ export class CommitEvaluationOrchestrator {
   private config: AppConfig;
   private graph: ReturnType<typeof createCommitEvaluationGraph>;
   private lastDeveloperOverview?: string; // Store for external access
+  private documentationStore?: DocumentationVectorStoreService; // Global documentation store (shared across commits)
 
   constructor(
     private readonly agentRegistry: AgentRegistry,
@@ -36,6 +38,53 @@ export class CommitEvaluationOrchestrator {
 
     // Compile the LangGraph workflow
     this.graph = createCommitEvaluationGraph(agentRegistry, config);
+
+    // Initialize global documentation vector store if enabled (fire and forget - happens in background)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.initializeDocumentationStore();
+  }
+
+  /**
+   * Initialize documentation vector store (called once at orchestrator startup)
+   * Loads markdown files from repository and builds embeddings
+   * This runs asynchronously in the background and is not awaited in constructor
+   */
+  private async initializeDocumentationStore(): Promise<void> {
+    if (!this.config.documentation?.enabled) {
+      return;
+    }
+
+    try {
+      const docConfig = this.config.documentation;
+      this.documentationStore = new DocumentationVectorStoreService();
+
+      // Get repository path from process.cwd() or config
+      const repoPath = process.cwd();
+
+      // Initialize with default patterns if not specified
+      const patterns = docConfig.patterns || ['README.md', 'docs/**/*.md'];
+      const excludePatterns = docConfig.excludePatterns || ['node_modules/**', 'dist/**'];
+      const chunkSize = docConfig.chunkSize || 1000;
+
+      await this.documentationStore.initialize(
+        repoPath,
+        patterns,
+        excludePatterns,
+        chunkSize,
+        (progress, current, total) => {
+          // Silent progress - don't spam console during initialization
+          if (progress === 100) {
+            const stats = this.documentationStore!.getStats();
+            console.log(
+              `📚 Documentation indexed: ${stats.chunksCreated} chunks from ${stats.filesLoaded} files`
+            );
+          }
+        }
+      );
+    } catch (error) {
+      console.warn('⚠️  Failed to initialize documentation store:', error);
+      this.documentationStore = undefined;
+    }
   }
 
   /**
@@ -97,12 +146,18 @@ export class CommitEvaluationOrchestrator {
       context.vectorStore = vectorStore;
     }
 
+    // Add global documentation store to context (if initialized)
+    if (this.documentationStore) {
+      context.documentationStore = this.documentationStore;
+    }
+
     // Initialize graph state
     const initialState = {
       commitDiff: context.commitDiff,
       filesChanged: context.filesChanged || [],
       developerOverview: context.developerOverview, // Include developer overview
       vectorStore: context.vectorStore, // Pass vector store through graph state
+      documentationStore: context.documentationStore, // Pass documentation store through graph state
       commitHash: context.commitHash, // NEW: For progress logging
       commitIndex: context.commitIndex, // NEW: For batch progress
       totalCommits: context.totalCommits, // NEW: For batch progress

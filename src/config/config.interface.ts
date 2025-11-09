@@ -42,4 +42,10 @@ export interface AppConfig {
     project: string;
     endpoint: string;
   };
+  documentation?: {
+    enabled: boolean;
+    patterns: string[]; // ['README.md', 'docs/**/*.md']
+    excludePatterns?: string[]; // ['node_modules/**', 'dist/**']
+    chunkSize?: number; // Max chars per chunk (default: 1000)
+  };
 }

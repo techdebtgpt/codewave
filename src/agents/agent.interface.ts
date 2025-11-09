@@ -19,6 +19,7 @@ export interface AgentContext {
   agentResults?: AgentResult[]; // Previous agent responses for conversation
   conversationHistory?: import('../types/agent.types').ConversationMessage[]; // Full conversation log
   vectorStore?: import('../services/diff-vector-store.service').DiffVectorStoreService; // RAG support for large diffs
+  documentationStore?: import('../services/documentation-vector-store.service').DocumentationVectorStoreService; // Global repository documentation RAG
   roundPurpose?: 'initial' | 'concerns' | 'validation'; // Current discussion phase
 
   // Batch evaluation metadata (for progress logging)

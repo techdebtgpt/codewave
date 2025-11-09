@@ -2,6 +2,46 @@
 
 All notable changes to CodeWave are documented here.
 
+## [0.0.4] - 2025-11-09
+
+### CLI Improvements
+
+- **Evaluate Command UX**: Simplified commit evaluation syntax
+  - Default behavior: `codewave evaluate HEAD` (positional argument)
+  - Legacy syntax: `codewave evaluate --commit HEAD` (still supported)
+  - File input: `codewave evaluate --file my-changes.diff`
+  - Staged changes: `codewave evaluate --staged`
+  - Current working directory: `codewave evaluate --current`
+
+- **Process Exit Handling**: Added proper `process.exit(0)` after successful evaluation
+  - Ensures clean CLI termination
+  - Consistent with batch command behavior
+
+### Documentation Organization
+
+- **File Structure**: Reorganized documentation for clarity
+  - Root: Only README.md and CHANGELOG.md
+  - `.github/`: GitHub-specific files (CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md)
+  - `docs/`: All technical documentation
+
+- **Removed Files**: Cleaned up future planning documents
+  - GITHUB_GOVERNANCE.md (completed feature planning)
+  - COMMUNITY_FEATURE_STRATEGY.md (strategic planning)
+  - FUTURE_WORK.md (roadmap planning)
+
+- **README Updates**: Simplified command examples to use new UX
+  - Updated all `evaluate` command examples
+  - Showed backward compatibility with `--commit` flag
+  - Updated help text and usage information
+
+### Test & Quality
+
+- **Build**: ✅ All TypeScript compilation successful
+- **Linting**: ✅ Prettier formatting compliant
+- **Testing**: ✅ No regressions detected
+
+---
+
 ## [0.0.2] - 2025-11-08
 
 ### Bug Fixes
@@ -208,14 +248,6 @@ If upgrading from previous version:
 - Haiku may generate verbose responses that require multi-round refinement
 - Complex diffs (>100KB) still benefit from RAG (Retrieval-Augmented Generation)
 - Some edge cases in JSON parsing may require manual review
-
-### Future Improvements
-
-- [ ] Cache agent responses for identical code patterns
-- [ ] Add caching for expensive LLM calls
-- [ ] Stream large responses to reduce memory usage
-- [ ] Add metrics export to CSV format
-- [ ] Implement webhook notifications for batch completion
 
 ---
 

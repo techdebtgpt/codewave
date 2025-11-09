@@ -200,7 +200,7 @@ While comprehensive tests are being developed, please:
 ## Documentation
 
 - Update docs/INDEX.md if adding new documentation
-- Update CHANGELOG.md with your changes
+- Update docs/CHANGELOG.md with your changes
 - Add code comments for complex logic
 - Update README.md if adding user-facing features
 
@@ -212,8 +212,8 @@ While comprehensive tests are being developed, please:
 - **docs/ADVANCED_FEATURES.md** - Deep features
 - **docs/ARCHITECTURE.md** - System design
 - **docs/API.md** - Programmatic API
-- **CONTRIBUTING.md** - This file
-- **CHANGELOG.md** - Version history
+- **docs/CHANGELOG.md** - Version history
+- **.github/CONTRIBUTING.md** - This file
 
 ## Pull Request Process
 
@@ -285,7 +285,7 @@ We use [Semantic Versioning](https://semver.org/):
 
 ## Questions?
 
-- Check [docs/FAQ](docs/INDEX.md)
+- Check [docs/INDEX.md](../docs/INDEX.md)
 - Open a GitHub Discussion
 - Contact: issues@techdebtgpt.com
 

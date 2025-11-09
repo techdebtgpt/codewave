@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(node dist/cli/index.js:*)",
+      "Bash(cat:*)",
+      "Bash(npm install)",
+      "Bash(npm run validate:publish:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run prettier:*)",
+      "Bash(npm run prettier:check:*)"
     ],
     "deny": [],
     "ask": []

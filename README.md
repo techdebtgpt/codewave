@@ -17,10 +17,10 @@ CodeWave is a sophisticated Node.js CLI tool that leverages multiple AI agents i
 ## Table of Contents
 
 - [Key Features](#key-features)
-- [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Output Structure](#output-structure)
+- [Installation](#installation)
 - [CLI Commands](#cli-commands)
+- [Output Structure](#output-structure)
 - [Configuration](#configuration)
 - [The 7-Pillar Evaluation Methodology](#the-7-pillar-evaluation-methodology)
 - [The 5 AI Agents](#the-5-ai-agents)
@@ -52,6 +52,73 @@ CodeWave is a sophisticated Node.js CLI tool that leverages multiple AI agents i
 
 ---
 
+## Quick Start
+
+Get up and running in 3 simple steps:
+
+### 1. Install CodeWave
+
+#### From npm (Recommended)
+
+```bash
+npm install -g @techdebtgpt/codewave
+codewave --help
+```
+
+#### Local Development
+
+```bash
+git clone <repo-url>
+cd codewave
+npm install
+npm run build
+```
+
+### 2. Configure Your LLM Provider
+
+```bash
+codewave config
+```
+
+This launches an interactive wizard to configure:
+
+- **LLM Provider**: Choose Anthropic Claude, OpenAI, or Google Gemini
+- **API Keys**: Set your LLM provider credentials
+- **Model Selection**: Pick your preferred model (defaults recommended)
+- **Default Settings**: Configure batch size, output directory, and reporting preferences
+
+Configuration is stored securely and only needs to be done once.
+
+**Verify Setup:**
+
+```bash
+codewave config show
+```
+
+### 3. Evaluate Your First Commit
+
+```bash
+codewave evaluate HEAD
+```
+
+The system will:
+
+1. Fetch the commit details from your Git repository
+2. Extract the diff and metadata
+3. Run multi-agent conversation workflow (3 rounds)
+4. Generate interactive HTML report and JSON results
+
+**Find Your Results:**
+
+```bash
+# Results are in: .evaluated-commits/{commit-hash}_{date}_{time}/
+open .evaluated-commits/*/report.html                    # macOS
+xdg-open .evaluated-commits/*/report.html              # Linux
+start .evaluated-commits\*\report.html                 # Windows
+```
+
+---
+
 ## Installation
 
 ### Prerequisites
@@ -67,10 +134,11 @@ CodeWave is a sophisticated Node.js CLI tool that leverages multiple AI agents i
 npm install -g @techdebtgpt/codewave
 ```
 
-Then use the command:
+Then verify installation:
 
 ```bash
 codewave --help
+codewave --version
 ```
 
 ### Local Development
@@ -84,81 +152,65 @@ npm run build
 
 ---
 
-## Quick Start
+## CLI Commands
 
-### 1. First-Time Setup (2 minutes)
+### Overview
 
 ```bash
-codewave config
+codewave [options] <command> [command-options]
 ```
 
-This launches an interactive wizard where you'll configure:
-
-- **LLM Provider**: Choose Anthropic Claude, OpenAI, or Google Gemini
-- **API Keys**: Set your LLM provider credentials
-- **Model Selection**: Pick your preferred model (defaults recommended)
-- **Default Settings**: Configure batch size, output directory, and reporting preferences
-
-Configuration is stored securely and requires only one-time setup.
-
-**Verify Setup:**
+### Global Options
 
 ```bash
-# Check configuration
-codewave config show
-
-# Expected output should show your LLM provider and model
+codewave --help, -h          Show help message
+codewave --version, -v       Show version number
 ```
 
-### 2. Evaluate a Single Commit (30-60 seconds)
+### evaluate - Analyze a Single Commit
 
 ```bash
-codewave evaluate <commit-hash>
+codewave evaluate <commit-hash> [options]
 ```
 
-**Example:**
+**Examples:**
 
 ```bash
+# Evaluate a specific commit (default behavior)
 codewave evaluate HEAD
 codewave evaluate a1b2c3d
+codewave evaluate HEAD~5
+
+# Evaluate staged changes
+codewave evaluate --staged
+
+# Evaluate all current changes (staged + unstaged)
+codewave evaluate --current
+
+# Evaluate from diff file
+codewave evaluate --file my-changes.diff
 ```
 
-The system will:
-
-1. Fetch the commit details from the Git repository
-2. Extract the diff and metadata
-3. Run multi-agent conversation workflow (3 rounds)
-4. Generate interactive HTML report and JSON results
-
-**Find Your Results:**
+### batch - Evaluate Multiple Commits
 
 ```bash
-# Results are in: .evaluated-commits/{commit-hash}_{date}_{time}/
-open .evaluated-commits/*/report.html                    # macOS
-xdg-open .evaluated-commits/*/report.html              # Linux
-start .evaluated-commits\*\report.html                 # Windows
-```
-
-### 3. Evaluate Multiple Commits (Batch Mode)
-
-```bash
-codewave batch-evaluate [options]
+codewave batch [options]
 ```
 
 **Examples:**
 
 ```bash
 # Evaluate last 10 commits on current branch
-codewave batch-evaluate --count 10
+codewave batch --count 10
 
 # Evaluate with progress tracking
-codewave batch-evaluate --count 20 --verbose
+codewave batch --count 20 --verbose
 
 # Evaluate commits in date range
-codewave batch-evaluate --since "2024-01-01" --until "2024-01-31"
+codewave batch --since "2024-01-01" --until "2024-01-31"
 
 # Evaluate with custom output and parallelization
-codewave batch-evaluate --count 50 --output "./reports" --parallel 3
+codewave batch --count 50 --output "./reports" --parallel 3
 ```
 
 **Verify Batch Results:**
@@ -171,7 +223,17 @@ ls -1 .evaluated-commits/ | wc -l
 jq -s '[.[].totalCost] | add' .evaluated-commits/*/results.json
 ```
 
-### Common First-Time Issues
+### config - Manage Configuration
+
+```bash
+codewave config                    # Interactive setup wizard
+codewave config show               # Display current configuration
+codewave config reset              # Reset to defaults
+```
+
+---
+
+## Common Issues & Solutions
 
 **Issue**: "API Key not found"
 
@@ -183,12 +245,11 @@ export CODEWAVE_API_KEY=sk-ant-...
 codewave evaluate HEAD
 ```
 
-**Issue**: "codewave: command not found" (on Windows)
+**Issue**: "codewave: command not found" (after npm install -g)
 
 ```bash
-# Solution: Ensure npm was restarted after installation
-npm install -g @techdebtgpt/codewave
-# Restart your terminal
+# Solution: Restart your terminal
+# The terminal needs to reload PATH after global npm install
 codewave --version
 ```
 
@@ -196,7 +257,8 @@ codewave --version
 
 ```bash
 # Solution: Enable RAG for large commits
-codewave config set enable-rag true
+codewave config
+# Then when prompted, enable RAG for large diffs
 codewave evaluate HEAD
 ```
 
@@ -261,14 +323,17 @@ You can customize where evaluation results are saved using any of these methods 
 
 #### 1. CLI Flag (Highest Priority)
 
-Use `-o` or `--output` flag for single command:
+Use positional argument (or `--commit` for single evaluation):
 
 ```bash
-# Single evaluation
-codewave evaluate HEAD -o ./my-reports
+# Single evaluation (recommended)
+codewave evaluate HEAD
+
+# Alternative (legacy syntax also supported)
+codewave evaluate --commit HEAD
 
 # Batch evaluation
-codewave batch-evaluate --count 10 -o ./analysis
+codewave batch --count 10
 ```
 
 #### 2. Environment Variable
@@ -278,7 +343,7 @@ Set for current session or script:
 ```bash
 export CODEWAVE_OUTPUT_DIR=./reports
 codewave evaluate HEAD
-codewave batch-evaluate --count 10
+codewave batch --count 10
 ```
 
 #### 3. Configuration File
@@ -314,14 +379,11 @@ Control which file formats to generate:
 #### Via CLI Flag
 
 ```bash
-# HTML only
-codewave evaluate HEAD --format html
+# Evaluate specific commit
+codewave evaluate HEAD
 
-# JSON only (for CI/CD)
-codewave evaluate HEAD --format json
-
-# All formats (default)
-codewave evaluate HEAD --format all
+# Evaluate staged changes
+codewave evaluate --staged
 ```
 
 #### Via Configuration
@@ -345,89 +407,6 @@ Or in config file:
 - `json` - Structured JSON for programmatic access
 - `markdown` - Markdown format
 - `all` - Generate all three formats
-
----
-
-## CLI Commands
-
-### `codewave evaluate`
-
-Evaluate a single commit with detailed multi-agent analysis.
-
-```bash
-codewave evaluate <commit-hash> [options]
-```
-
-**Arguments:**
-
-- `<commit-hash>` - Git commit hash or reference (HEAD, branch name, etc.)
-
-**Options:**
-
-- `-o, --output <dir>` - Output directory (default: `.evaluated-commits`)
-- `--repo <path>` - Git repository path (default: current directory)
-- `--format <format>` - Output format: `json`, `html`, `markdown` (default: all)
-- `--verbose` - Enable verbose logging
-- `--no-report` - Skip HTML report generation
-- `--model <model>` - Override configured LLM model
-
-**Example:**
-
-```bash
-codewave evaluate HEAD -o ./reports --verbose
-codewave evaluate abc1234 --format json --output ./data
-```
-
-### `codewave batch-evaluate`
-
-Evaluate multiple commits with progress tracking.
-
-```bash
-codewave batch-evaluate [options]
-```
-
-**Options:**
-
-- `--count <number>` - Number of commits to evaluate (default: 10)
-- `--since <date>` - Start date (ISO format or natural language)
-- `--until <date>` - End date (ISO format or natural language)
-- `--branch <branch>` - Branch to evaluate (default: current branch)
-- `-o, --output <dir>` - Output directory (default: `.evaluated-commits`)
-- `--parallel <number>` - Parallel evaluations (default: 3, max: 5)
-- `--skip-errors` - Continue on evaluation errors
-- `--verbose` - Enable verbose logging
-
-**Examples:**
-
-```bash
-codewave batch-evaluate --count 20
-codewave batch-evaluate --since "2024-01-01" --until "2024-01-31"
-codewave batch-evaluate --branch develop --count 50 --parallel 5
-```
-
-### `codewave config`
-
-Manage configuration settings.
-
-```bash
-codewave config [command]
-```
-
-**Commands:**
-
-- `codewave config` - Interactive setup wizard
-- `codewave config show` - Display current configuration
-- `codewave config set <key> <value>` - Set specific configuration value
-- `codewave config reset` - Reset to defaults
-
-**Examples:**
-
-```bash
-codewave config
-codewave config show
-codewave config set model claude-3-5-sonnet-20241022
-codewave config set batch-size 20
-```
 
 ---
 
@@ -835,7 +814,7 @@ See [CONFIGURATION.md](./docs/CONFIGURATION.md) for complete model comparison an
 Monitor evaluations in real-time:
 
 ```bash
-codewave batch-evaluate --count 100 --verbose
+codewave batch --count 100 --verbose
 ```
 
 **Progress Display**:
@@ -847,12 +826,14 @@ codewave batch-evaluate --count 100 --verbose
 - Success/error count
 - Average evaluation time per commit
 
-### JSON Output for CI/CD Integration
+### Programmatic Access to Results
 
-All results are available as structured JSON for programmatic access:
+All results are saved as JSON files in the evaluation output directory for programmatic access:
 
 ```bash
-codewave evaluate HEAD --format json
+codewave evaluate HEAD
+# Results are in: .evaluated-commits/{commit-hash}_{date}_{time}/
+# Access results.json for structured data
 ```
 
 **Use cases**:
@@ -869,7 +850,7 @@ codewave evaluate HEAD --format json
 ### Example 1: Evaluate Latest 5 Commits
 
 ```bash
-codewave batch-evaluate --count 5 --verbose
+codewave batch --count 5 --verbose
 ```
 
 **Output**:
@@ -897,17 +878,17 @@ Reports generated:
   ✓ j0i9h8g - "test: add integration tests" (Quality: 8.0/10)
 ```
 
-### Example 2: Focused Analysis with Custom Output
+### Example 2: Focused Analysis
 
 ```bash
-codewave evaluate feature/auth --output ./analysis --format json --verbose
+codewave evaluate feature/auth
 ```
 
 ### Example 3: Batch Evaluation - Last N Commits
 
 ```bash
 # Evaluate last 20 commits with progress display
-codewave batch-evaluate --count 20 --verbose
+codewave batch --count 20 --verbose
 
 # Output will show:
 # - Current progress (20/20)
@@ -920,13 +901,13 @@ codewave batch-evaluate --count 20 --verbose
 
 ```bash
 # Evaluate all commits from January 2024
-codewave batch-evaluate --since "2024-01-01" --until "2024-01-31"
+codewave batch --since "2024-01-01" --until "2024-01-31"
 
 # Evaluate commits from past week
-codewave batch-evaluate --since "7 days ago" --until "today"
+codewave batch --since "7 days ago" --until "today"
 
 # Evaluate commits in past month with custom output
-codewave batch-evaluate --since "30 days ago" --output "./monthly-analysis"
+codewave batch --since "30 days ago" --output "./monthly-analysis"
 ```
 
 ### Example 5: Batch with Cost Optimization
@@ -935,7 +916,7 @@ codewave batch-evaluate --since "30 days ago" --output "./monthly-analysis"
 # Use cheapest model (Gemini) with max parallelization
 codewave config set llm-provider google
 codewave config set model gemini-2.5-flash-lite
-codewave batch-evaluate --count 500 --parallel 5
+codewave batch --count 500 --parallel 5
 
 # Expected cost: ~$10 for 500 commits
 ```
@@ -945,7 +926,7 @@ codewave batch-evaluate --count 500 --parallel 5
 ```bash
 # Use best model with sequential processing (better reasoning)
 codewave config set model claude-opus-4-1-20250805
-codewave batch-evaluate --count 10 --parallel 1 --verbose
+codewave batch --count 10 --parallel 1 --verbose
 
 # Better quality, slower, higher cost per commit
 ```
@@ -954,7 +935,7 @@ codewave batch-evaluate --count 10 --parallel 1 --verbose
 
 ```bash
 # Continue on errors, save to specific directory
-codewave batch-evaluate \
+codewave batch \
   --since "2024-01-01" \
   --until "2024-01-31" \
   --skip-errors \
@@ -969,21 +950,21 @@ codewave batch-evaluate \
 
 ```bash
 # Evaluate commits only on develop branch
-codewave batch-evaluate --branch develop --count 30
+codewave batch --branch develop --count 30
 
 # Evaluate last 50 commits on feature branch
-codewave batch-evaluate --branch feature/new-auth --count 50
+codewave batch --branch feature/new-auth --count 50
 
 # Compare two branches
-codewave batch-evaluate --branch main --count 20 -o "./main-analysis"
-codewave batch-evaluate --branch develop --count 20 -o "./develop-analysis"
+codewave batch --branch main --count 20 -o "./main-analysis"
+codewave batch --branch develop --count 20 -o "./develop-analysis"
 ```
 
 ### Example 9: CI/CD Integration (JSON Output)
 
 ```bash
 # Evaluate and output only JSON (for programmatic access)
-codewave batch-evaluate \
+codewave batch \
   --count 10 \
   --format json \
   --output "./ci-results" \
@@ -1133,7 +1114,7 @@ A: For large commits (>100KB), enable RAG:
 
 ```
 A: Reduce parallel evaluations:
-   codewave batch-evaluate --parallel 2
+   codewave batch --parallel 2
    Or use a different LLM provider with higher rate limits.
 ```
 
@@ -1142,15 +1123,13 @@ A: Reduce parallel evaluations:
 ```
 A: Archive old evaluations:
    find .evaluated-commits -type f -mtime +30 -delete
-   Or specify custom output directory:
-   codewave evaluate HEAD -o ./archive
 ```
 
 **Q: Memory issues during batch processing**
 
 ```
 A: Reduce batch size and parallel count:
-   codewave batch-evaluate --count 10 --parallel 1
+   codewave batch --count 10 --parallel 1
 ```
 
 See [TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for more detailed solutions.
@@ -1211,11 +1190,15 @@ MIT License - see [LICENSE](./LICENSE) file for details.
 
 ## Contributing
 
-We welcome contributions from the community! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on how to contribute to CodeWave.
+We welcome contributions from the community! Please see [.github/CONTRIBUTING.md](./.github/CONTRIBUTING.md) for guidelines on how to contribute to CodeWave.
 
 ### Code of Conduct
 
-This project adheres to the [Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+This project adheres to the [Contributor Covenant Code of Conduct](./.github/CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+
+### Security
+
+Please report security vulnerabilities to [.github/SECURITY.md](./.github/SECURITY.md) or email security@techdebtgpt.com.
 
 ---
 

@@ -68,15 +68,26 @@ export class DeveloperReviewerAgent extends BaseAgentWorkflow {
 
     // Use RAG if available for large diffs (skip in subsequent rounds to save tokens)
     const isFirstRound = !context.agentResults || context.agentResults.length === 0;
-    if (context.vectorStore && isFirstRound) {
-      const { RAGHelper } = await import('../utils/rag-helper.js');
-      const rag = new RAGHelper(context.vectorStore);
+    if ((context.vectorStore || context.documentationStore) && isFirstRound) {
+      const { CombinedRAGHelper } = await import('../utils/combined-rag-helper.js');
+      const rag = new CombinedRAGHelper(context.vectorStore, context.documentationStore);
+      rag.setAgentName('Developer Reviewer');
 
       // Ask code quality-focused questions (optimized for cost)
       const queries = [
-        { q: 'Show code style and formatting changes', topK: 3 },
-        { q: 'What code quality improvements or issues exist?', topK: 2 },
-        { q: 'Show complex logic or algorithms that need review', topK: 2 },
+        { q: 'Show code style and formatting changes', topK: 3, store: 'diff' as const },
+        { q: 'What code quality improvements or issues exist?', topK: 2, store: 'diff' as const },
+        {
+          q: 'What code review standards are documented in the repository?',
+          topK: 2,
+          store: 'docs' as const,
+        },
+        { q: 'Show complex logic or algorithms that need review', topK: 2, store: 'diff' as const },
+        {
+          q: 'Are there documented security guidelines or best practices?',
+          topK: 2,
+          store: 'docs' as const,
+        },
       ];
 
       const results = await rag.queryMultiple(queries);

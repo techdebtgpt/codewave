@@ -43,6 +43,12 @@ export const DEFAULT_CONFIG: AppConfig = {
     project: 'codewave',
     endpoint: 'https://api.smith.langchain.com',
   },
+  documentation: {
+    enabled: true,
+    patterns: ['README.md', 'docs/**/*.md', 'ARCHITECTURE.md', '**/*.md'],
+    excludePatterns: ['node_modules/**', 'dist/**', '.git/**', 'coverage/**'],
+    chunkSize: 1000,
+  },
 };
 
 // For backwards compatibility

@@ -9,6 +9,12 @@ dist/
 results.json
 report.html
 index.html
-/.claude
-/.vscode
-/.claude
+
+# Claude Code configuration
+.claude/
+
+# IDE configuration
+.vscode/
+
+# ArchDoc configuration (contains API keys)
+.archdoc.config.json

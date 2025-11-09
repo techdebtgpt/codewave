@@ -362,17 +362,21 @@ async function initializeConfig(): Promise<void> {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
   console.log(chalk.green(`\n✅ Created ${path.relative(process.cwd(), configPath)}`));
 
-  // Suggest adding config file to .gitignore (contains API keys)
+  // Suggest adding config and evaluation results to .gitignore
   const gitignorePath = path.join(process.cwd(), '.gitignore');
   let shouldAddGitignore = false;
   if (fs.existsSync(gitignorePath)) {
     const gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
-    if (!gitignoreContent.includes('.codewave.config.json')) {
+    const needsConfigEntry = !gitignoreContent.includes('.codewave.config.json');
+    const needsEvaluationEntry = !gitignoreContent.includes('.evaluated-commits');
+
+    if (needsConfigEntry || needsEvaluationEntry) {
       const { addToGitignore } = await inquirer.prompt([
         {
           type: 'confirm',
           name: 'addToGitignore',
-          message: 'Add .codewave.config.json to .gitignore? (recommended - contains API keys)',
+          message:
+            'Add CodeWave files to .gitignore? (recommended - contains API keys and evaluation results)',
           default: true,
         },
       ]);
@@ -381,11 +385,29 @@ async function initializeConfig(): Promise<void> {
   }
 
   if (shouldAddGitignore) {
-    fs.appendFileSync(
-      gitignorePath,
-      '\n# CodeWave configuration (contains API keys)\n.codewave.config.json\n'
-    );
-    console.log(chalk.green('✅ Added .codewave.config.json to .gitignore'));
+    let entriesAdded = false;
+    let gitignoreContent = fs.existsSync(gitignorePath)
+      ? fs.readFileSync(gitignorePath, 'utf-8')
+      : '';
+
+    // Add .codewave.config.json if not present
+    if (!gitignoreContent.includes('.codewave.config.json')) {
+      fs.appendFileSync(
+        gitignorePath,
+        '\n# CodeWave configuration (contains API keys)\n.codewave.config.json\n'
+      );
+      entriesAdded = true;
+    }
+
+    // Add .evaluated-commits if not present
+    if (!gitignoreContent.includes('.evaluated-commits')) {
+      fs.appendFileSync(gitignorePath, '\n# CodeWave evaluation results\n.evaluated-commits/\n');
+      entriesAdded = true;
+    }
+
+    if (entriesAdded) {
+      console.log(chalk.green('✅ Added CodeWave files to .gitignore'));
+    }
   }
 
   console.log(chalk.cyan('\n🎉 Setup complete!'));
