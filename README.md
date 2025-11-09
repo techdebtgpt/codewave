@@ -14,6 +14,30 @@ CodeWave is a sophisticated Node.js CLI tool that leverages multiple AI agents i
 
 ---
 
+## Table of Contents
+
+- [Key Features](#key-features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Output Structure](#output-structure)
+- [CLI Commands](#cli-commands)
+- [Configuration](#configuration)
+- [The 7-Pillar Evaluation Methodology](#the-7-pillar-evaluation-methodology)
+- [The 5 AI Agents](#the-5-ai-agents)
+- [Multi-Round Conversation Framework](#multi-round-conversation-framework)
+- [Developer Overview](#developer-overview)
+- [Advanced Features](#advanced-features)
+- [Examples](#examples)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [Troubleshooting](#troubleshooting)
+- [Performance Considerations](#performance-considerations)
+- [API Reference](#api-reference)
+- [License](#license)
+- [Support & Community](#support--community)
+
+---
+
 ## Key Features
 
 - **🤖 Multi-Agent Conversations**: 5 specialized AI agents discuss commits across 3 rounds (Initial Assessment → Concerns → Validation & Agreement)
@@ -62,7 +86,7 @@ npm run build
 
 ## Quick Start
 
-### 1. First-Time Setup
+### 1. First-Time Setup (2 minutes)
 
 ```bash
 codewave config
@@ -72,12 +96,21 @@ This launches an interactive wizard where you'll configure:
 
 - **LLM Provider**: Choose Anthropic Claude, OpenAI, or Google Gemini
 - **API Keys**: Set your LLM provider credentials
-- **Model Selection**: Pick your preferred model for each provider
+- **Model Selection**: Pick your preferred model (defaults recommended)
 - **Default Settings**: Configure batch size, output directory, and reporting preferences
 
 Configuration is stored securely and requires only one-time setup.
 
-### 2. Evaluate a Single Commit
+**Verify Setup:**
+
+```bash
+# Check configuration
+codewave config show
+
+# Expected output should show your LLM provider and model
+```
+
+### 2. Evaluate a Single Commit (30-60 seconds)
 
 ```bash
 codewave evaluate <commit-hash>
@@ -94,8 +127,17 @@ The system will:
 
 1. Fetch the commit details from the Git repository
 2. Extract the diff and metadata
-3. Run multi-agent conversation workflow
+3. Run multi-agent conversation workflow (3 rounds)
 4. Generate interactive HTML report and JSON results
+
+**Find Your Results:**
+
+```bash
+# Results are in: .evaluated-commits/{commit-hash}_{date}_{time}/
+open .evaluated-commits/*/report.html                    # macOS
+xdg-open .evaluated-commits/*/report.html              # Linux
+start .evaluated-commits\*\report.html                 # Windows
+```
 
 ### 3. Evaluate Multiple Commits (Batch Mode)
 
@@ -109,12 +151,53 @@ codewave batch-evaluate [options]
 # Evaluate last 10 commits on current branch
 codewave batch-evaluate --count 10
 
+# Evaluate with progress tracking
+codewave batch-evaluate --count 20 --verbose
+
 # Evaluate commits in date range
 codewave batch-evaluate --since "2024-01-01" --until "2024-01-31"
 
-# Evaluate with custom output directory
-codewave batch-evaluate --count 5 --output "./reports"
+# Evaluate with custom output and parallelization
+codewave batch-evaluate --count 50 --output "./reports" --parallel 3
 ```
+
+**Verify Batch Results:**
+
+```bash
+# Count evaluations
+ls -1 .evaluated-commits/ | wc -l
+
+# Calculate total cost
+jq -s '[.[].totalCost] | add' .evaluated-commits/*/results.json
+```
+
+### Common First-Time Issues
+
+**Issue**: "API Key not found"
+```bash
+# Solution: Run setup again or set environment variable
+codewave config
+# OR
+export CODEWAVE_API_KEY=sk-ant-...
+codewave evaluate HEAD
+```
+
+**Issue**: "codewave: command not found" (on Windows)
+```bash
+# Solution: Ensure npm was restarted after installation
+npm install -g @techdebtgpt/codewave
+# Restart your terminal
+codewave --version
+```
+
+**Issue**: Evaluation times out
+```bash
+# Solution: Enable RAG for large commits
+codewave config set enable-rag true
+codewave evaluate HEAD
+```
+
+See [TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for more help.
 
 ---
 
@@ -168,6 +251,96 @@ Original unified diff format for reference and archival.
 #### `summary.txt`
 
 Quick text summary with key metrics and top 3 recommendations.
+
+### Configuring Output Location
+
+You can customize where evaluation results are saved using any of these methods (in priority order):
+
+#### 1. CLI Flag (Highest Priority)
+
+Use `-o` or `--output` flag for single command:
+
+```bash
+# Single evaluation
+codewave evaluate HEAD -o ./my-reports
+
+# Batch evaluation
+codewave batch-evaluate --count 10 -o ./analysis
+```
+
+#### 2. Environment Variable
+
+Set for current session or script:
+
+```bash
+export CODEWAVE_OUTPUT_DIR=./reports
+codewave evaluate HEAD
+codewave batch-evaluate --count 10
+```
+
+#### 3. Configuration File
+
+Set as default for all evaluations:
+
+**User config** (`~/.codewave/config.json` or `%APPDATA%\codewave\config.json`):
+
+```json
+{
+  "outputDirectory": "./my-evaluations"
+}
+```
+
+**Project config** (`.codewave.config.json` in project root):
+
+```json
+{
+  "output": {
+    "directory": "./commit-analysis"
+  }
+}
+```
+
+#### 4. Default
+
+If not configured, defaults to `.evaluated-commits/` in current directory.
+
+### Configuring Output Format
+
+Control which file formats to generate:
+
+#### Via CLI Flag
+
+```bash
+# HTML only
+codewave evaluate HEAD --format html
+
+# JSON only (for CI/CD)
+codewave evaluate HEAD --format json
+
+# All formats (default)
+codewave evaluate HEAD --format all
+```
+
+#### Via Configuration
+
+```bash
+# Set default format
+codewave config set report-format json
+```
+
+Or in config file:
+
+```json
+{
+  "reportFormat": "json"
+}
+```
+
+**Available formats**:
+- `html` - Interactive HTML report (default)
+- `json` - Structured JSON for programmatic access
+- `markdown` - Markdown format
+- `all` - Generate all three formats
 
 ---
 
@@ -256,19 +429,39 @@ codewave config set batch-size 20
 
 ## Configuration
 
-CodeWave requires minimal configuration. On first run, use `codewave config` to set up your LLM provider.
+CodeWave uses a 3-tier configuration system with priority order:
 
-### Configuration File Location
+1. **Environment Variables** (highest priority)
+2. **CLI Arguments**
+3. **Project Configuration** (`.codewave.config.json`)
+4. **User Configuration** (user home directory)
+5. **Defaults** (lowest priority)
+
+### Quick Setup
+
+On first run, use `codewave config` to set up your LLM provider:
+
+```bash
+codewave config
+```
+
+This creates a user-level configuration file.
+
+### Configuration File Locations
+
+#### User-Level Configuration (Global)
+
+Applied to all projects in your user account:
 
 - **macOS/Linux**: `~/.codewave/config.json`
 - **Windows**: `%APPDATA%\codewave\config.json`
 
-### Configuration Options
+**Example**: Set once, used everywhere
 
 ```json
 {
   "llmProvider": "anthropic",
-  "model": "claude-3-5-sonnet-20241022",
+  "model": "claude-haiku-4-5-20251001",
   "apiKey": "sk-ant-...",
   "apiBaseUrl": null,
   "outputDirectory": ".evaluated-commits",
@@ -278,29 +471,102 @@ CodeWave requires minimal configuration. On first run, use `codewave config` to 
   "enableRag": true,
   "ragChunkSize": 2000,
   "vectorStoreType": "memory",
-  "reportFormat": "html",
+  "reportFormat": "all",
   "verbose": false
 }
 ```
 
+#### Project-Level Configuration (Local)
+
+Applied only to a specific project, overrides user-level settings:
+
+**Location**: `.codewave.config.json` in your project root
+
+**Example with Real-World Setup**:
+
+```json
+{
+  "apiKeys": {
+    "anthropic": "sk-ant-...",
+    "openai": "sk-proj-...",
+    "google": "",
+    "xai": ""
+  },
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "temperature": 0.2,
+    "maxTokens": 16000
+  },
+  "agents": {
+    "enabled": [
+      "business-analyst",
+      "sdet",
+      "developer-author",
+      "senior-architect",
+      "developer-reviewer"
+    ],
+    "retries": 3,
+    "timeout": 300000,
+    "minRounds": 2,
+    "maxRounds": 3,
+    "clarityThreshold": 0.85
+  },
+  "output": {
+    "directory": "./commit-analysis",
+    "format": "json",
+    "generateHtml": true
+  },
+  "tracing": {
+    "enabled": true,
+    "apiKey": "lsv2_pt_...",
+    "project": "codewave-evaluations",
+    "endpoint": "https://api.smith.langchain.com"
+  }
+}
+```
+
+**When to use project config**:
+- Different API keys per project
+- Team-specific settings
+- CI/CD pipeline customization
+- Integration with LangSmith tracing
+
 ### Environment Variables
 
-You can override configuration using environment variables:
+Override any configuration setting using environment variables (highest priority):
 
 ```bash
-# Set LLM provider
+# LLM Settings
 export CODEWAVE_LLM_PROVIDER=anthropic
 export CODEWAVE_API_KEY=sk-ant-...
-export CODEWAVE_MODEL=claude-3-5-sonnet-20241022
+export CODEWAVE_MODEL=claude-haiku-4-5-20251001
 
-# Set output directory
+# Output Settings
 export CODEWAVE_OUTPUT_DIR=./reports
+export CODEWAVE_REPORT_FORMAT=json
 
-# Enable verbose logging
+# Token & Cost Management
+export CODEWAVE_MAX_TOKENS=4000
+export CODEWAVE_BATCH_SIZE=10
+export CODEWAVE_PARALLEL=3
+
+# RAG Settings
+export CODEWAVE_ENABLE_RAG=true
+export CODEWAVE_RAG_CHUNK_SIZE=2000
+export CODEWAVE_RAG_THRESHOLD=102400
+
+# Logging
 export CODEWAVE_VERBOSE=true
 
 # Run evaluation
 codewave evaluate HEAD
+```
+
+**Priority order** (environment variables override all):
+
+```
+Environment Variables > CLI Arguments > Project Config > User Config > Defaults
 ```
 
 ---
@@ -512,33 +778,52 @@ codewave config set rag-threshold 102400
 
 ### Multi-LLM Support
 
-Choose your LLM provider based on your needs:
+Choose your LLM provider and model based on your needs and budget:
 
-**Anthropic Claude**
+**Anthropic Claude** (Recommended)
 
 - Best for code analysis and reasoning
-- Models: claude-3-5-sonnet-20241022, claude-3-opus-20250219
-- Recommended: Default choice for optimal results
+- **Default Model**: claude-haiku-4-5-20251001 (6x cheaper, recommended for most use cases)
+- **Alternatives**:
+  - claude-sonnet-4-5-20250929 (best balance of quality and cost)
+  - claude-opus-4-1-20250805 (maximum quality, highest cost)
 
 **OpenAI GPT**
 
 - Excellent multi-agent reasoning
-- Models: gpt-4o, gpt-4-turbo, gpt-4
-- Note: May have rate limits for batch processing
+- **Cost-optimized**: gpt-4o-mini (recommended)
+- **Balanced**: gpt-4o
+- **Advanced reasoning**: o3-mini-2025-01-31, o3
 
 **Google Gemini**
 
-- Cost-effective option
-- Models: gemini-2.0-flash, gemini-1.5-pro
-- Good for high-volume batch processing
+- Most cost-effective option
+- **Recommended**: gemini-2.5-flash-lite (most efficient)
+- **Alternatives**: gemini-2.5-flash, gemini-2.5-pro
+
+**xAI Grok**
+
+- Specialized use cases
+- **Recommended**: grok-4-fast-non-reasoning
+- **Alternatives**: grok-4.2, grok-4-0709
 
 **Example**: Switch to OpenAI
 
 ```bash
 codewave config set llm-provider openai
-codewave config set model gpt-4o
+codewave config set model gpt-4o-mini
 codewave config set api-key sk-...
 ```
+
+**Example**: Switch to Google Gemini (most cost-effective)
+
+```bash
+codewave config set llm-provider google
+codewave config set model gemini-2.5-flash-lite
+codewave config set api-key YOUR_GEMINI_API_KEY
+```
+
+See [CONFIGURATION.md](./docs/CONFIGURATION.md) for complete model comparison and cost analysis.
 
 ### Batch Evaluation with Progress Tracking
 
@@ -613,10 +898,118 @@ Reports generated:
 codewave evaluate feature/auth --output ./analysis --format json --verbose
 ```
 
-### Example 3: Batch Processing with Error Handling
+### Example 3: Batch Evaluation - Last N Commits
 
 ```bash
-codewave batch-evaluate --since "2024-01-01" --until "2024-01-31" --skip-errors --parallel 5
+# Evaluate last 20 commits with progress display
+codewave batch-evaluate --count 20 --verbose
+
+# Output will show:
+# - Current progress (20/20)
+# - Elapsed time and ETA
+# - Average quality score
+# - Token usage and costs
+```
+
+### Example 4: Batch Evaluation - Date Range
+
+```bash
+# Evaluate all commits from January 2024
+codewave batch-evaluate --since "2024-01-01" --until "2024-01-31"
+
+# Evaluate commits from past week
+codewave batch-evaluate --since "7 days ago" --until "today"
+
+# Evaluate commits in past month with custom output
+codewave batch-evaluate --since "30 days ago" --output "./monthly-analysis"
+```
+
+### Example 5: Batch with Cost Optimization
+
+```bash
+# Use cheapest model (Gemini) with max parallelization
+codewave config set llm-provider google
+codewave config set model gemini-2.5-flash-lite
+codewave batch-evaluate --count 500 --parallel 5
+
+# Expected cost: ~$10 for 500 commits
+```
+
+### Example 6: Batch with Quality Focus
+
+```bash
+# Use best model with sequential processing (better reasoning)
+codewave config set model claude-opus-4-1-20250805
+codewave batch-evaluate --count 10 --parallel 1 --verbose
+
+# Better quality, slower, higher cost per commit
+```
+
+### Example 7: Batch Processing with Error Handling
+
+```bash
+# Continue on errors, save to specific directory
+codewave batch-evaluate \
+  --since "2024-01-01" \
+  --until "2024-01-31" \
+  --skip-errors \
+  --parallel 5 \
+  --output "./january-analysis" \
+  --verbose
+
+# Generates batch-summary.json with success/failure stats
+```
+
+### Example 8: Branch-Specific Batch Evaluation
+
+```bash
+# Evaluate commits only on develop branch
+codewave batch-evaluate --branch develop --count 30
+
+# Evaluate last 50 commits on feature branch
+codewave batch-evaluate --branch feature/new-auth --count 50
+
+# Compare two branches
+codewave batch-evaluate --branch main --count 20 -o "./main-analysis"
+codewave batch-evaluate --branch develop --count 20 -o "./develop-analysis"
+```
+
+### Example 9: CI/CD Integration (JSON Output)
+
+```bash
+# Evaluate and output only JSON (for programmatic access)
+codewave batch-evaluate \
+  --count 10 \
+  --format json \
+  --output "./ci-results" \
+  --skip-errors
+
+# Access results programmatically
+jq '.metrics | {quality: .codeQuality, coverage: .testCoverage}' \
+  ./ci-results/*/results.json
+```
+
+### Example 10: Analyzing Batch Results
+
+```bash
+# Count total evaluations
+ls -1 .evaluated-commits/ | wc -l
+
+# Calculate average quality score
+jq -s 'map(.metrics.codeQuality) | add/length' \
+  .evaluated-commits/*/results.json
+
+# Find low-quality commits
+jq 'select(.metrics.codeQuality < 5)' \
+  .evaluated-commits/*/results.json
+
+# Calculate total cost
+jq -s 'map(.totalCost) | add' \
+  .evaluated-commits/*/results.json
+
+# Get average evaluation time
+jq -s 'map(.metadata.evaluationTime) | add/length' \
+  .evaluated-commits/*/results.json
 ```
 
 ---

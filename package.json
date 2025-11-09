@@ -25,7 +25,7 @@
     "postpack": "echo '✅ Package created successfully'"
   },
   "bin": {
-    "@techdebtgpt/codewave": "cli/index.js"
+    "codewave": "cli/index.js"
   },
   "type": "commonjs",
   "devDependencies": {
