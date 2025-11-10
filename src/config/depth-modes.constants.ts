@@ -20,21 +20,21 @@ export interface DepthModeConfig {
  * - No self-refinement, just one pass
  * - 70% clarity threshold (agent stops when fairly confident)
  * - No RAG (just use provided diff)
- * - ~1000 tokens per agent
+ * - ~1500 tokens per agent
  *
  * NORMAL (Balanced, default):
  * - 3-5 internal iterations
  * - Basic self-refinement
  * - 80% clarity threshold
  * - RAG enabled for context
- * - ~2000 tokens per agent
+ * - ~3500 tokens per agent
  *
  * DEEP (Thorough analysis for tech debt, architecture decisions):
  * - 5-10 internal iterations
  * - Full self-refinement with multiple refinement passes
  * - 90% clarity threshold (agent very confident)
  * - RAG enabled with expanded context
- * - ~3500 tokens per agent
+ * - ~6000 tokens per agent
  */
 export const DEPTH_MODE_CONFIGS: Record<'fast' | 'normal' | 'deep', DepthModeConfig> = {
   fast: {
@@ -43,7 +43,7 @@ export const DEPTH_MODE_CONFIGS: Record<'fast' | 'normal' | 'deep', DepthModeCon
     maxSelfQuestions: 1,
     skipSelfRefinement: true,
     ragEnabled: false,
-    tokenBudgetPerAgent: 800,
+    tokenBudgetPerAgent: 1500,
   },
   normal: {
     maxInternalIterations: 3,
@@ -51,7 +51,7 @@ export const DEPTH_MODE_CONFIGS: Record<'fast' | 'normal' | 'deep', DepthModeCon
     maxSelfQuestions: 3,
     skipSelfRefinement: false,
     ragEnabled: true,
-    tokenBudgetPerAgent: 2000,
+    tokenBudgetPerAgent: 3500,
   },
   deep: {
     maxInternalIterations: 8,
@@ -59,7 +59,7 @@ export const DEPTH_MODE_CONFIGS: Record<'fast' | 'normal' | 'deep', DepthModeCon
     maxSelfQuestions: 5,
     skipSelfRefinement: false,
     ragEnabled: true,
-    tokenBudgetPerAgent: 3500,
+    tokenBudgetPerAgent: 6000,
   },
 };
 

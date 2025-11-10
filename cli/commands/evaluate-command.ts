@@ -147,6 +147,7 @@ export async function runEvaluateCommand(args: string[]) {
   let source = 'commit';
   let sourceDescription = '';
   let repoPath = '.';
+  let depthMode: 'fast' | 'normal' | 'deep' = 'normal';
 
   // Handle repo path first (it can appear with any other flag)
   if (args.includes('--repo')) {
@@ -156,6 +157,17 @@ export async function runEvaluateCommand(args: string[]) {
       console.error(chalk.red('Error: --repo requires a path'));
       process.exit(1);
     }
+  }
+
+  // Handle depth mode flag
+  if (args.includes('--depth')) {
+    const depthIdx = args.indexOf('--depth');
+    const depthValue = args[depthIdx + 1];
+    if (!depthValue || !['fast', 'normal', 'deep'].includes(depthValue)) {
+      console.error(chalk.red('Error: --depth must be one of: fast, normal, deep'));
+      process.exit(1);
+    }
+    depthMode = depthValue as 'fast' | 'normal' | 'deep';
   }
 
   // Check for flags or positional arguments
@@ -221,8 +233,9 @@ export async function runEvaluateCommand(args: string[]) {
     );
     console.log('  codewave evaluate --file <path>          # Evaluate from diff file');
     console.log('\nOptions:');
-    console.log('  --repo <path>   Repository path (default: current directory)');
-    console.log('  --no-stream     Disable streaming output (silent mode)');
+    console.log('  --repo <path>    Repository path (default: current directory)');
+    console.log('  --depth <mode>   Analysis depth: fast, normal, deep (default: normal)');
+    console.log('  --no-stream      Disable streaming output (silent mode)');
     process.exit(1);
   }
 
@@ -251,6 +264,9 @@ export async function runEvaluateCommand(args: string[]) {
     process.exit(1);
   }
 
+  // Apply depth mode to config
+  config.agents.depthMode = depthMode;
+
   // Get API key for selected provider
   const provider = config.llm.provider;
   const apiKey = config.apiKeys[provider];
@@ -263,7 +279,8 @@ export async function runEvaluateCommand(args: string[]) {
   }
 
   console.log(chalk.cyan(`\n🤖 Using ${provider} (${config.llm.model})`));
-  console.log(chalk.gray(`📄 Source: ${sourceDescription}\n`));
+  console.log(chalk.gray(`📄 Source: ${sourceDescription}`));
+  console.log(chalk.gray(`🎯 Depth: ${depthMode}\n`));
 
   // Create agent registry with all agents
   const agentRegistry = createAgentRegistry(config);

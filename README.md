@@ -27,6 +27,10 @@ CodeWave is a sophisticated Node.js CLI tool that leverages multiple AI agents i
 - [Multi-Round Conversation Framework](#multi-round-conversation-framework)
 - [Developer Overview](#developer-overview)
 - [Advanced Features](#advanced-features)
+  - [Analysis Depth Modes](#analysis-depth-modes)
+  - [RAG for Large Diffs](#retrieval-augmented-generation-rag-for-large-diffs)
+  - [Multi-LLM Support](#multi-llm-support)
+  - [Batch Processing](#batch-evaluation-with-progress-tracking)
 - [Examples](#examples)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
@@ -755,6 +759,143 @@ For detailed information about Developer Overview generation, convergence detect
 ---
 
 ## Advanced Features
+
+### Analysis Depth Modes
+
+CodeWave provides three configurable depth modes that control the thoroughness of agent analysis. Each mode balances speed, cost, and analysis quality differently:
+
+#### Fast Mode (`--depth fast`)
+
+**Best for**: CI/CD pipelines, quick code reviews, pre-commit checks
+
+- **Token Budget**: 1,500 tokens per agent response
+- **Internal Iterations**: 1 (single pass, no refinement)
+- **Clarity Threshold**: 65% (agent stops when fairly confident)
+- **Self-Questions**: 1 question max per iteration
+- **RAG**: Disabled (uses full diff)
+- **Self-Refinement**: Skipped for speed
+
+**Usage**:
+```bash
+# Single evaluation
+codewave evaluate HEAD --depth fast
+
+# Batch evaluation
+codewave batch --count 50 --depth fast
+```
+
+**Typical Evaluation Time**: 1-2 seconds per commit
+
+#### Normal Mode (`--depth normal`) - Default
+
+**Best for**: Standard commit analysis, balanced quality/cost ratio
+
+- **Token Budget**: 3,500 tokens per agent response
+- **Internal Iterations**: 3 (with self-refinement)
+- **Clarity Threshold**: 80% (good confidence level)
+- **Self-Questions**: 3 questions per iteration
+- **RAG**: Enabled for large diffs
+- **Self-Refinement**: Active (agents refine their analysis)
+
+**Usage**:
+```bash
+# Single evaluation (default)
+codewave evaluate HEAD
+codewave evaluate HEAD --depth normal
+
+# Batch evaluation
+codewave batch --count 20 --depth normal
+```
+
+**Typical Evaluation Time**: 2-4 seconds per commit
+
+#### Deep Mode (`--depth deep`)
+
+**Best for**: Architectural decisions, tech debt analysis, critical changes
+
+- **Token Budget**: 6,000 tokens per agent response
+- **Internal Iterations**: 8 (extensive self-refinement)
+- **Clarity Threshold**: 88% (high confidence required)
+- **Self-Questions**: 5 questions per iteration
+- **RAG**: Enabled with expanded context
+- **Self-Refinement**: Full multi-pass refinement
+
+**Usage**:
+```bash
+# Single evaluation
+codewave evaluate HEAD --depth deep
+
+# Batch evaluation (more expensive)
+codewave batch --count 10 --depth deep
+```
+
+**Typical Evaluation Time**: 4-8 seconds per commit
+
+#### How Depth Modes Work
+
+Each depth mode controls several internal parameters:
+
+1. **Token Budget**: Maximum tokens each agent can use in their response
+2. **Internal Iterations**: How many times agents refine their analysis
+3. **Clarity Threshold**: Minimum confidence score before stopping refinement
+4. **Self-Questions**: Questions agents ask themselves to improve analysis
+5. **RAG Settings**: Whether to use semantic search for large diffs
+
+**Self-Refinement Process**:
+
+In normal and deep modes, agents go through iterative refinement:
+
+```
+Initial Analysis → Self-Evaluation → Generate Questions →
+Refined Analysis → Check Clarity → Continue or Stop
+```
+
+This creates more thoughtful, comprehensive evaluations but takes longer.
+
+#### Choosing the Right Depth Mode
+
+| Scenario | Recommended Mode | Reasoning |
+|----------|------------------|-----------|
+| Pre-commit validation | Fast | Speed matters, basic quality checks |
+| CI/CD pipeline | Fast | Quick feedback, cost-effective |
+| Code review preparation | Normal | Balanced analysis, good quality |
+| Team retrospectives | Normal | Standard depth sufficient |
+| Architecture review | Deep | Maximum insight needed |
+| Tech debt assessment | Deep | Comprehensive analysis required |
+| Production incident | Deep | Critical decisions require thoroughness |
+| Large refactoring | Deep | Need to understand all implications |
+
+#### Cost Comparison (using Claude 3.5 Sonnet)
+
+| Depth Mode | Tokens/Commit | Cost/Commit | Cost/100 Commits |
+|------------|---------------|-------------|------------------|
+| Fast | ~2,000-3,000 | $0.01-0.015 | $1.00-1.50 |
+| Normal | ~3,000-5,000 | $0.015-0.025 | $1.50-2.50 |
+| Deep | ~5,000-8,000 | $0.025-0.040 | $2.50-4.00 |
+
+#### Setting Default Depth Mode
+
+You can configure a default depth mode in your configuration:
+
+```bash
+# Via config command
+codewave config --init
+# Select your preferred default depth mode during setup
+
+# Via environment variable
+export CODEWAVE_DEPTH_MODE=deep
+codewave evaluate HEAD
+```
+
+Or in your `.codewave.config.json`:
+
+```json
+{
+  "agents": {
+    "depthMode": "deep"
+  }
+}
+```
 
 ### Retrieval-Augmented Generation (RAG) for Large Diffs
 

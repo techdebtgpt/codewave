@@ -864,6 +864,7 @@ function printBatchUsage() {
   console.log('  --until <date>         Evaluate commits until this date');
   console.log('  --count, -n <number>   Evaluate last N commits');
   console.log('  --branch, -b <name>    Branch to evaluate (default: HEAD)');
+  console.log('  --depth, -d <mode>     Analysis depth: fast, normal, deep (default: normal)');
   console.log('  --no-stream            Disable streaming output (silent mode)');
   console.log('\nExamples:');
   console.log(
@@ -874,4 +875,5 @@ function printBatchUsage() {
   );
   console.log('  codewave batch --since "2025-01-01"                # All commits since date');
   console.log('  codewave batch --since "2025-01-01" --until "2025-01-31"  # Date range');
+  console.log('  codewave batch --count 20 --depth deep             # Deep analysis for 20 commits');
 }
