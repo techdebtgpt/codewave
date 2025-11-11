@@ -6,9 +6,10 @@ export interface Agent {
 }
 
 export interface AgentMetadata {
-  name: string;
-  description: string;
-  role: string;
+  name: string; // Technical key (e.g., 'business-analyst', 'developer-reviewer')
+  description: string; // Full description of what the agent evaluates
+  role: string; // Display name (e.g., 'Business Analyst', 'Developer Reviewer')
+  roleDescription: string; // Perspective description (e.g., 'business perspective', 'code quality perspective')
 }
 
 export interface AgentContext {
@@ -20,7 +21,11 @@ export interface AgentContext {
   conversationHistory?: import('../types/agent.types').ConversationMessage[]; // Full conversation log
   vectorStore?: import('../services/diff-vector-store.service').DiffVectorStoreService; // RAG support for large diffs
   documentationStore?: import('../services/documentation-vector-store.service').DocumentationVectorStoreService; // Global repository documentation RAG
-  roundPurpose?: 'initial' | 'concerns' | 'validation'; // Current discussion phase
+
+  // Multi-round conversation tracking
+  currentRound?: number; // Current round number (0-indexed)
+  isFinalRound?: boolean; // Flag indicating if this is the final round
+  roundPurpose?: 'initial' | 'concerns' | 'validation'; // @deprecated - use currentRound and isFinalRound instead
 
   // Batch evaluation metadata (for progress logging)
   commitHash?: string;

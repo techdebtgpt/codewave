@@ -345,7 +345,10 @@ function calculateConsensusValues(
   groupedResults: Map<string, AgentEvaluation[]>
 ): Map<
   string,
-  { value: number; contributors: Array<{ name: string; score: number; weight: number }> }
+  {
+    value: number | null;
+    contributors: Array<{ name: string; score: number | null; weight: number }>;
+  }
 > {
   const {
     getAgentWeight,
@@ -366,14 +369,15 @@ function calculateConsensusValues(
   });
 
   // Build agent-metric matrix and agentName -> agentRole mapping
-  const agentMetrics = new Map<string, Map<string, number>>();
+  const agentMetrics = new Map<string, Map<string, number | null>>();
   const agentRoleMap = new Map<string, string>();
   groupedResults.forEach((evaluations, agentName) => {
     const latestEval = evaluations[evaluations.length - 1];
     if (latestEval.metrics) {
       const filteredMetrics = Object.fromEntries(
         Object.entries(latestEval.metrics).filter(
-          ([metric, value]) => SEVEN_PILLARS.includes(metric) && typeof value === 'number'
+          ([metric, value]) =>
+            SEVEN_PILLARS.includes(metric) && (typeof value === 'number' || value === null)
         )
       );
       agentMetrics.set(agentName, new Map(Object.entries(filteredMetrics)));
@@ -386,13 +390,16 @@ function calculateConsensusValues(
   // Calculate weighted averages for final values
   const finalValues = new Map<
     string,
-    { value: number; contributors: Array<{ name: string; score: number; weight: number }> }
+    {
+      value: number | null;
+      contributors: Array<{ name: string; score: number | null; weight: number }>;
+    }
   >();
   allMetrics.forEach((metric) => {
-    const contributors: Array<{ name: string; score: number; weight: number }> = [];
+    const contributors: Array<{ name: string; score: number | null; weight: number }> = [];
     agentMetrics.forEach((metrics, agentName) => {
       if (metrics.has(metric)) {
-        const score = metrics.get(metric)!;
+        const score = metrics.get(metric)!; // Can be number or null
         const agentKey = agentRoleMap.get(agentName) || agentName;
         const weight = getAgentWeight(agentKey, metric);
         contributors.push({ name: agentName, score, weight });
@@ -438,15 +445,16 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
   });
 
   // Build agent-metric matrix and agentName -> agentRole mapping
-  const agentMetrics = new Map<string, Map<string, number>>();
+  const agentMetrics = new Map<string, Map<string, number | null>>();
   const agentRoleMap = new Map<string, string>(); // Maps display name to technical key
   groupedResults.forEach((evaluations, agentName) => {
     const latestEval = evaluations[evaluations.length - 1]; // Use latest response
     if (latestEval.metrics) {
-      // Filter metrics to ONLY the 7 pillars and ensure they are numeric
+      // Filter metrics to ONLY the 7 pillars, allow both numbers and null
       const filteredMetrics = Object.fromEntries(
         Object.entries(latestEval.metrics).filter(
-          ([metric, value]) => SEVEN_PILLARS.includes(metric) && typeof value === 'number'
+          ([metric, value]) =>
+            SEVEN_PILLARS.includes(metric) && (typeof value === 'number' || value === null)
         )
       );
       agentMetrics.set(agentName, new Map(Object.entries(filteredMetrics)));
@@ -460,13 +468,16 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
   // Calculate weighted averages for final values (using weights from constants)
   const finalValues = new Map<
     string,
-    { value: number; contributors: Array<{ name: string; score: number; weight: number }> }
+    {
+      value: number | null;
+      contributors: Array<{ name: string; score: number | null; weight: number }>;
+    }
   >();
   allMetrics.forEach((metric) => {
-    const contributors: Array<{ name: string; score: number; weight: number }> = [];
+    const contributors: Array<{ name: string; score: number | null; weight: number }> = [];
     agentMetrics.forEach((metrics, agentName) => {
       if (metrics.has(metric)) {
-        const score = metrics.get(metric)!;
+        const score = metrics.get(metric)!; // Can be number or null
         // Use agentRole (technical key) for weight lookup, fallback to agentName
         const agentKey = agentRoleMap.get(agentName) || agentName;
         const weight = getAgentWeight(agentKey, metric);
@@ -936,14 +947,14 @@ export function generateEnhancedHtmlReport(
 
   // Calculate consensus values and aggregate final pillar scores
   const consensusValues = calculateConsensusValues(groupedResults);
-  const finalPillarScores: Record<string, { value: number; agent: string }> = {};
+  const finalPillarScores: Record<string, { value: number | null; agent: string }> = {};
   consensusValues.forEach((data, metric) => {
     // Find the agent with the highest weight contribution to this metric
     const topContributor = data.contributors.reduce((max: any, current: any) =>
       current.weight > max.weight ? current : max
     );
     finalPillarScores[metric] = {
-      value: data.value, // Use the weighted average consensus value
+      value: data.value, // Use the weighted average consensus value (can be null)
       agent: topContributor.name, // Use the agent with highest influence
     };
   });
@@ -968,24 +979,35 @@ export function generateEnhancedHtmlReport(
               let badgeColor = 'secondary';
               let icon = '📊';
 
-              // Determine color and icon based on metric type
-              if (
-                metric.includes('Quality') ||
-                metric.includes('Coverage') ||
-                metric.includes('Impact')
-              ) {
-                badgeColor = data.value >= 7 ? 'success' : data.value >= 4 ? 'warning' : 'danger';
-                icon = data.value >= 7 ? '✅' : data.value >= 4 ? '⚠️' : '❌';
-              } else if (metric.includes('Complexity')) {
-                badgeColor = data.value <= 3 ? 'success' : data.value <= 6 ? 'warning' : 'danger';
-                icon = data.value <= 3 ? '✅' : data.value <= 6 ? '⚠️' : '❌';
-              } else if (metric.includes('Debt')) {
-                badgeColor = data.value <= 0 ? 'success' : data.value <= 4 ? 'warning' : 'danger';
-                icon = data.value <= 0 ? '✅' : data.value <= 4 ? '⚠️' : '❌';
+              // Handle null values
+              if (data.value === null) {
+                badgeColor = 'secondary';
+                icon = '➖';
+              } else {
+                // Determine color and icon based on metric type
+                if (
+                  metric.includes('Quality') ||
+                  metric.includes('Coverage') ||
+                  metric.includes('Impact')
+                ) {
+                  badgeColor = data.value >= 7 ? 'success' : data.value >= 4 ? 'warning' : 'danger';
+                  icon = data.value >= 7 ? '✅' : data.value >= 4 ? '⚠️' : '❌';
+                } else if (metric.includes('Complexity')) {
+                  badgeColor = data.value <= 3 ? 'success' : data.value <= 6 ? 'warning' : 'danger';
+                  icon = data.value <= 3 ? '✅' : data.value <= 6 ? '⚠️' : '❌';
+                } else if (metric.includes('Debt')) {
+                  badgeColor = data.value <= 0 ? 'success' : data.value <= 4 ? 'warning' : 'danger';
+                  icon = data.value <= 0 ? '✅' : data.value <= 4 ? '⚠️' : '❌';
+                }
               }
 
               const metadata = METRIC_METADATA[metric as keyof typeof METRIC_METADATA];
-              const formattedValue = metadata ? metadata.format(data.value) : data.value.toFixed(1);
+              const formattedValue =
+                data.value === null
+                  ? '-'
+                  : metadata
+                    ? metadata.format(data.value)
+                    : data.value.toFixed(1);
               const scale = metadata ? metadata.scale : '';
               const tooltip = metadata ? metadata.tooltip : '';
 
@@ -1211,11 +1233,17 @@ export function generateEnhancedHtmlReport(
                       const value = evolution.rounds.get(roundNum);
                       const previousValue =
                         roundNum > minRound ? evolution.rounds.get(roundNum - 1) : undefined;
-                      let cellContent = value !== undefined ? value.toFixed(1) : '—';
+                      let cellContent =
+                        value !== undefined && value !== null ? value.toFixed(1) : '—';
                       let cellStyle = '';
 
                       // Add change indicator
-                      if (value !== undefined && previousValue !== undefined) {
+                      if (
+                        value !== undefined &&
+                        value !== null &&
+                        previousValue !== undefined &&
+                        previousValue !== null
+                      ) {
                         const diff = value - previousValue;
                         if (Math.abs(diff) > 0.05) {
                           const arrow = diff > 0 ? '↑' : '↓';

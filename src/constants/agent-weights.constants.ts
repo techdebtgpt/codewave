@@ -133,13 +133,24 @@ export function getPillarWeights(pillar: keyof AgentWeights): Record<string, num
 
 // Weighted average calculation
 export function calculateWeightedAverage(
-  scores: Array<{ agentName: string; score: number }>,
+  scores: Array<{ agentName: string; score: number | null }>,
   pillar: keyof AgentWeights
-): number {
+): number | null {
+  // Filter out null values before calculating average
+  const validScores = scores.filter(
+    (s): s is { agentName: string; score: number } => s.score !== null
+  );
+
+  // If all agents returned null, return null
+  if (validScores.length === 0) {
+    console.warn(`All agents returned null for pillar ${pillar}, cannot calculate average`);
+    return null;
+  }
+
   let weightedSum = 0;
   let totalWeight = 0;
 
-  for (const { agentName, score } of scores) {
+  for (const { agentName, score } of validScores) {
     const weight = getAgentWeight(agentName, pillar);
     weightedSum += score * weight;
     totalWeight += weight;
@@ -147,8 +158,8 @@ export function calculateWeightedAverage(
 
   // Avoid division by zero
   if (totalWeight === 0) {
-    console.warn(`Total weight is 0 for pillar ${pillar}, returning average`);
-    return scores.reduce((sum, s) => sum + s.score, 0) / scores.length;
+    console.warn(`Total weight is 0 for pillar ${pillar}, returning simple average`);
+    return validScores.reduce((sum, s) => sum + s.score, 0) / validScores.length;
   }
 
   return weightedSum / totalWeight;

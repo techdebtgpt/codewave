@@ -168,6 +168,12 @@ export async function runBatchEvaluateCommand(args: string[]) {
     if (/\[\d+\/\d+\]\s*🔄/.test(message)) return true;
     if (message.includes('Round ') && message.includes('Raising Concerns')) return true;
     if (message.includes('Round ') && message.includes('Validation & Final')) return true;
+    // Filter out agent metric warnings (too noisy in batch mode)
+    if (message.includes('Missing metric') && message.includes('setting to null')) return true;
+    if (message.includes('returned null for PRIMARY metric')) return true;
+    if (message.includes('All agents returned null for pillar')) return true;
+    if (message.includes('Total weight is 0 for pillar')) return true;
+    if (message.includes('Invalid type for') && message.includes('setting to null')) return true;
     return false;
   };
 

@@ -20,28 +20,20 @@ export class BusinessAnalystAgent extends BaseAgentWorkflow {
       description:
         'Evaluates business value, functional impact, and estimates ideal implementation time',
       role: 'Business Analyst',
+      roleDescription: 'business perspective',
     };
   }
 
-  async canExecute(context: AgentContext) {
-    return !!context.commitDiff;
-  }
-
-  async estimateTokens(context: AgentContext) {
-    return 2500;
-  }
-
   protected buildSystemPrompt(context: AgentContext): string {
-    const roundPurpose = (context.roundPurpose || 'initial') as
-      | 'initial'
-      | 'concerns'
-      | 'validation';
+    const currentRound = context.currentRound !== undefined ? context.currentRound : 0;
+    const isFinalRound = context.isFinalRound || false;
     const previousContext =
       context.agentResults && context.agentResults.length > 0
         ? context.agentResults
             .map((r: AgentResult) => `**${r.agentName}**: ${r.summary}`)
             .join('\n\n')
         : '';
+    const depthMode = (context.depthMode || 'normal') as 'fast' | 'normal' | 'deep';
 
     return PromptBuilderService.buildCompleteSystemPrompt(
       {
@@ -50,260 +42,16 @@ export class BusinessAnalystAgent extends BaseAgentWorkflow {
           'Evaluates business value, functional impact, and estimates ideal implementation time',
         roleDetailedDescription: `You are a Business Analyst participating in a code review discussion. Your role is to evaluate the commit across ALL 7 pillars, with special focus on functional impact and ideal implementation time. You assess how significantly the changes affect end users and business operations, and estimate how long the work should optimally take. You bring the business perspective to technical decisions and ensure alignment with business requirements and user needs.`,
         agentKey: 'business-analyst',
-        primaryMetrics: ['functionalImpact', 'idealTimeHours'],
-        secondaryMetrics: ['testCoverage'],
       },
-      roundPurpose,
-      previousContext
+      currentRound,
+      isFinalRound,
+      previousContext,
+      depthMode
     );
   }
 
   protected async buildHumanPrompt(context: AgentContext): Promise<string> {
-    const filesChanged = context.filesChanged?.join(', ') || 'unknown files';
-
-    // Prepare developer overview section if available
-    const developerContextSection = context.developerOverview
-      ? `${context.developerOverview}\n\n---\n\n`
-      : '';
-
-    // Use RAG if available for large diffs (skip in subsequent rounds to save tokens)
-    const isFirstRound = !context.agentResults || context.agentResults.length === 0;
-    if ((context.vectorStore || context.documentationStore) && isFirstRound) {
-      const { CombinedRAGHelper } = await import('../utils/combined-rag-helper.js');
-      const rag = new CombinedRAGHelper(context.vectorStore, context.documentationStore);
-      rag.setAgentName('Business Analyst');
-
-      // Ask business-focused questions (optimized for cost)
-      const queries = [
-        {
-          q: 'What functional changes or user-facing features were modified?',
-          topK: 3,
-          store: 'diff' as const,
-        },
-        { q: 'Show API or interface changes', topK: 2, store: 'diff' as const },
-        {
-          q: 'What business domain patterns are documented in the repository?',
-          topK: 2,
-          store: 'docs' as const,
-        },
-        { q: 'Show configuration or business rule changes', topK: 2, store: 'diff' as const },
-        {
-          q: 'Are there documented business requirements or domain constraints?',
-          topK: 2,
-          store: 'docs' as const,
-        },
-      ];
-
-      const results = await rag.queryMultiple(queries);
-      const ragContext = results.map((r) => r.results).join('\n\n');
-
-      return [
-        developerContextSection,
-        '## Commit Analysis Request (RAG Mode - Large Diff)',
-        '',
-        `**Files Changed:** ${filesChanged}`,
-        '',
-        rag.getSummary(),
-        '',
-        '**Relevant Code for Business Analysis:**',
-        ragContext,
-        '',
-        'Please provide your analysis scoring ALL 7 metrics based on the relevant code shown above:',
-        '1. **Functional Impact** (1-10) - YOUR PRIMARY EXPERTISE',
-        '2. **Ideal Time Hours** - YOUR PRIMARY EXPERTISE',
-        '3. **Test Coverage** (1-10) - your secondary opinion',
-        '4. **Code Quality** (1-10) - your tertiary opinion',
-        '5. **Code Complexity** (1-10, lower is better) - your tertiary opinion',
-        '6. **Actual Time Hours** - your tertiary estimate',
-        '7. **Technical Debt Hours** - your tertiary assessment',
-        '',
-        'Focus on your expertise (business value, requirements) but provide scores for all pillars.',
-        "Respond conversationally and reference other team members' points when relevant.",
-      ].join('\n');
-    }
-
-    // Round 2 (Concerns): Ask questions about other agents' scores
-    const roundPurpose = context.roundPurpose || 'initial';
-    if (roundPurpose === 'concerns' && context.agentResults && context.agentResults.length > 0) {
-      const teamContext = context.agentResults
-        .map(
-          (r) =>
-            `**${r.agentName}:**\n${r.summary}\n\nMetrics: ${JSON.stringify(r.metrics, null, 2)}`
-        )
-        .join('\n\n---\n\n');
-
-      return [
-        developerContextSection,
-        '## Business Analysis - Round 2: Raise Concerns & Questions',
-        '',
-        `**Files Changed:** ${filesChanged}`,
-        '',
-        '**Team Discussion (Round 1):**',
-        teamContext,
-        '',
-        '**Your Task:**',
-        "1. Review other agents' metrics from Round 1",
-        '2. Identify any scores that seem inconsistent with business requirements',
-        '3. Raise specific concerns/questions to responsible agents:',
-        '   - Test Coverage → QA Engineer',
-        '   - Code Quality → Developer Reviewer',
-        '   - Code Complexity/Tech Debt → Senior Architect',
-        '   - Implementation Time → Developer Author',
-        '4. Defend your Functional Impact and Ideal Time estimates if you anticipate questions',
-        '',
-        'Include your refined scores (can stay the same or adjust based on team context).',
-      ].join('\n');
-    }
-
-    // Round 3 (Validation): Respond to concerns and finalize
-    if (roundPurpose === 'validation' && context.agentResults && context.agentResults.length > 0) {
-      const teamContext = context.agentResults
-        .map(
-          (r) =>
-            `**${r.agentName}:**\n${r.summary}\n\nMetrics: ${JSON.stringify(r.metrics, null, 2)}`
-        )
-        .join('\n\n---\n\n');
-
-      return [
-        developerContextSection,
-        '## Business Analysis - Round 3: Validation & Final Scores',
-        '',
-        `**Files Changed:** ${filesChanged}`,
-        '',
-        '**Team Discussion (Rounds 1-2):**',
-        teamContext,
-        '',
-        '**Your Task:**',
-        '1. Address any concerns raised about YOUR Functional Impact and Ideal Time scores',
-        '2. Review responses from other agents about their metrics',
-        '3. Adjust your secondary/tertiary scores if new evidence convinces you',
-        '4. Provide FINAL refined scores for all 7 metrics',
-        '',
-        'This is the final round - be confident in your assessment.',
-      ].join('\n');
-    }
-
-    // Fallback to full diff for small commits (no RAG needed)
-    return [
-      developerContextSection,
-      '## Commit Analysis Request',
-      '',
-      `**Files Changed:** ${filesChanged}`,
-      '',
-      '**Commit Diff:**',
-      '```',
-      context.commitDiff,
-      '```',
-      '',
-      'Please provide your analysis scoring ALL 7 metrics:',
-      '1. **Functional Impact** (1-10) - YOUR PRIMARY EXPERTISE',
-      '2. **Ideal Time Hours** - YOUR PRIMARY EXPERTISE',
-      '3. **Test Coverage** (1-10) - your secondary opinion',
-      '4. **Code Quality** (1-10) - your tertiary opinion',
-      '5. **Code Complexity** (1-10, lower is better) - your tertiary opinion',
-      '6. **Actual Time Hours** - your tertiary estimate',
-      '7. **Technical Debt Hours** - your tertiary assessment',
-      '',
-      'Focus on your expertise (business value, requirements) but provide scores for all pillars.',
-      "Respond conversationally and reference other team members' points when relevant.",
-    ].join('\n');
-  }
-
-  protected parseLLMResult(output: any): AgentResult {
-    // Import centralized pillar constants
-    const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
-
-    // Try to parse JSON output from LLM
-    if (typeof output === 'string') {
-      try {
-        // Use robust JSON parsing that handles markdown fences and truncation
-        const parsed = this.parseJSONSafely(output);
-
-        // Validate required fields
-        if (!parsed.summary || typeof parsed.summary !== 'string') {
-          console.warn(`Business Analyst: Invalid summary in LLM response`);
-          throw new Error('Missing or invalid summary field');
-        }
-
-        // Handle metrics: ensure it's an object with 7 pillars, filter out extras
-        let metrics = parsed.metrics || {};
-
-        // If metrics is an array, convert to object
-        if (Array.isArray(metrics)) {
-          console.warn(`Business Analyst: Metrics returned as array, converting to object`);
-          metrics = {};
-        }
-
-        // Filter metrics to ONLY the 7 pillars
-        const filteredMetrics: Record<string, number> = {};
-        for (const pillar of SEVEN_PILLARS) {
-          if (pillar in metrics && typeof metrics[pillar] === 'number') {
-            filteredMetrics[pillar] = metrics[pillar];
-          } else {
-            // Use default value if missing
-            filteredMetrics[pillar] =
-              pillar === 'functionalImpact' ||
-              pillar === 'testCoverage' ||
-              pillar === 'codeQuality' ||
-              pillar === 'codeComplexity'
-                ? 5
-                : 0;
-          }
-        }
-
-        return {
-          summary: parsed.summary.trim(),
-          details: (parsed.details || '').trim(),
-          metrics: filteredMetrics,
-        };
-      } catch (error) {
-        console.warn(
-          `Business Analyst: Failed to parse LLM output: ${error instanceof Error ? error.message : String(error)}`
-        );
-        console.warn(`Business Analyst: Raw output (first 500 chars): ${output.substring(0, 500)}`);
-
-        // fallback to string summary (if output is long enough)
-        if (output.length > 10) {
-          return {
-            summary: output.substring(0, 500),
-            details: '',
-            metrics: {
-              functionalImpact: 5,
-              idealTimeHours: 0,
-              testCoverage: 5,
-              codeQuality: 5,
-              codeComplexity: 5,
-              actualTimeHours: 0,
-              technicalDebtHours: 0,
-            },
-          };
-        }
-
-        return {
-          summary: '',
-          details: 'Failed to parse LLM response',
-          metrics: {
-            functionalImpact: 5,
-            idealTimeHours: 0,
-            testCoverage: 5,
-            codeQuality: 5,
-            codeComplexity: 5,
-            actualTimeHours: 0,
-            technicalDebtHours: 0,
-          },
-        };
-      }
-    }
-    return super.parseLLMResult(output);
-  }
-
-  private detectAgentRole(result: AgentResult): string {
-    const combined = (result.summary || '').toLowerCase() + (result.details || '').toLowerCase();
-    if (combined.includes('qa') || combined.includes('test')) return 'QA Engineer';
-    if (combined.includes('architect')) return 'Senior Architect';
-    if (combined.includes('author') || combined.includes('developer')) return 'Developer';
-    if (combined.includes('reviewer')) return 'Code Reviewer';
-    return 'Team Member';
+    return this.buildMultiRoundPrompt(context);
   }
 
   /**
@@ -362,16 +110,8 @@ export class BusinessAnalystAgent extends BaseAgentWorkflow {
     }
 
     // Check all required metrics are present
-    const requiredMetrics = [
-      'functionalImpact',
-      'idealTimeHours',
-      'testCoverage',
-      'codeQuality',
-      'codeComplexity',
-      'actualTimeHours',
-      'technicalDebtHours',
-    ];
-    const missingMetrics = requiredMetrics.filter((m) => !(m in metrics));
+    const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+    const missingMetrics = SEVEN_PILLARS.filter((m: string) => !(m in metrics));
     if (missingMetrics.length > 0) {
       gaps.push(`Missing metric scores: ${missingMetrics.join(', ')}`);
     } else {

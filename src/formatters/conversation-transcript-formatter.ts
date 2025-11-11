@@ -200,7 +200,7 @@ export function generateConversationTranscript(
   markdown += `---\n\n`;
   markdown += `## 📊 Metric Evolution\n\n`;
 
-  // Use dynamic round tracking
+  // Use dynamic round tracking - group by AGENT + METRIC
   const allMetrics = new Map<string, Record<string, any>>();
 
   for (let round = 1; round <= maxRound; round++) {
@@ -208,10 +208,12 @@ export function generateConversationTranscript(
     turns.forEach((turn) => {
       if (turn.metrics) {
         Object.entries(turn.metrics).forEach(([metric, value]) => {
-          if (!allMetrics.has(metric)) {
-            allMetrics.set(metric, { agent: turn.agentName });
+          // Create unique key per agent+metric combination
+          const key = `${turn.agentName}::${metric}`;
+          if (!allMetrics.has(key)) {
+            allMetrics.set(key, { agent: turn.agentName, metric });
           }
-          const metricData = allMetrics.get(metric)!;
+          const metricData = allMetrics.get(key)!;
           metricData[`round${round}`] = value;
         });
       }
@@ -227,27 +229,30 @@ export function generateConversationTranscript(
     markdown += `| Metric | Agent | ${roundHeaders.join(' | ')} | Change |\n`;
     markdown += `|--------|-------|${roundHeaders.map(() => '---------').join('|')}|--------|\n`;
 
-    allMetrics.forEach((data, metric) => {
-      const label = metric
+    allMetrics.forEach((data, key) => {
+      const metricName = data.metric;
+      const label = metricName
         .replace(/([A-Z])/g, ' $1')
-        .replace(/^./, (str) => str.toUpperCase())
+        .replace(/^./, (str: string) => str.toUpperCase())
         .trim();
 
       // Build round values dynamically
-      const roundValues: (number | undefined)[] = [];
+      const roundValues: (number | null | undefined)[] = [];
       for (let round = 1; round <= maxRound; round++) {
         const roundKey = `round${round}` as keyof typeof data;
-        roundValues.push(data[roundKey] as number | undefined);
+        roundValues.push(data[roundKey] as number | null | undefined);
       }
 
-      const roundCells = roundValues.map((val) => (val !== undefined ? val.toString() : '-'));
+      const roundCells = roundValues.map((val) =>
+        val !== undefined && val !== null ? val.toString() : '-'
+      );
 
       // Calculate change between first and last round
-      const firstValue = roundValues.find((v) => v !== undefined);
-      const lastValue = [...roundValues].reverse().find((v) => v !== undefined);
+      const firstValue = roundValues.find((v) => v !== undefined && v !== null);
+      const lastValue = [...roundValues].reverse().find((v) => v !== undefined && v !== null);
 
       let change = '-';
-      if (firstValue !== undefined && lastValue !== undefined) {
+      if (firstValue !== undefined && firstValue !== null && lastValue !== undefined && lastValue !== null) {
         const diff = lastValue - firstValue;
         if (diff > 0) {
           change = `↑ ${diff.toFixed(2)}`;
@@ -299,12 +304,13 @@ export function generateConversationTranscript(
   if (changedMetrics.length > 0) {
     markdown += `### Metrics That Changed\n\n`;
     markdown += `${changedMetrics.length} metric${changedMetrics.length > 1 ? 's' : ''} changed between rounds:\n\n`;
-    changedMetrics.forEach(([metric, data]) => {
-      const label = metric
+    changedMetrics.forEach(([key, data]) => {
+      // Format: "Agent Name - Metric Name"
+      const metricLabel = data.metric
         .replace(/([A-Z])/g, ' $1')
-        .replace(/^./, (str) => str.toUpperCase())
+        .replace(/^./, (str: string) => str.toUpperCase())
         .trim();
-      markdown += `- **${label}**: ${data.round1} → ${data.round2}\n`;
+      markdown += `- **${data.agent} - ${metricLabel}**: ${data.round1} → ${data.round2}\n`;
     });
     markdown += `\n`;
   }
