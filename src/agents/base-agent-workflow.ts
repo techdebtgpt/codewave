@@ -112,7 +112,11 @@ export abstract class BaseAgentWorkflow implements Agent {
       totalTokens: 0,
     };
 
-    const model = LLMService.getChatModel(config);
+    // Get depth config to use tokenBudgetPerAgent for max_tokens
+    const depthMode = context.depthMode || 'normal';
+    const depthConfig = DEPTH_MODE_CONFIGS[depthMode];
+
+    const model = LLMService.getChatModel(config, depthConfig.tokenBudgetPerAgent);
 
     const workflow = RunnableSequence.from([
       RunnableLambda.from(async (input: AgentContext) => {
@@ -146,7 +150,11 @@ export abstract class BaseAgentWorkflow implements Agent {
       totalTokens: 0,
     };
 
-    const model = LLMService.getChatModel(config);
+    // Get depth config to use tokenBudgetPerAgent for max_tokens
+    const depthMode = context.depthMode || 'normal';
+    const depthConfig = DEPTH_MODE_CONFIGS[depthMode];
+
+    const model = LLMService.getChatModel(config, depthConfig.tokenBudgetPerAgent);
 
     const workflow = RunnableSequence.from([
       RunnableLambda.from(async (input: any) => {
