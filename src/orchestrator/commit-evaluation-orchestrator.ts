@@ -106,6 +106,7 @@ export class CommitEvaluationOrchestrator {
       streaming?: boolean;
       threadId?: string;
       onProgress?: (state: any) => void;
+      disableTracing?: boolean; // Disable LangSmith tracing (useful for batch runs to enable streaming)
     }
   ): Promise<{ agentResults: AgentResult[]; developerOverview?: string; [key: string]: any }> {
     console.log('\n🚀 Starting commit evaluation with LangGraph workflow...');
@@ -185,7 +186,9 @@ export class CommitEvaluationOrchestrator {
     let finalState: any;
 
     // Check if LangSmith tracing is enabled - if so, disable streaming due to known hanging issue with 1 agent
-    const langsmithEnabled = this.config.tracing.enabled && this.config.tracing.apiKey;
+    // However, if disableTracing is explicitly set, honor that to enable streaming for batch runs
+    const langsmithEnabled =
+      this.config.tracing.enabled && this.config.tracing.apiKey && !options?.disableTracing;
     const shouldStream = options?.streaming && !langsmithEnabled;
 
     // Use streaming if enabled AND LangSmith is not tracing (streaming + LangSmith can hang with single agent)
@@ -239,6 +242,11 @@ export class CommitEvaluationOrchestrator {
       }
       // Standard invoke (non-streaming)
       finalState = await this.graph.invoke(initialState, graphConfig);
+
+      // Call onProgress with final state (since we're not streaming)
+      if (options?.onProgress && finalState) {
+        options.onProgress(finalState);
+      }
     }
 
     const duration = ((finalState?.endTime || Date.now()) - startTime) / 1000;

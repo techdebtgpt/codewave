@@ -62,10 +62,9 @@ export interface AgentResult {
   refinementNotes?: string[]; // Notes on improvements per iteration
   missingInformation?: string[]; // Information gaps identified (if any)
 
-  // LLM-generated concerns and questions (replaces static gaps)
+  // LLM-generated concerns (replaces static gaps)
   // Agents dynamically raise concerns about metrics that need validation
   concerns?: string[]; // Concerns raised by agent in this round (e.g., "Need clarity on test coverage scope")
-  questionsForTeam?: string[]; // Questions for other agents to address specific score discrepancies
   addressedConcerns?: {
     // Tracks which previous concerns were addressed in this round
     fromAgentName: string; // Which agent raised the concern
@@ -73,6 +72,19 @@ export interface AgentResult {
     addressed: boolean; // Whether agent addressed this concern
     explanation?: string; // How the concern was addressed or why it wasn't
   }[];
+
+  // Agent opt-out mechanism for subsequent rounds
+  shouldParticipateInNextRound?: boolean; // If false, agent will not participate in future rounds (default: true)
+  confidenceLevel?: number; // Agent's confidence in their current analysis (0-100, optional)
+
+  // Final synthesis (only present in last round)
+  finalSynthesis?: {
+    summary: string; // Consolidated summary across all rounds
+    details: string; // Full analysis incorporating insights from all rounds
+    metrics: Record<string, any>; // Final metric scores from last round
+    unresolvedConcerns: string[]; // Only concerns that remain unclear/unresolved for this agent
+    evolutionNotes: string; // How the agent's analysis evolved across rounds
+  };
 }
 
 /**

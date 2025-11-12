@@ -945,18 +945,60 @@ export function generateEnhancedHtmlReport(
 
   const historyHtml = generateHistoryHtml(evaluationHistory, modelInfo);
 
-  // Calculate consensus values and aggregate final pillar scores
+  // Calculate consensus values (for comprehensive metrics table)
   const consensusValues = calculateConsensusValues(groupedResults);
+
+  // Extract final pillar scores from last round's finalSynthesis (if available)
+  // This provides the definitive final scores from each agent's comprehensive evaluation
   const finalPillarScores: Record<string, { value: number | null; agent: string }> = {};
+
+  // First, try to get scores from finalSynthesis (last round)
+  groupedResults.forEach((evaluations, agentName) => {
+    const lastEval = evaluations[evaluations.length - 1];
+
+    // Check if the last evaluation has finalSynthesis with metrics
+    const metricsSource = lastEval.metrics; // Always use latest metrics
+
+    if (metricsSource) {
+      Object.entries(metricsSource).forEach(([metric, value]) => {
+        // If we don't have this metric yet, or if this agent is the primary expert, use their score
+        if (!finalPillarScores[metric]) {
+          finalPillarScores[metric] = {
+            value: typeof value === 'number' ? value : null,
+            agent: agentName
+          };
+        } else {
+          // Use the agent with highest expertise weight for this metric
+          const currentAgentKey = lastEval.agentRole || agentName;
+          const existingAgentKey = groupedResults.get(finalPillarScores[metric].agent)?.[0]?.agentRole || finalPillarScores[metric].agent;
+
+          const { getAgentWeight } = require('../constants/agent-weights.constants');
+          const currentWeight = getAgentWeight(currentAgentKey, metric);
+          const existingWeight = getAgentWeight(existingAgentKey, metric);
+
+          // Replace with this agent's score if they have higher expertise
+          if (currentWeight > existingWeight) {
+            finalPillarScores[metric] = {
+              value: typeof value === 'number' ? value : null,
+              agent: agentName
+            };
+          }
+        }
+      });
+    }
+  });
+
+  // Fallback to consensus values if no finalSynthesis scores available
   consensusValues.forEach((data, metric) => {
-    // Find the agent with the highest weight contribution to this metric
-    const topContributor = data.contributors.reduce((max: any, current: any) =>
-      current.weight > max.weight ? current : max
-    );
-    finalPillarScores[metric] = {
-      value: data.value, // Use the weighted average consensus value (can be null)
-      agent: topContributor.name, // Use the agent with highest influence
-    };
+    if (!finalPillarScores[metric]) {
+      const topContributor = data.contributors.reduce((max: any, current: any) =>
+        current.weight > max.weight ? current : max
+      );
+      finalPillarScores[metric] = {
+        value: data.value,
+        agent: topContributor.name,
+      };
+    }
   });
 
   // Generate 7-Pillar Summary Card

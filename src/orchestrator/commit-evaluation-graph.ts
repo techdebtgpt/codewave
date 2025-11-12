@@ -60,12 +60,31 @@ export const CommitEvaluationState = Annotation.Root({
     default: () => [],
   }),
 
+  // Agents that have opted out of further rounds
+  optedOutAgents: Annotation<Set<string>>({
+    reducer: (state: Set<string>, update: Set<string>) => {
+      return new Set([...state, ...update]); // Accumulate opted-out agents
+    },
+    default: () => new Set<string>(),
+  }),
+
   // Aggregated 7-pillar scores (NEW for metrics tracking)
   pillarScores: Annotation<Partial<PillarScores>>({
     reducer: (state: Partial<PillarScores>, update: Partial<PillarScores>) => {
       return { ...state, ...update };
     },
     default: () => ({}),
+  }),
+
+  // Agent progress tracking (for real-time UI updates)
+  currentAgent: Annotation<string | undefined>, // Name of currently executing agent
+  completedAgents: Annotation<number>({
+    reducer: (state: number, update: number) => update, // Replace with latest count
+    default: () => 0,
+  }),
+  totalAgents: Annotation<number>({
+    reducer: (state: number, update: number) => update || state, // Set once, keep
+    default: () => 0,
   }),
 
   // Metadata
@@ -315,35 +334,35 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
 
     // Track agent execution for inline status updates
     const agentNames = agents
-      .filter((agent) =>
-        agent.canExecute({
+      .filter((agent) => {
+        const agentKey = agent.getMetadata().name;
+        // Filter out agents who have opted out
+        if (state.optedOutAgents.has(agentKey)) {
+          return false;
+        }
+        return agent.canExecute({
           commitDiff: state.commitDiff,
           filesChanged: state.filesChanged,
-        })
-      )
+        });
+      })
       .map((agent) => agent.getMetadata().name);
 
     // Track completed agents for inline progress
     let completedCount = 0;
     const totalAgents = agentNames.length;
 
-    // Calculate overall progress percentage (rounds * agents)
-    const totalSteps = state.maxRounds * totalAgents;
-    const completedSteps = state.currentRound * totalAgents;
-
-    // Show initial progress with percentage
-    const initialProgress = Math.floor((completedSteps / totalSteps) * 100);
-    process.stdout.write(
-      `  ${commitPrefix} ⏳ ${initialProgress}% [${completedSteps}/${totalSteps}] Running agents...`
-    );
-
     const agentExecutionPromises = agents
-      .filter((agent) =>
-        agent.canExecute({
+      .filter((agent) => {
+        const agentKey = agent.getMetadata().name;
+        // Filter out agents who have opted out
+        if (state.optedOutAgents.has(agentKey)) {
+          return false;
+        }
+        return agent.canExecute({
           commitDiff: state.commitDiff,
           filesChanged: state.filesChanged,
-        })
-      )
+        });
+      })
       .map(async (agent) => {
         const agentName = agent.getMetadata().name; // Technical key (e.g., 'business-analyst')
         const agentRole = agent.getMetadata().role; // Display name (e.g., 'Business Analyst')
@@ -387,19 +406,8 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
             ),
           ])) as AgentResult;
 
-          // Update progress inline with \r (same line)
+          // Track agent completion
           completedCount++;
-          const currentSteps = completedSteps + completedCount;
-          const currentProgress = Math.floor((currentSteps / totalSteps) * 100);
-
-          const statusLine = `  ${commitPrefix} ✅ ${currentProgress}% [${currentSteps}/${totalSteps}] ${agentName}`;
-          const padding = ' '.repeat(Math.max(0, 100 - statusLine.length));
-          process.stdout.write(`\r${statusLine}${padding}`);
-
-          // If all agents done in this round, add newline
-          if (completedCount === totalAgents) {
-            process.stdout.write('\n');
-          }
 
           // Attach agent metadata to result for formatters
           result.agentName = agentRole; // Use role as display name
@@ -682,6 +690,20 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       );
     }
 
+    // Track agents that opted out for next round
+    const newlyOptedOutAgents = new Set<string>();
+    for (const result of results) {
+      // Default to true (participate) if not specified
+      const shouldParticipate = result.shouldParticipateInNextRound !== false;
+      if (!shouldParticipate) {
+        const agentKey = result.agentRole; // Technical identifier (e.g., 'business-analyst')
+        if (agentKey) {
+          newlyOptedOutAgents.add(agentKey);
+          console.log(`  ⏭️  ${result.agentName} opted out of future rounds (confidence: ${result.confidenceLevel || 'N/A'}%)`);
+        }
+      }
+    }
+
     return {
       developerOverview: state.developerOverview, // Preserve developer overview through all rounds
       agentResults: results,
@@ -692,9 +714,14 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       conversationHistory: conversationMessages, // Add to conversation
       teamConcerns: nextRoundConcerns, // Pass concerns to next round for validation
       pillarScores: newPillarScores, // Update aggregated scores
+      optedOutAgents: newlyOptedOutAgents, // Track agents that don't want to participate in next round
       totalInputTokens: roundInputTokens,
       totalOutputTokens: roundOutputTokens,
       totalCost: roundCost,
+      // Agent progress for UI updates
+      totalAgents,
+      completedAgents: totalAgents, // All agents completed this round
+      currentAgent: undefined, // Clear current agent after round completes
     };
   }
 
@@ -710,7 +737,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       console.log(
         `  ⏭️  Stopping at round ${state.currentRound + 1}/${state.maxRounds} due to convergence (teams agreed, minRounds=${state.minRounds})`
       );
-      return END;
+      return END; // End - agents will have generated their finalSynthesis
     }
 
     // Check if reached max rounds
@@ -718,7 +745,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       return 'runAgents'; // Continue discussion
     }
 
-    return END; // Finish evaluation
+    return END; // End - agents will have generated their finalSynthesis
   }
 
   // Build the graph with checkpointing support
@@ -727,10 +754,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
     .addNode('runAgents', runAgents)
     .addEdge(START, 'generateDeveloperOverview')
     .addEdge('generateDeveloperOverview', 'runAgents')
-    .addConditionalEdges('runAgents', shouldContinue, {
-      runAgents: 'runAgents',
-      [END]: END,
-    });
+    .addConditionalEdges('runAgents', shouldContinue);
 
   // Compile with checkpointing (enables state persistence and resume)
   const checkpointer = new MemorySaver();

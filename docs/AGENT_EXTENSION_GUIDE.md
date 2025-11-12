@@ -1,296 +1,242 @@
 # Agent Extension Guide
 
-This guide explains how to extend CodeWave with new agents or modify existing agents using the centralized prompt builder system.
+This guide explains how to extend CodeWave with new custom agents using the clean, extensible agent architecture.
 
 ## Overview
 
-CodeWave uses a **centralized prompt builder pattern** to ensure all agents:
+CodeWave provides a **BaseAgent** class that you can extend to create custom agents. The architecture is designed for:
 
-- Follow consistent rules and structure
-- Return properly formatted metrics (the 7 pillars)
-- Can be easily extended from outside the library
+- **Extensibility** - Easy to extend from outside the library
+- **Clean prompts** - No string concatenation, use template literals
+- **Separation of concerns** - Agents focus on domain logic, execution is handled separately
+- **Type safety** - Full TypeScript support
 
 ## The 7 Immutable Pillars
 
 All agents must evaluate code across these 7 metrics:
 
-1. **functionalImpact** (1-10) - User-facing business value
+1. **functionalImpact** (0-10) - User-facing business value
 2. **idealTimeHours** (hours) - How long it should take ideally
-3. **testCoverage** (1-10) - Quality and extent of test automation
-4. **codeQuality** (1-10) - Code cleanliness and best practices
-5. **codeComplexity** (1-10) - Implementation complexity (lower is better)
+3. **testCoverage** (0-10) - Quality and extent of test automation
+4. **codeQuality** (0-10) - Code cleanliness and best practices
+5. **codeComplexity** (0-10) - Implementation complexity (lower is better)
 6. **actualTimeHours** (hours) - Time actually spent
 7. **technicalDebtHours** (hours) - Debt introduced/paid down (can be negative)
 
 See: `src/constants/agent-weights.constants.ts`
 
-## Creating a New Agent
+## Creating a Custom Agent
 
-### Step 1: Define Agent Metadata
-
-```typescript
-import { BaseAgentWorkflow } from './base-agent-workflow';
-import { PromptBuilderService } from '../services/prompt-builder.service';
-
-export class MyNewAgent extends BaseAgentWorkflow {
-    getMetadata() {
-        return {
-            name: 'my-agent-key', // e.g., 'security-reviewer'
-            description: 'What this agent evaluates',
-            role: 'Agent Display Name', // e.g., 'Security Reviewer'
-        };
-    }
-
-    async canExecute(context: AgentContext) {
-        return !!context.commitDiff;
-    }
-
-    async estimateTokens(context: AgentContext) {
-        return 2000; // Estimated tokens for this agent
-    }
-```
-
-### Step 2: Implement buildSystemPrompt()
+### Step 1: Import the Base Classes
 
 ```typescript
-    protected buildSystemPrompt(context: AgentContext): string {
-        const roundPurpose = (context.roundPurpose || 'initial') as 'initial' | 'concerns' | 'validation';
-        const previousContext =
-            context.agentResults && context.agentResults.length > 0
-                ? context.agentResults
-                    .map((r: AgentResult) => `**${r.agentName}**: ${r.summary}`)
-                    .join('\n\n')
-                : '';
-
-        return PromptBuilderService.buildCompleteSystemPrompt(
-            {
-                role: 'Agent Display Name', // e.g., 'Security Reviewer'
-                description: 'Brief description of the agent',
-                agentKey: 'agent-key', // Technical key matching your agent's name
-                primaryMetrics: ['metric1'], // Your agent's primary expertise
-                secondaryMetrics: ['metric2', 'metric3'], // Secondary expertise
-            },
-            roundPurpose,
-            previousContext
-        );
-    }
+import { BaseAgent } from '@techdebtgpt/codewave/agents/core';
+import { AgentMetadata, AgentExpertise } from '@techdebtgpt/codewave/agents/core/agent-metadata';
+import { PromptContext } from '@techdebtgpt/codewave/agents/prompts/prompt-builder.interface';
 ```
 
-### Step 3: Define buildHumanPrompt()
-
-This is where you provide context-specific instructions for analyzing the code:
+### Step 2: Define Your Agent
 
 ```typescript
-    protected async buildHumanPrompt(context: AgentContext): Promise<string> {
-        // Your custom human-facing prompt that explains what to evaluate
-        // Include context from the code diff and commit
-        // Instructions on how to score the 7 pillars
-    }
-```
+export class SecurityReviewerAgent extends BaseAgent {
+  // Define agent identity
+  protected readonly metadata: AgentMetadata = {
+    name: 'security-reviewer',
+    role: 'Security Reviewer',
+    description: 'Evaluates security implications and vulnerabilities',
+    roleDescription: 'security and vulnerability perspective',
+  };
 
-### Step 4: Implement parseLLMResult()
+  // Define expertise weights (must sum to ~1.0 across all 7 pillars)
+  protected readonly expertise: AgentExpertise = {
+    functionalImpact: 0.15,      // Security affects functionality
+    idealTimeHours: 0.1,          // Limited time estimation
+    testCoverage: 0.2,            // Security testing important
+    codeQuality: 0.3,             // PRIMARY: Security code quality
+    codeComplexity: 0.15,         // Security complexity
+    actualTimeHours: 0.05,        // Limited time tracking
+    technicalDebtHours: 0.05,     // Security debt
+  };
 
-Ensure you parse and validate the 7 metrics:
+  // Define system instructions (clear, complete prompt)
+  protected readonly systemInstructions = `You are a Security Reviewer evaluating code commits.
 
-```typescript
-    protected parseLLMResult(output: any): AgentResult {
-        const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+Your role is to evaluate commits across ALL 7 pillars, with special focus on security implications.
 
-        // Parse JSON from LLM
-        // Validate it contains exactly the 7 pillars
-        // Filter out any extra metrics
-        // Return AgentResult with sanitized metrics
-    }
-```
+## Your Expertise
+- **Code Quality** (PRIMARY): Security code quality and best practices
+- **Test Coverage** (SECONDARY): Security testing coverage
+- **Other Metrics**: Provide security-informed opinions
 
-## Agent Expertise Weights
+## Your Approach
+- Identify potential security vulnerabilities
+- Assess adherence to security best practices
+- Evaluate input validation and sanitization
+- Consider authentication and authorization implications
 
-Define which metrics your agent specializes in:
+Return your analysis as JSON with all 7 metrics.`;
 
-```typescript
-// src/constants/agent-weights.constants.ts
-export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
-  'my-agent': {
-    functionalImpact: 0.13, // TERTIARY (13%)
-    idealTimeHours: 0.083, // TERTIARY (8.3%)
-    testCoverage: 0.2, // SECONDARY (20%)
-    codeQuality: 0.333, // PRIMARY (33.3%)
-    codeComplexity: 0.125, // TERTIARY (12.5%)
-    actualTimeHours: 0.097, // TERTIARY (9.7%)
-    technicalDebtHours: 0.032, // TERTIARY (3.2%)
-  },
-  // ...
-};
-```
+  // Build the initial analysis prompt
+  protected async buildInitialPrompt(context: PromptContext): Promise<string> {
+    const filesChanged = context.filesChanged?.join(', ') || 'unknown files';
 
-**Important**: Weights must sum to 1.0 for each agent and each metric across all agents.
+    return `## ${this.metadata.role} - Round ${(context.currentRound || 0) + 1}: Initial Analysis
 
-## Using PromptBuilderService
+**Files Changed:** ${filesChanged}
 
-The `PromptBuilderService` provides static methods to build consistent prompts:
+**Commit Diff:**
+\`\`\`
+${context.commitDiff}
+\`\`\`
 
-### Build Complete System Prompt
+**Your Task:**
+Analyze this commit from a ${this.metadata.roleDescription} and score ALL 7 metrics:
 
-```typescript
-PromptBuilderService.buildCompleteSystemPrompt(config, roundPurpose, previousContext);
-```
+1. **codeQuality** - YOUR PRIMARY EXPERTISE (security quality)
+2. **testCoverage** - YOUR SECONDARY EXPERTISE (security testing)
+3. **functionalImpact** - your opinion
+4. **idealTimeHours** - your opinion
+5. **codeComplexity** - your opinion
+6. **actualTimeHours** - your opinion
+7. **technicalDebtHours** - your opinion
 
-This combines:
-
-- Header with agent role
-- Round-specific instructions
-- Scoring philosophy
-- Metric definitions (customized per agent)
-- Output requirements
-- Important notes
-
-### Build Individual Sections
-
-```typescript
-// Get metric definitions for your agent
-const definitions = PromptBuilderService.getMetricDefinitions('my-agent');
-
-// Build specific sections
-PromptBuilderService.buildSystemPromptHeader(config);
-PromptBuilderService.buildRoundInstructions('initial');
-PromptBuilderService.buildScoringPhilosophy('my-agent');
-PromptBuilderService.buildMetricsSection('my-agent');
-PromptBuilderService.buildOutputRequirements();
-PromptBuilderService.buildImportantNotes();
-```
-
-## JSON Output Format
-
-All agents MUST return metrics in this exact format:
-
-```json
+**Response Format:**
+Return ONLY valid JSON:
+\`\`\`json
 {
-  "summary": "2-3 sentence overview (max 150 chars)",
-  "details": "Detailed analysis (max 400 chars)",
+  "summary": "High-level security assessment",
+  "details": "Detailed security analysis",
   "metrics": {
-    "functionalImpact": <1-10>,
+    "functionalImpact": <score 0-10>,
     "idealTimeHours": <hours>,
-    "testCoverage": <1-10>,
-    "codeQuality": <1-10>,
-    "codeComplexity": <1-10>,
+    "testCoverage": <score 0-10>,
+    "codeQuality": <score 0-10>,
+    "codeComplexity": <score 0-10>,
     "actualTimeHours": <hours>,
     "technicalDebtHours": <hours>
+  },
+  "concerns": ["Security concerns"],
+  "questionsForTeam": ["Questions for other agents"]
+}
+\`\`\`
+
+CRITICAL: Return ONLY valid JSON, no markdown fences, no extra text.`;
   }
 }
 ```
 
-**CRITICAL RULES**:
-
-- ONLY these 7 metrics, NO additional fields
-- All metrics required
-- metrics field must be an object (not array)
-- Return ONLY JSON, no markdown
-
-## Example: Adding a Security Reviewer Agent
+### Step 3: Register Your Agent
 
 ```typescript
-// src/agents/security-reviewer-agent.ts
-import { PromptBuilderService, AgentPromptConfig } from '../services/prompt-builder.service';
+import { AgentRegistry } from '@techdebtgpt/codewave/agents';
+import { SecurityReviewerAgent } from './my-agents/security-reviewer-agent';
 
-export class SecurityReviewerAgent extends BaseAgentWorkflow {
-  protected buildSystemPrompt(context: AgentContext): string {
-    const roundPurpose = (context.roundPurpose || 'initial') as
-      | 'initial'
-      | 'concerns'
-      | 'validation';
-    const previousContext =
-      context.agentResults?.length > 0
-        ? context.agentResults
-            .map((r: AgentResult) => `**${r.agentName}**: ${r.summary}`)
-            .join('\n\n')
-        : '';
+const registry = new AgentRegistry();
+registry.register(new SecurityReviewerAgent(config));
+```
 
-    return PromptBuilderService.buildCompleteSystemPrompt(
-      {
-        role: 'Security Reviewer',
-        description: 'Evaluates security implications, vulnerabilities, and compliance',
-        agentKey: 'security-reviewer',
-        primaryMetrics: ['codeQuality'], // Security aspects of code quality
-        secondaryMetrics: ['technicalDebtHours'], // Security debt
-      },
-      roundPurpose,
-      previousContext
-    );
-  }
+## Key Principles
 
-  protected async buildHumanPrompt(context: AgentContext): Promise<string> {
-    return `
-        Please analyze this code for security issues:
-        - Vulnerabilities (CWE, OWASP Top 10)
-        - Data protection and privacy
-        - Input validation
-        - Authentication/Authorization
+### ✅ DO
 
-        Score the 7 pillars with focus on security aspects.
-        `;
-  }
+- **Use complete template literals** for prompts (no string concatenation)
+- **Define all 7 metrics** in your expertise weights
+- **Provide clear system instructions** explaining your agent's role
+- **Focus on your primary expertise** but score all metrics
+- **Return valid JSON** from your prompts
+
+### ❌ DON'T
+
+- **Don't concatenate strings** in prompt building
+- **Don't skip metrics** - all agents must score all 7 pillars
+- **Don't hardcode values** - use the PromptContext
+- **Don't ignore the base class methods** - they handle execution for you
+
+## Advanced: Custom Refinement Prompts
+
+You can override `buildRefinementPrompt` to customize how your agent refines its analysis:
+
+```typescript
+protected buildRefinementPrompt(
+  context: PromptContext,
+  previousAnalysis: string,
+  selfQuestions: string[],
+  clarityScore: number
+): string {
+  return `## Security Review Refinement
+
+Your previous analysis scored ${(clarityScore * 100).toFixed(1)}% clarity.
+
+Address these security-specific questions:
+${selfQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+## Previous Analysis
+\`\`\`json
+${previousAnalysis}
+\`\`\`
+
+Provide refined analysis with all 7 metrics as valid JSON.`;
 }
 ```
 
-## Benefits of Centralized Prompts
+## Architecture Overview
 
-✅ **Consistency**: All agents use the same rules and structure
-✅ **Maintenance**: Update rules once, applies everywhere
-✅ **Extensibility**: Add new agents without duplicating logic
-✅ **Type Safety**: TypeScript types prevent errors
-✅ **Testability**: Easy to test prompt building logic
-✅ **Documentation**: Self-documenting prompt structure
+```
+Your Agent (extends BaseAgent)
+├── metadata: Agent identity
+├── expertise: Metric weights
+├── systemInstructions: Core behavior
+└── buildInitialPrompt(): Initial analysis prompt
 
-## Registering New Agents
+BaseAgent (handles execution)
+├── execute(): Runs agent graph
+├── canExecute(): Checks if agent can run
+└── estimateTokens(): Token estimation
 
-1. Create agent class extending `BaseAgentWorkflow`
-2. Implement required methods (buildSystemPrompt, buildHumanPrompt, etc.)
-3. Add to `AGENT_EXPERTISE_WEIGHTS` in `agent-weights.constants.ts`
-4. Register in orchestrator where agents are instantiated
+AgentExecutor (orchestrates execution)
+├── Graph creation
+├── LLM invocation
+└── Result parsing
 
-## Common Pitfalls
+AgentInternalGraph (iteration logic)
+├── generateInitialAnalysis
+├── evaluateClarity
+└── refineAnalysis (if needed)
+```
 
-❌ **Don't**: Hardcode metric names or rules in each agent
-✅ **Do**: Use `SEVEN_PILLARS` constant from centralized location
+## Examples
 
-❌ **Don't**: Return extra metrics beyond the 7 pillars
-✅ **Do**: Filter metrics using centralized validation
+See the built-in agents in `src/agents/implementations/` for complete examples:
 
-❌ **Don't**: Use different prompt structures for different agents
-✅ **Do**: Use `PromptBuilderService` for consistent structure
-
-❌ **Don't**: Return metrics as array
-✅ **Do**: Return metrics as object with 7 named keys
+- **BusinessAnalystAgent** - Business value expert
+- **DeveloperAuthorAgent** - Implementation time expert
+- **DeveloperReviewerAgent** - Code quality expert
+- **SDETAgent** - Test automation expert
+- **SeniorArchitectAgent** - Complexity & debt expert
 
 ## Testing Your Agent
 
 ```typescript
-const agent = new MyNewAgent(config);
+const agent = new MyCustomAgent(config);
 
-// Test buildSystemPrompt
-const systemPrompt = agent['buildSystemPrompt']({ roundPurpose: 'initial', agentResults: [] });
-console.log(systemPrompt); // Should include all sections
+const context = {
+  commitDiff: 'your test diff',
+  filesChanged: ['file.ts'],
+  developerOverview: 'Test changes',
+  currentRound: 0,
+  depthMode: 'normal',
+};
 
-// Test that output validates 7 metrics
-const testOutput = `{"summary": "test", "details": "test", "metrics": {...}}`;
-const result = agent['parseLLMResult'](testOutput);
-console.log(result.metrics); // Should have exactly 7 keys
+const result = await agent.execute(context);
+console.log(result.metrics); // All 7 pillars should be present
 ```
 
-## Updating Existing Agents
+## Next Steps
 
-To update existing agents to use centralized prompts:
+1. Create your custom agent class
+2. Define metadata, expertise, and system instructions
+3. Implement `buildInitialPrompt()`
+4. Register and test your agent
+5. (Optional) Customize refinement prompts
 
-1. Add import: `import { PromptBuilderService } from '../services/prompt-builder.service';`
-2. Replace entire `buildSystemPrompt()` method with centralized version (see example above)
-3. Keep `buildHumanPrompt()` custom to each agent
-4. Keep `parseLLMResult()` but ensure it filters to 7 pillars
-5. Test thoroughly
-
-## Questions?
-
-Refer to:
-
-- `src/constants/agent-weights.constants.ts` - Pillar definitions and weights
-- `src/services/prompt-builder.service.ts` - Prompt builder API
-- `src/agents/developer-author-agent.ts` - Reference implementation
+For questions or issues, see the main [README.md](../README.md) or open an issue on GitHub.

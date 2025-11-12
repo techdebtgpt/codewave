@@ -277,6 +277,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
           },
           {
             streaming: options.streaming, // Use parsed streaming option (default true, disable with --no-stream)
+            disableTracing: true, // Disable LangSmith for batch runs to enable streaming and real-time progress
             onProgress: (state: any) => {
               // Track vector store indexing progress
               if (state.type === 'vectorizing') {
@@ -291,30 +292,36 @@ export async function runBatchEvaluateCommand(args: string[]) {
                 const currentRound = state.currentRound || 0;
                 maxRounds = state.maxRounds || 3;
 
-                // Track tokens and cost from state (don't update progress bar yet)
+                // Track tokens and cost from state
                 if (state.totalInputTokens !== undefined)
                   commitTokensInput = state.totalInputTokens;
                 if (state.totalOutputTokens !== undefined)
                   commitTokensOutput = state.totalOutputTokens;
                 if (state.totalCost !== undefined) commitCost = state.totalCost;
 
-                // Only update progress bar when round changes
-                if (currentRound !== lastRoundReported) {
-                  lastRoundReported = currentRound;
+                // Get agent progress info
+                const totalAgents = state.totalAgents || 5; // Default 5 agents
+                const completedAgents = state.completedAgents || 0;
+                const currentAgent = state.currentAgent;
 
-                  // Calculate progress based on rounds completed (1-indexed for display, 0-indexed from state)
-                  const progress = Math.floor(((currentRound + 1) / maxRounds) * 100);
+                // Calculate granular progress: (completed rounds + agent progress in current round)
+                const roundProgress = currentRound / maxRounds;
+                const agentProgressInRound = (completedAgents / totalAgents) / maxRounds;
+                const totalProgress = Math.floor((roundProgress + agentProgressInRound) * 100);
 
-                  progressTracker.updateProgress(commit.hash, {
-                    status: 'analyzing',
-                    progress,
-                    inputTokens: commitTokensInput,
-                    outputTokens: commitTokensOutput,
-                    totalCost: commitCost,
-                    currentRound: currentRound,
-                    maxRounds: maxRounds,
-                  });
-                }
+                // Update progress bar (more frequent updates now)
+                progressTracker.updateProgress(commit.hash, {
+                  status: 'analyzing',
+                  progress: totalProgress,
+                  inputTokens: commitTokensInput,
+                  outputTokens: commitTokensOutput,
+                  totalCost: commitCost,
+                  currentRound: currentRound,
+                  maxRounds: maxRounds,
+                  currentAgent: currentAgent, // Show which agent is/was running
+                });
+
+                lastRoundReported = currentRound;
               }
             },
           }
@@ -402,6 +409,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
           status: 'failed',
           progress: 0,
           currentStep: `Error: ${errorMsg.substring(0, 30)}`,
+          errorMessage: errorMsg, // Track error for end-of-run summary
         });
 
         failureCount++;

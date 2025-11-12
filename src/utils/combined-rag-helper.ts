@@ -74,54 +74,49 @@ export class CombinedRAGHelper {
     // Sort by score and take top K
     const sortedResults = results.sort((a, b) => b.score - a.score).slice(0, topK);
 
-    // Format results as markdown
+    // Format results as markdown with minimal metadata and maximum code
     const formattedChunks = sortedResults.map((result, idx) => {
       const relevancePercent = (result.score * 100).toFixed(1);
-      const source = result.source === 'diff' ? '📝 Diff' : '📚 Documentation';
 
       if (result.source === 'diff') {
-        const { file, hunkStartLine, addedLines, deletedLines, changeType } = result.metadata;
+        const { file, startLine, changeType } = result.metadata;
+        const contentLines = result.content.split('\n');
+        const maxLines = 30; // Show up to 30 lines of code
+        const truncated = contentLines.length > maxLines;
+
         return [
-          `### Result ${idx + 1}: ${source} - ${file} (${relevancePercent}% relevance)`,
-          `- **Location**: Lines starting at ${hunkStartLine}`,
-          `- **Changes**: +${addedLines}/-${deletedLines} lines`,
-          `- **Type**: ${changeType}`,
-          '',
+          `**[${idx + 1}] ${file}** (${changeType || 'code'}, line ${startLine || 'unknown'}, ${relevancePercent}% match)`,
           '```diff',
-          result.content.split('\n').slice(0, 5).join('\n'),
-          result.content.split('\n').length > 5 ? '... (truncated)' : '',
+          contentLines.slice(0, maxLines).join('\n'),
+          truncated ? '... (truncated)' : '',
           '```',
-          '',
         ].join('\n');
       } else {
         // Documentation result
-        const { file, section } = result.metadata;
+        const { file } = result.metadata;
+        const contentLines = result.content.split('\n');
+        const maxLines = 20;
+        const truncated = contentLines.length > maxLines;
+
         return [
-          `### Result ${idx + 1}: ${source} - ${file} (${relevancePercent}% relevance)`,
-          `- **Section**: ${section}`,
-          '',
-          '```markdown',
-          result.content.split('\n').slice(0, 10).join('\n'),
-          result.content.split('\n').length > 10 ? '... (truncated)' : '',
+          `**[${idx + 1}] 📚 ${file}** (${relevancePercent}% match)`,
           '```',
-          '',
+          contentLines.slice(0, maxLines).join('\n'),
+          truncated ? '... (truncated)' : '',
+          '```',
         ].join('\n');
       }
     });
 
-    return [
-      `## Combined Search Results (${sortedResults.length} relevant chunks)`,
-      '',
-      ...formattedChunks,
-    ].join('\n');
+    return formattedChunks.join('\n\n');
   }
 
   /**
    * Run multiple queries and aggregate results from both stores
-   * Useful for comprehensive context gathering
+   * Returns DEDUPLICATED and CONSOLIDATED results to avoid repetition
    */
   async queryMultiple(
-    queries: Array<{ q: string; topK?: number; store?: 'all' | 'diff' | 'docs' }>
+    queries: Array<{ q: string; topK?: number; store?: 'all' | 'diff' | 'docs'; purpose?: string }>
   ): Promise<
     Array<{
       query: string;
@@ -131,70 +126,98 @@ export class CombinedRAGHelper {
       relevantFiles: Set<string>;
     }>
   > {
-    const queryResults = await Promise.all(
-      queries.map(async ({ q, topK = 3, store = 'all' }) => {
-        let diffResults = 0;
-        let docResults = 0;
-        const relevantFiles = new Set<string>();
-        const scores: number[] = [];
+    // Collect all results across all queries
+    const allResults: Array<{
+      source: 'diff' | 'documentation';
+      content: string;
+      metadata: Record<string, unknown>;
+      score: number;
+      queryPurpose?: string;
+    }> = [];
 
-        // Count diff results
-        if ((store === 'all' || store === 'diff') && this.diffStore) {
-          try {
-            const { chunks } = await this.diffStore.query(q, { topK });
-            diffResults = chunks.length;
-            chunks.forEach((c) => {
-              if (typeof c.metadata.file === 'string') {
-                relevantFiles.add(c.metadata.file);
+    const seenContent = new Set<string>(); // For deduplication
+    let totalDiffResults = 0;
+    let totalDocResults = 0;
+    const allRelevantFiles = new Set<string>();
+
+    // Execute all queries and collect unique results
+    for (const { q, topK = 2, store = 'diff', purpose } of queries) {
+      const scores: number[] = [];
+
+      // Query diff store
+      if ((store === 'all' || store === 'diff') && this.diffStore) {
+        try {
+          const { chunks } = await this.diffStore.query(q, { topK });
+
+          for (const chunk of chunks) {
+            // Deduplicate by content
+            const contentKey = `${chunk.metadata.file}:${chunk.metadata.startLine}`;
+            if (!seenContent.has(contentKey)) {
+              seenContent.add(contentKey);
+              allResults.push({
+                source: 'diff',
+                content: chunk.content,
+                metadata: chunk.metadata,
+                score: chunk.score,
+                queryPurpose: purpose,
+              });
+              totalDiffResults++;
+
+              if (typeof chunk.metadata.file === 'string') {
+                allRelevantFiles.add(chunk.metadata.file);
               }
-              scores.push(c.score);
-            });
-          } catch (error) {
-            // Silently ignore
+              scores.push(chunk.score);
+            }
           }
+        } catch (error) {
+          // Silently ignore
         }
+      }
 
-        // Count doc results
-        if ((store === 'all' || store === 'docs') && this.docStore) {
-          try {
-            const { chunks } = await this.docStore.query(q, { topK });
-            docResults = chunks.length;
-            chunks.forEach((c) => {
-              if (typeof c.metadata.file === 'string') {
-                relevantFiles.add(c.metadata.file);
-              }
-              scores.push(c.score);
-            });
-          } catch (error) {
-            // Silently ignore
-          }
-        }
+      // Track this query
+      const storeQueried: 'diff' | 'docs' | 'both' =
+        store === 'all' ? 'both' : (store as 'diff' | 'docs');
+      this.trackQuery(q, storeQueried, scores.length, 0, allRelevantFiles, scores);
+    }
 
-        // Track this query
-        const storeQueried: 'diff' | 'docs' | 'both' =
-          store === 'all' ? 'both' : (store as 'diff' | 'docs');
-        this.trackQuery(
-          q,
-          storeQueried,
-          diffResults + docResults,
-          docResults,
-          relevantFiles,
-          scores
-        );
+    // Sort all results by score and take top results (limit to avoid overwhelming context)
+    const maxResults = 10; // Maximum 10 code snippets total
+    const topResults = allResults
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxResults);
 
-        const formattedResults = await this.query(q, topK, store);
+    // Format consolidated results
+    const formattedChunks = topResults.map((result, idx) => {
+      const relevancePercent = (result.score * 100).toFixed(1);
 
-        return {
-          query: q,
-          results: formattedResults,
-          diffResults,
-          docResults,
-          relevantFiles,
-        };
-      })
-    );
+      if (result.source === 'diff') {
+        const { file, hunkStartLine, changeType } = result.metadata;
+        const contentLines = result.content.split('\n');
+        const maxLines = 30;
+        const truncated = contentLines.length > maxLines;
 
-    return queryResults;
+        return [
+          `**[${idx + 1}] ${file}** (${changeType}, line ${hunkStartLine}, ${relevancePercent}% match)`,
+          '```diff',
+          contentLines.slice(0, maxLines).join('\n'),
+          truncated ? '... (truncated)' : '',
+          '```',
+        ].join('\n');
+      }
+
+      return ''; // No doc results in current implementation
+    }).filter(Boolean);
+
+    const consolidatedResults = formattedChunks.join('\n\n');
+
+    // Return single consolidated response
+    return [{
+      query: `${queries.length} concern(s)`,
+      results: consolidatedResults,
+      diffResults: totalDiffResults,
+      docResults: totalDocResults,
+      relevantFiles: allRelevantFiles,
+    }];
   }
 
   /**

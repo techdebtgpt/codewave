@@ -106,7 +106,7 @@ function generateHeaderAndFormat(): { header: string; format: string } {
     `${colors.green}{commit}${colors.reset}`,
     `${colors.white}{user}${colors.reset}`,
     `${colors.yellow}{vector}${colors.reset}`,
-    `${colors.blue}{bar}${colors.reset}`,
+    `${colors.blue}{bar}${colors.reset} ${colors.dim}{agent}${colors.reset}`,
     `${colors.magenta}{state}${colors.reset}`,
     `${colors.bright}{tokens}${colors.reset}`,
     `${colors.cyan}{cost}${colors.reset}`,
@@ -158,6 +158,8 @@ export class ProgressTracker {
   private commitState: Map<string, string> = new Map();
   private commitRound: Map<string, { current: number; max: number }> = new Map();
   private commitTokens: Map<string, { input: number; output: number; cost: number }> = new Map();
+  private commitErrors: Map<string, string> = new Map(); // Track errors per commit
+  private commitCurrentAgent: Map<string, string> = new Map(); // Track current agent
   private totalInputTokens = 0;
   private totalOutputTokens = 0;
   private totalCost = 0;
@@ -229,6 +231,7 @@ export class ProgressTracker {
         tokens: `${colors.dim}0/0${colors.reset}`,
         cost: `${colors.dim}$0.00${colors.reset}`,
         round: `${colors.dim}0/0${colors.reset}`,
+        agent: '', // Initialize agent field (empty initially)
       });
 
       this.bars.set(c.hash, bar);
@@ -253,6 +256,8 @@ export class ProgressTracker {
       clarityScore?: number;
       currentRound?: number;
       maxRounds?: number;
+      currentAgent?: string; // Name of currently executing agent
+      errorMessage?: string; // Error message if failed
     }
   ) {
     const bar = this.bars.get(commitHash);
@@ -261,6 +266,16 @@ export class ProgressTracker {
     // Track round information
     if (update.currentRound !== undefined && update.maxRounds !== undefined) {
       this.commitRound.set(commitHash, { current: update.currentRound, max: update.maxRounds });
+    }
+
+    // Track current agent
+    if (update.currentAgent) {
+      this.commitCurrentAgent.set(commitHash, update.currentAgent);
+    }
+
+    // Track error message
+    if (update.errorMessage) {
+      this.commitErrors.set(commitHash, update.errorMessage);
     }
 
     // Update status/state
@@ -346,12 +361,17 @@ export class ProgressTracker {
     // Get current state
     const currentState = this.commitState.get(commitHash) || `${colors.dim}pending${colors.reset}`;
 
+    // Get current agent (show abbreviated name after bar)
+    const currentAgent = this.commitCurrentAgent.get(commitHash);
+    const agentStr = currentAgent ? `[${currentAgent.substring(0, 8)}...]` : '';
+
     bar.update(currentProgress, {
       vector: vectorStr,
       state: currentState,
       tokens: tokenStr,
       cost: costStr,
       round: roundStr,
+      agent: agentStr,
     });
   }
 
@@ -372,6 +392,18 @@ export class ProgressTracker {
     console.log(
       `\n📊 ${colors.bright}Total:${colors.reset} ${colors.green}${inputTokensFormatted}${colors.reset} input | ${colors.yellow}${outputTokensFormatted}${colors.reset} output | ${colors.magenta}${costFormatted}${colors.reset}\n`
     );
+
+    // Print error summary if there were any failures
+    if (this.failedCommits > 0 && this.commitErrors.size > 0) {
+      console.log(`${colors.red}${colors.bright}❌ Failed Commits:${colors.reset}\n`);
+      for (const [commitHash, errorMessage] of this.commitErrors.entries()) {
+        const commit = this.commits.get(commitHash);
+        const shortHash = commit?.shortHash || commitHash.substring(0, 7);
+        const author = commit?.author || 'unknown';
+        console.log(`  ${colors.red}●${colors.reset} ${colors.bright}${shortHash}${colors.reset} (${author})`);
+        console.log(`    ${colors.dim}Error: ${errorMessage}${colors.reset}\n`);
+      }
+    }
   }
 
   /**

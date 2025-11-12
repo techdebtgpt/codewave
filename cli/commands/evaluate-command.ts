@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import chalk from 'chalk';
 import crypto from 'crypto';
 import { spawnSync } from 'child_process';
+import cliProgress from 'cli-progress';
 import { CommitEvaluationOrchestrator } from '../../src/orchestrator/commit-evaluation-orchestrator';
 import { loadConfig, configExists } from '../../src/config/config-loader';
 import { generateHtmlReport } from '../../src/formatters/html-report-formatter';
@@ -367,6 +368,9 @@ export async function runEvaluateCommand(args: string[]) {
     }
   };
 
+  // Print evaluation start message
+  originalConsoleLog('\n🚀 Starting commit evaluation...\n');
+
   // Start suppressing output during evaluation
   suppressOutput = true;
 
@@ -374,10 +378,8 @@ export async function runEvaluateCommand(args: string[]) {
     streaming: streamingEnabled,
     threadId: `eval-${Date.now()}`,
     onProgress: (state) => {
-      // Optional: emit progress events for UI integration
-      if (streamingEnabled && state?.agentResults?.length > 0) {
-        // Progress is now suppressed
-      }
+      // For single evaluate with LangSmith (no streaming), onProgress is called once at end
+      // Just track final state for summary
     },
   });
 

@@ -271,6 +271,68 @@ export function generateConversationTranscript(
     markdown += `*No metrics tracked across rounds.*\n\n`;
   }
 
+  // Generate final synthesis section (if available from last round)
+  markdown += `---\n\n`;
+  markdown += `## 🎯 Final Synthesis\n\n`;
+  markdown += `*Each agent's comprehensive evaluation incorporating all rounds of discussion.*\n\n`;
+
+  let hasFinalSynthesis = false;
+  roundsMap.forEach((turns) => {
+    turns.forEach((turn) => {
+      // Look for finalSynthesis in the original results
+      const originalResult = results.find(
+        (r) => detectAgentName(r) === turn.agentName && r.finalSynthesis
+      );
+
+      if (originalResult?.finalSynthesis) {
+        hasFinalSynthesis = true;
+        const fs = originalResult.finalSynthesis;
+
+        markdown += `### ${turn.icon} ${turn.agentName} - Consolidated Assessment\n\n`;
+        markdown += `**Summary:**\n\n`;
+        markdown += `${fs.summary}\n\n`;
+
+        if (fs.details && fs.details !== fs.summary) {
+          markdown += `<details>\n`;
+          markdown += `<summary><strong>Complete Analysis</strong> (click to expand)</summary>\n\n`;
+          markdown += `${fs.details}\n\n`;
+          markdown += `</details>\n\n`;
+        }
+
+        if (fs.metrics && Object.keys(fs.metrics).length > 0) {
+          markdown += `**Final Metric Scores:**\n\n`;
+          Object.entries(fs.metrics).forEach(([key, value]) => {
+            const label = key
+              .replace(/([A-Z])/g, ' $1')
+              .replace(/^./, (str) => str.toUpperCase())
+              .trim();
+            markdown += `- **${label}**: ${value}\n`;
+          });
+          markdown += `\n`;
+        }
+
+        if (fs.unresolvedConcerns && fs.unresolvedConcerns.length > 0) {
+          markdown += `**Unresolved Concerns:**\n\n`;
+          fs.unresolvedConcerns.forEach((concern) => {
+            markdown += `- ⚠️ ${concern}\n`;
+          });
+          markdown += `\n`;
+        }
+
+        if (fs.evolutionNotes) {
+          markdown += `**Evolution Notes:**\n\n`;
+          markdown += `> ${fs.evolutionNotes}\n\n`;
+        }
+
+        markdown += `---\n\n`;
+      }
+    });
+  });
+
+  if (!hasFinalSynthesis) {
+    markdown += `*No final synthesis available. This section appears when agents complete their final round with comprehensive evaluations.*\n\n`;
+  }
+
   // Generate conversation insights
   markdown += `---\n\n`;
   markdown += `## 💡 Conversation Insights\n\n`;

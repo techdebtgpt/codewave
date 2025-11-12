@@ -2,11 +2,11 @@
 // Shared utilities for CLI commands to eliminate duplication
 
 import { AgentRegistry } from '../../src/agents/agent-registry';
-import { BusinessAnalystAgent } from '../../src/agents/business-analyst-agent';
-import { SDETAgent } from '../../src/agents/sdet-agent';
-import { DeveloperAuthorAgent } from '../../src/agents/developer-author-agent';
-import { SeniorArchitectAgent } from '../../src/agents/senior-architect-agent';
-import { DeveloperReviewerAgent } from '../../src/agents/developer-reviewer-agent';
+import { BusinessAnalystAgent } from '../../src/agents/implementations/business-analyst-agent';
+import { SDETAgent } from '../../src/agents/implementations/sdet-agent';
+import { DeveloperAuthorAgent } from '../../src/agents/implementations/developer-author-agent';
+import { SeniorArchitectAgent } from '../../src/agents/implementations/senior-architect-agent';
+import { DeveloperReviewerAgent } from '../../src/agents/implementations/developer-reviewer-agent';
 import { AppConfig } from '../../src/config/config.interface';
 import { generateEnhancedHtmlReport } from '../../src/formatters/html-report-formatter-enhanced';
 import { generateConversationTranscript } from '../../src/formatters/conversation-transcript-formatter';

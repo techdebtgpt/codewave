@@ -1,0 +1,920 @@
+1. Round 1 
+
+a) Input 
+human
+
+
+human
+
+
+## Developer Overview
+
+**Summary:** Refactor agent workflows for multi-round concerns
+
+**Details:**
+Refactored agent workflow to support multi-round discussions and dynamic concerns. Removed legacy logic and centralized metric definitions.
+
+**Key Changes:**
+- Added support for multi-round discussions
+- Centralized metric definitions
+- Updated agent classes with new metadata
+
+**Testing Approach:**
+Tested new workflows and ensured metrics are correctly calculated
+
+---
+
+## Business Analyst - Round 1: Initial Analysis
+
+**Files Changed:** unknown files
+
+**Diff Summary**:
+- Files changed: 12
+- Additions: +611
+- Deletions: -1308
+- Total chunks indexed: 51
+
+**Relevant Code for Business Analyst Analysis:**
+**[1] src/services/diff-vector-store.service.ts** (business-logic, line undefined, 51.2% match)
+```diff
+@@ -197,17 +197,9 @@ export class DiffVectorStoreService {
+     let deletions = 0;
+     const filesChanged = new Set<string>();
+ 
+-    console.log(`   Parsing ${lines.length} lines...`);
+-    console.log(`   First 3 lines: ${JSON.stringify(lines.slice(0, 3))}`);
+-
+     for (let i = 0; i < lines.length; i++) {
+       const line = lines[i];
+ 
+-      // Debug: Show diff-related lines
+-      if (line.startsWith('diff') || line.startsWith('+++') || line.startsWith('---')) {
+-        console.log(`   Line ${i}: ${line.substring(0, 60)}`);
+-      }
+-
+       // Skip commit header lines
+       if (
+         line.startsWith('commit ') ||
+
+```
+
+**[2] src/agents/agent.interface.ts** (undefined, line undefined, 35.4% match)
+```diff
+File: src/agents/agent.interface.ts
+Changes: +13 -1 (3 hunks)
+File type: source-code
+Change types: business-logic, test
+
+```
+
+**[3] src/agents/base-agent-workflow.ts** (test, line undefined, 34.9% match)
+```diff
+@@ -375,253 +168,6 @@ export abstract class BaseAgentWorkflow implements Agent {
+     return currentUsage;
+   }
+ 
+-  /**
+-   * Self-evaluate analysis completeness and clarity
+-   * Validates all 7 metrics with focus on PRIMARY metrics (weight >= 0.4)
+-   */
+-  protected evaluateAnalysis(result: AgentResult): {
+-    clarityScore: number;
+-    missingInformation: string[];
+-  } {
+-    const summary = (result.summary || '').toLowerCase();
+-    const details = (result.details || '').toLowerCase();
+-    const metrics = result.metrics || {};
+-
+-    const gaps: string[] = [];
+-
+-    // Import constants
+-    const { SEVEN_PILLARS, getAgentWeight } = require('../constants/agent-weights.constants');
+-    const { getMetricDefinition, getRequiredMetrics } = require('../constants/metric-definitions.constants');
+-
+-    // Get agent name for weight lookup
+-    const agentMetadata = this.getMetadata();
+-    const agentName = agentMetadata.name || 'unknown';
+-
+-    // Separate metrics by priority
+-    const primaryMetrics: string[] = []; // weight >= 0.4
+-    const secondaryMetrics: string[] = []; // 0.15 <= weight < 0.4
+-    const tertiaryMetrics: string[] = []; // weight < 0.15
+... (truncated)
+```
+
+**[4] src/orchestrator/commit-evaluation-graph.ts** (undefined, line undefined, 34.4% match)
+```diff
+File: src/orchestrator/commit-evaluation-graph.ts
+Changes: +34 -0 (6 hunks)
+File type: source-code
+Change types: business-logic, config
+
+```
+
+**[5] src/agents/developer-author-agent.ts** (test, line undefined, 33.9% match)
+```diff
+@@ -2,27 +2,40 @@
+ // Developer (Commit Author) Agent - Explains implementation decisions and actual time spent
+ 
+ import { AppConfig } from '../config/config.interface';
+-import { BaseAgentWorkflow } from './base-agent-workflow';
++import { BaseAgentWorkflow, AgentMetadata, AgentWeights } from './base-agent-workflow';
+ import { AgentContext, AgentResult } from './agent.interface';
+ import { PromptBuilderService } from '../services/prompt-builder.service';
+ 
+ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
+   private config: AppConfig;
+ 
++  // Self-contained agent configuration
++  readonly metadata: AgentMetadata = {
++    name: 'developer-author',
++    description: 'Explains implementation decisions, trade-offs, and estimates actual time spent',
++    role: 'Developer (Author)',
++    roleDescription: 'implementation decisions, time spent, and developer perspective',
++  };
++
++  readonly expertiseWeights: AgentWeights = {
++    functionalImpact: 0.13, // TERTIARY (13%) - Limited business impact focus
++    idealTimeHours: 0.167, // SECONDARY (16.7%) - Good estimation perspective
++    testCoverage: 0.12, // TERTIARY (12%) - Limited testing expertise
++    codeQuality: 0.125, // TERTIARY (12.5%) - Basic quality awareness
++    codeComplexity: 0.167, // SECONDARY (16.7%) - Implementation complexity insight
++    actualTimeHours: 0.455, // PRIMARY (45.5%) - Implementation time expert
++    technicalDebtHours: 0.13, // TERTIARY (13%) - Limited debt assessment
++  };
++
+... (truncated)
+```
+
+**[6] src/orchestrator/commit-evaluation-graph.ts** (config, line undefined, 31.0% match)
+```diff
+@@ -419,6 +429,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
+             metrics: {},
+             agentName: agentRole,
+             agentRole: agentName,
++            round: state.currentRound,
+           };
+ 
+           const conversationMessage: ConversationMessage = {
+
+```
+
+**[7] src/agents/developer-author-agent.ts** (test, line undefined, 29.1% match)
+```diff
+@@ -52,117 +65,4 @@ export class DeveloperAuthorAgent extends BaseAgentWorkflow {
+     return this.buildMultiRoundPrompt(context);
+   }
+ 
+-  /**
+-   * Self-evaluate analysis completeness from Developer Author perspective
+-   * Focus: Actual time estimates and implementation decisions clarity
+-   */
+-  protected evaluateAnalysis(result: AgentResult): {
+-    clarityScore: number;
+-    missingInformation: string[];
+-  } {
+-    const summary = (result.summary || '').toLowerCase();
+-    const details = (result.details || '').toLowerCase();
+-    const metrics = result.metrics || {};
+-
+-    let clarityScore = 50;
+-    const gaps: string[] = [];
+-
+-    // Check if actual time is well-justified
+-    if (typeof metrics.actualTimeHours === 'number' && metrics.actualTimeHours >= 0) {
+-      const hasTimeJustification =
+-        summary.includes('spent') ||
+-        summary.includes('hour') ||
+-        details.includes('implement') ||
+-        details.includes('debug');
+-      if (!hasTimeJustification) {
+-        gaps.push('Actual time estimate needs clearer justification - what took the most time?');
+-      } else {
+-        clarityScore += 12;
+... (truncated)
+```
+
+**[8] src/agents/business-analyst-agent.ts** (test, line undefined, 28.0% match)
+```diff
+@@ -2,28 +2,40 @@
+ // Business Analyst Agent - Evaluates business value, functional impact, and ideal time estimation
+ 
+ import { AppConfig } from '../config/config.interface';
+-import { BaseAgentWorkflow } from './base-agent-workflow';
++import { BaseAgentWorkflow, AgentMetadata, AgentWeights } from './base-agent-workflow';
+ import { AgentContext, AgentResult } from './agent.interface';
+-
+ import { PromptBuilderService } from '../services/prompt-builder.service';
++
+ export class BusinessAnalystAgent extends BaseAgentWorkflow {
+   private config: AppConfig;
+ 
++  // Self-contained agent configuration
++  readonly metadata: AgentMetadata = {
++    name: 'business-analyst',
++    description: 'Evaluates business value, functional impact, and estimates ideal implementation time',
++    role: 'Business Analyst',
++    roleDescription: 'business perspective',
++  };
++
++  readonly expertiseWeights: AgentWeights = {
++    functionalImpact: 0.435, // PRIMARY (43.5%) - Business impact expert
++    idealTimeHours: 0.417, // PRIMARY (41.7%) - Requirements estimation expert
++    testCoverage: 0.12, // TERTIARY (12%) - Limited testing perspective
++    codeQuality: 0.083, // TERTIARY (8.3%) - Limited code perspective
++    codeComplexity: 0.083, // TERTIARY (8.3%) - Limited complexity insight
++    actualTimeHours: 0.136, // TERTIARY (13.6%) - Observes implementation time
++    technicalDebtHours: 0.13, // TERTIARY (13%) - Limited debt assessment
++  };
+... (truncated)
+```
+
+**[9] src/constants/agent-metric-definitions.constants.ts** (test, line undefined, 27.3% match)
+```diff
+@@ -0,0 +1,163 @@
++/**
++ * Centralized Metric Definitions for All Agents
++ *
++ * This file contains the comprehensive, score-level metric guidelines that all agents use.
++ * These are the source of truth - they're shared across all 5 agent roles since the
++ * evaluation criteria are consistent (only the weights/expertise differ by role).
++ *
++ * Each metric has:
++ * - name: Display name for the metric
++ * - description: What this metric measures
++ * - scale: The scoring scale used
++ * - guidelines: Score-level guidance (9-10, 7-8, etc.)
++ * - canBeNull: Whether agents can return null for this metric
++ * - nullGuidance: Explanation of when to return null
++ */
++
++export interface MetricGuidelinesSet {
++  name: string;
++  description: string;
++  scale: string;
++  guidelines: Record<string, string>;
++  canBeNull: boolean;
++  nullGuidance: string;
++}
++
++export const AGENT_METRIC_DEFINITIONS: Record<string, MetricGuidelinesSet> = {
++  functionalImpact: {
++    name: 'Functional Impact',
++    description: 'User-facing impact and business value of the implementation',
+... (truncated)
+```
+
+**[10] src/agents/base-agent-workflow.ts** (config, line undefined, 27.0% match)
+```diff
+@@ -647,9 +193,14 @@ export abstract class BaseAgentWorkflow implements Agent {
+   protected buildRefinementSystemPrompt(context: any): string {
+     const depthMode = (context.depthMode || 'normal') as 'fast' | 'normal' | 'deep';
+     const config = DEPTH_MODE_CONFIGS[depthMode];
++    const isFinalRound = context.isFinalRound || false;
++
++    const concernsToAddress = (context.teamConcerns || [])
++      .map((c: any) => `- "${c.concern}" (raised by ${c.agentName})`)
++      .join('\n');
+ 
+     return [
+-      `You are the ${this.getMetadata().role} agent in ${depthMode.toUpperCase()} analysis mode. Refine your previous analysis based on identified gaps.`,
++      `You are the ${this.getMetadata().role} agent in ${depthMode.toUpperCase()} analysis mode. ${isFinalRound ? 'Finalize your analysis with high confidence.' : 'Refine your previous analysis based on team discussion.'}`,
+       '',
+       '## Critical Requirements for Refinement',
+       '- CRITICAL: You MUST return ONLY valid JSON, no markdown, no extra text',
+
+```
+
+
+
+**Your Task:**
+Analyze the commit from a business perspective and score ALL 7 metrics:
+
+1. **functionalImpact** - YOUR PRIMARY EXPERTISE
+2. **idealTimeHours** - YOUR PRIMARY EXPERTISE
+3. **testCoverage** - your tertiary opinion
+4. **codeQuality** - your tertiary opinion
+5. **codeComplexity** - your tertiary opinion
+6. **actualTimeHours** - your tertiary opinion
+7. **technicalDebtHours** - your tertiary opinion
+
+Focus on your expertise (functionalImpact, idealTimeHours) but provide scores for all pillars.
+For metrics outside your expertise, provide reasonable estimates based on the code changes.
+
+**Response Format:**
+Return ONLY valid JSON with this structure:
+json
+
+
+{
+  "summary": "High-level summary of your analysis",
+  "details": "Detailed explanation of your reasoning",
+  "metrics": {
+    "functionalImpact": <score 0-10>,
+    "idealTimeHours": <hours estimate>,
+    "testCoverage": <score 0-10>,
+    "codeQuality": <score 0-10>,
+    "codeComplexity": <score 0-10>,
+    "actualTimeHours": <hours estimate>,
+    "technicalDebtHours": <hours estimate>
+  },
+  "concerns": ["List any concerns you have"],
+  "questionsForTeam": ["Questions for other agents"]
+}
+CRITICAL: Return ONLY valid JSON, no markdown fences, no extra text.
+
+b) Output
+
+{
+  "summary": "The refactor of agent workflows to support multi-round discussions significantly enhances user experience and operational efficiency, though it introduces some complexity.",
+  "details": "The changes allow for more dynamic interactions, which can lead to improved user satisfaction and better handling of complex scenarios. However, the removal of legacy logic and the introduction of new centralized metric definitions may require additional testing to ensure all functionalities are preserved. The ideal implementation time is estimated based on the complexity of the changes and the need for thorough testing.",
+  "metrics": {
+    "functionalImpact": 8,
+    "idealTimeHours": 40,
+    "testCoverage": 7,
+    "codeQuality": 6,
+    "codeComplexity": 7,
+    "actualTimeHours": 35,
+    "technicalDebtHours": 5
+  },
+  "concerns": ["Potential for bugs due to removal of legacy logic", "Need for comprehensive testing to validate new workflows"],
+  "questionsForTeam": ["What specific metrics are being centralized, and how will they affect existing workflows?", "Is there a plan for regression testing to ensure legacy functionalities are not broken?"]
+}
+
+2. Round 2
+
+a) Input
+human
+
+
+## Business Analyst - Round 2: Team Discussion
+
+**Files Changed:** unknown files
+
+**Diff Summary**:
+- Files changed: 12
+- Additions: +611
+- Deletions: -1308
+- Total chunks indexed: 51
+
+**Relevant Code for Business Analyst Analysis:**
+**[1] src/agents/sdet-agent.ts** (test, line undefined, 55.9% match)
+```diff
+@@ -2,28 +2,40 @@
+ // SDET (Software Development Engineer in Test) Agent - Evaluates test automation, testing frameworks, and code quality of tests
+ 
+ import { AppConfig } from '../config/config.interface';
+-import { BaseAgentWorkflow } from './base-agent-workflow';
++import { BaseAgentWorkflow, AgentMetadata, AgentWeights } from './base-agent-workflow';
+ import { AgentContext, AgentResult } from './agent.interface';
+-
+ import { PromptBuilderService } from '../services/prompt-builder.service';
++
+ export class SDETAgent extends BaseAgentWorkflow {
+   private config: AppConfig;
+ 
++  // Self-contained agent configuration
++  readonly metadata: AgentMetadata = {
++    name: 'sdet',
++    description: 'Evaluates test automation quality, testing frameworks, and automated test infrastructure',
++    role: 'SDET (Test Automation Engineer)',
++    roleDescription: 'test automation quality and testing frameworks perspective',
++  };
++
++  readonly expertiseWeights: AgentWeights = {
++    functionalImpact: 0.13, // TERTIARY (13%) - Limited business impact focus
++    idealTimeHours: 0.083, // TERTIARY (8.3%) - Limited estimation focus
++    testCoverage: 0.4, // PRIMARY (40%) - Test automation expert
++    codeQuality: 0.167, // SECONDARY (16.7%) - Test code quality focus
++    codeComplexity: 0.125, // TERTIARY (12.5%) - Test complexity assessment
++    actualTimeHours: 0.091, // TERTIARY (9.1%) - Limited time tracking
++    technicalDebtHours: 0.13, // TERTIARY (13%) - Test automation debt
++  };
+... (truncated)
+```
+
+**[2] src/agents/agent.interface.ts** (test, line undefined, 38.2% match)
+```diff
+@@ -61,6 +61,18 @@ export interface AgentResult {
+   clarityScore?: number; // Final self-evaluation clarity score (0-100)
+   refinementNotes?: string[]; // Notes on improvements per iteration
+   missingInformation?: string[]; // Information gaps identified (if any)
++
++  // LLM-generated concerns and questions (replaces static gaps)
++  // Agents dynamically raise concerns about metrics that need validation
++  concerns?: string[]; // Concerns raised by agent in this round (e.g., "Need clarity on test coverage scope")
++  questionsForTeam?: string[]; // Questions for other agents to address specific score discrepancies
++  addressedConcerns?: {
++    // Tracks which previous concerns were addressed in this round
++    fromAgentName: string; // Which agent raised the concern
++    concern: string; // The original concern
++    addressed: boolean; // Whether agent addressed this concern
++    explanation?: string; // How the concern was addressed or why it wasn't
++  }[];
+ }
+ 
+ /**
+
+```
+
+**[3] src/agents/senior-architect-agent.ts** (test, line undefined, 36.4% match)
+```diff
+@@ -36,10 +49,10 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
+ 
+     return PromptBuilderService.buildCompleteSystemPrompt(
+       {
+-        role: 'Senior Architect',
+-        description: 'Evaluates architecture, design patterns, code complexity, and technical debt',
+-        roleDetailedDescription: `You are a Senior Architect participating in a code review discussion. Your role is to evaluate the commit across ALL 7 pillars, with special focus on complexity and technical debt. You assess whether the architectural design is sound, identify technical debt introduced or eliminated, and ensure the implementation follows SOLID principles and established design patterns. Your PRIMARY expertise is in evaluating code complexity and technical debt implications.`,
+-        agentKey: 'senior-architect',
++        role: this.metadata.role,
++        description: this.metadata.description,
++        roleDetailedDescription: this.rolePromptTemplate,
++        agentKey: this.metadata.name,
+       },
+       currentRound,
+       isFinalRound,
+
+```
+
+**[4] src/services/diff-vector-store.service.ts** (business-logic, line undefined, 36.4% match)
+```diff
+@@ -244,12 +236,10 @@ export class DiffVectorStoreService {
+         if (line.startsWith('diff --git')) {
+           const match = line.match(/diff --git a\/(.*?) b\//);
+           currentFile = match ? match[1] : null;
+-          console.log(`   Found file via diff --git: ${currentFile}`);
+         } else if (line.startsWith('+++')) {
+           const match = line.match(/\+\+\+ b\/(.*?)$/);
+           if (match) {
+             currentFile = match[1];
+-            console.log(`   Confirmed file via +++: ${currentFile}`);
+             if (currentFile) {
+               filesChanged.add(currentFile);
+             }
+
+```
+
+**[5] src/agents/developer-author-agent.ts** (undefined, line undefined, 35.2% match)
+```diff
+File: src/agents/developer-author-agent.ts
+Changes: +27 -127 (3 hunks)
+File type: source-code
+Change types: test, business-logic
+
+```
+
+**[6] src/agents/base-agent-workflow.ts** (config, line undefined, 33.8% match)
+```diff
+@@ -647,9 +193,14 @@ export abstract class BaseAgentWorkflow implements Agent {
+   protected buildRefinementSystemPrompt(context: any): string {
+     const depthMode = (context.depthMode || 'normal') as 'fast' | 'normal' | 'deep';
+     const config = DEPTH_MODE_CONFIGS[depthMode];
++    const isFinalRound = context.isFinalRound || false;
++
++    const concernsToAddress = (context.teamConcerns || [])
++      .map((c: any) => `- "${c.concern}" (raised by ${c.agentName})`)
++      .join('\n');
+ 
+     return [
+-      `You are the ${this.getMetadata().role} agent in ${depthMode.toUpperCase()} analysis mode. Refine your previous analysis based on identified gaps.`,
++      `You are the ${this.getMetadata().role} agent in ${depthMode.toUpperCase()} analysis mode. ${isFinalRound ? 'Finalize your analysis with high confidence.' : 'Refine your previous analysis based on team discussion.'}`,
+       '',
+       '## Critical Requirements for Refinement',
+       '- CRITICAL: You MUST return ONLY valid JSON, no markdown, no extra text',
+
+```
+
+**[7] src/agents/senior-architect-agent.ts** (test, line undefined, 31.7% match)
+```diff
+@@ -2,27 +2,40 @@
+ // Senior Architect Agent - Evaluates code complexity and technical debt
+ 
+ import { AppConfig } from '../config/config.interface';
+-import { BaseAgentWorkflow } from './base-agent-workflow';
++import { BaseAgentWorkflow, AgentMetadata, AgentWeights } from './base-agent-workflow';
+ import { AgentContext, AgentResult } from './agent.interface';
+-
+ import { PromptBuilderService } from '../services/prompt-builder.service';
++
+ export class SeniorArchitectAgent extends BaseAgentWorkflow {
+   private config: AppConfig;
+ 
++  // Self-contained agent configuration
++  readonly metadata: AgentMetadata = {
++    name: 'senior-architect',
++    description: 'Evaluates architecture, design patterns, code complexity, and technical debt',
++    role: 'Senior Architect',
++    roleDescription: 'architecture, complexity, and technical debt perspective',
++  };
++
++  readonly expertiseWeights: AgentWeights = {
++    functionalImpact: 0.174, // SECONDARY (17.4%) - Architectural impact awareness
++    idealTimeHours: 0.208, // SECONDARY (20.8%) - Complexity estimation
++    testCoverage: 0.16, // SECONDARY (16%) - Architecture testability
++    codeQuality: 0.208, // SECONDARY (20.8%) - Design quality expert
++    codeComplexity: 0.417, // PRIMARY (41.7%) - Complexity expert
++    actualTimeHours: 0.182, // SECONDARY (18.2%) - Implementation effort insight
++    technicalDebtHours: 0.435, // PRIMARY (43.5%) - Technical debt expert
++  };
+... (truncated)
+```
+
+**[8] src/agents/sdet-agent.ts** (test, line undefined, 29.2% match)
+```diff
+@@ -37,11 +49,10 @@ export class SDETAgent extends BaseAgentWorkflow {
+ 
+     return PromptBuilderService.buildCompleteSystemPrompt(
+       {
+-        role: 'SDET (Test Automation Engineer)',
+-        description:
+-          'Evaluates test automation quality, testing frameworks, and automated test infrastructure',
+-        roleDetailedDescription: `You are an SDET (Software Development Engineer in Test) participating in a code review discussion. Your role is to evaluate the commit across ALL 7 pillars, with special focus on test automation quality and testing infrastructure. You assess the maturity of the testing framework, the quality and maintainability of test code, and identify test automation debt. Your PRIMARY expertise is in evaluating test coverage and automation framework quality, not just testing numbers.`,
+-        agentKey: 'sdet',
++        role: this.metadata.role,
++        description: this.metadata.description,
++        roleDetailedDescription: this.rolePromptTemplate,
++        agentKey: this.metadata.name,
+       },
+       currentRound,
+       isFinalRound,
+
+```
+
+
+---
+
+## Team Discussion from Previous Round
+
+
+**Your Previous Round Analysis:**
+- Summary: The refactor of agent workflows to support multi-round discussions significantly enhances user experience and operational efficiency, though it introduces some complexity.
+- Key metrics: functionalImpact=8, idealTimeHours=40, technicalDebtHours=5
+
+**Concerns raised by the team:**
+1. [Business Analyst] Potential for bugs due to removal of legacy logic
+2. [Business Analyst] Need for comprehensive testing to validate new workflows
+3. [SDET (Test Automation Engineer)] Insufficient automated tests for new multi-round workflows.
+4. [SDET (Test Automation Engineer)] Lack of clarity on how metrics are validated in tests.
+5. [SDET (Test Automation Engineer)] Potential gaps in coverage for edge cases in multi-round discussions.
+6. [Developer (Author)] Potential for increased complexity in multi-round discussions affecting performance.
+7. [Developer (Author)] Need for thorough testing to ensure metrics are accurately calculated.
+8. [Senior Architect] Ensure that the new centralized metric definitions are well-documented and understood by all team members.
+9. [Senior Architect] Evaluate the impact of the new multi-round discussions on existing workflows and ensure backward compatibility.
+10. [Developer Reviewer] Lack of comments in complex sections may hinder future maintainability.
+11. [Developer Reviewer] Increased complexity could lead to higher technical debt if not addressed.
+12. [Developer Reviewer] Need for comprehensive test cases to ensure all new features are covered.
+
+**Your task in this round:**
+- REFINE (don't repeat) your previous analysis based on team concerns
+- Address concerns relevant to your expertise (functionalImpact, idealTimeHours)
+- Update your scores if team discussion revealed new insights
+- Your summary should focus on WHAT CHANGED since last round
+
+---
+
+
+**Your Task:**
+Analyze the commit from a business perspective and score ALL 7 metrics:
+
+1. **functionalImpact** - YOUR PRIMARY EXPERTISE
+2. **idealTimeHours** - YOUR PRIMARY EXPERTISE
+3. **testCoverage** - your tertiary opinion
+4. **codeQuality** - your tertiary opinion
+5. **codeComplexity** - your tertiary opinion
+6. **actualTimeHours** - your tertiary opinion
+7. **technicalDebtHours** - your tertiary opinion
+
+Focus on your expertise (functionalImpact, idealTimeHours) but provide scores for all pillars.
+For metrics outside your expertise, provide reasonable estimates based on the code changes.
+
+**Response Format:**
+Return ONLY valid JSON with this structure:
+json
+
+
+{
+  "summary": "UPDATED summary focusing on what changed based on team discussion",
+  "details": "Explain how team concerns influenced your refined scores",
+  "metrics": {
+    "functionalImpact": <score 0-10>,
+    "idealTimeHours": <hours estimate>,
+    "testCoverage": <score 0-10>,
+    "codeQuality": <score 0-10>,
+    "codeComplexity": <score 0-10>,
+    "actualTimeHours": <hours estimate>,
+    "technicalDebtHours": <hours estimate>
+  },
+  "concerns": ["List any concerns you have"],
+  "questionsForTeam": ["Questions for other agents"]
+}
+CRITICAL: Return ONLY valid JSON, no markdown fences, no extra text.
+
+Output
+
+{
+  "summary": "The recent changes enhance the agent workflows by introducing dynamic concern tracking and improved metadata management, which should improve user experience and operational efficiency. However, the removal of legacy logic and the introduction of new complexities raise concerns about potential bugs and the need for comprehensive testing.",
+  "details": "The team raised valid concerns regarding the potential for bugs due to the removal of legacy logic and the necessity for thorough testing to validate the new workflows. These concerns have influenced my assessment of functional impact, as the changes could lead to significant improvements in user experience but also introduce risks. The ideal time hours estimate has been adjusted to account for the additional testing and validation required. The need for comprehensive test coverage and documentation also affects the scores for test coverage and code quality.",
+  "metrics": {
+    "functionalImpact": 7,
+    "idealTimeHours": 50,
+    "testCoverage": 6,
+    "codeQuality": 6,
+    "codeComplexity": 7,
+    "actualTimeHours": 45,
+    "technicalDebtHours": 8
+  },
+  "concerns": [
+    "Potential for bugs due to removal of legacy logic",
+    "Need for comprehensive testing to validate new workflows",
+    "Insufficient automated tests for new multi-round workflows",
+    "Lack of clarity on how metrics are validated in tests",
+    "Potential gaps in coverage for edge cases in multi-round discussions"
+  ],
+  "questionsForTeam": [
+    "How will we ensure that the new workflows are thoroughly tested?",
+    "What documentation will be provided to clarify the new metrics and their validation?"
+  ]
+}
+
+3. Round 3
+
+a) Input 
+
+human
+
+## Business Analyst - Round 3: Team Discussion
+
+**Files Changed:** unknown files
+
+**Diff Summary**:
+- Files changed: 12
+- Additions: +611
+- Deletions: -1308
+- Total chunks indexed: 51
+
+**Relevant Code for Business Analyst Analysis:**
+**[1] src/agents/sdet-agent.ts** (test, line undefined, 55.9% match)
+```diff
+@@ -2,28 +2,40 @@
+ // SDET (Software Development Engineer in Test) Agent - Evaluates test automation, testing frameworks, and code quality of tests
+ 
+ import { AppConfig } from '../config/config.interface';
+-import { BaseAgentWorkflow } from './base-agent-workflow';
++import { BaseAgentWorkflow, AgentMetadata, AgentWeights } from './base-agent-workflow';
+ import { AgentContext, AgentResult } from './agent.interface';
+-
+ import { PromptBuilderService } from '../services/prompt-builder.service';
++
+ export class SDETAgent extends BaseAgentWorkflow {
+   private config: AppConfig;
+ 
++  // Self-contained agent configuration
++  readonly metadata: AgentMetadata = {
++    name: 'sdet',
++    description: 'Evaluates test automation quality, testing frameworks, and automated test infrastructure',
++    role: 'SDET (Test Automation Engineer)',
++    roleDescription: 'test automation quality and testing frameworks perspective',
++  };
++
++  readonly expertiseWeights: AgentWeights = {
++    functionalImpact: 0.13, // TERTIARY (13%) - Limited business impact focus
++    idealTimeHours: 0.083, // TERTIARY (8.3%) - Limited estimation focus
++    testCoverage: 0.4, // PRIMARY (40%) - Test automation expert
++    codeQuality: 0.167, // SECONDARY (16.7%) - Test code quality focus
++    codeComplexity: 0.125, // TERTIARY (12.5%) - Test complexity assessment
++    actualTimeHours: 0.091, // TERTIARY (9.1%) - Limited time tracking
++    technicalDebtHours: 0.13, // TERTIARY (13%) - Test automation debt
++  };
+... (truncated)
+```
+
+**[2] src/agents/agent.interface.ts** (test, line undefined, 38.2% match)
+```diff
+@@ -61,6 +61,18 @@ export interface AgentResult {
+   clarityScore?: number; // Final self-evaluation clarity score (0-100)
+   refinementNotes?: string[]; // Notes on improvements per iteration
+   missingInformation?: string[]; // Information gaps identified (if any)
++
++  // LLM-generated concerns and questions (replaces static gaps)
++  // Agents dynamically raise concerns about metrics that need validation
++  concerns?: string[]; // Concerns raised by agent in this round (e.g., "Need clarity on test coverage scope")
++  questionsForTeam?: string[]; // Questions for other agents to address specific score discrepancies
++  addressedConcerns?: {
++    // Tracks which previous concerns were addressed in this round
++    fromAgentName: string; // Which agent raised the concern
++    concern: string; // The original concern
++    addressed: boolean; // Whether agent addressed this concern
++    explanation?: string; // How the concern was addressed or why it wasn't
++  }[];
+ }
+ 
+ /**
+
+```
+
+**[3] src/agents/senior-architect-agent.ts** (test, line undefined, 36.4% match)
+```diff
+@@ -36,10 +49,10 @@ export class SeniorArchitectAgent extends BaseAgentWorkflow {
+ 
+     return PromptBuilderService.buildCompleteSystemPrompt(
+       {
+-        role: 'Senior Architect',
+-        description: 'Evaluates architecture, design patterns, code complexity, and technical debt',
+-        roleDetailedDescription: `You are a Senior Architect participating in a code review discussion. Your role is to evaluate the commit across ALL 7 pillars, with special focus on complexity and technical debt. You assess whether the architectural design is sound, identify technical debt introduced or eliminated, and ensure the implementation follows SOLID principles and established design patterns. Your PRIMARY expertise is in evaluating code complexity and technical debt implications.`,
+-        agentKey: 'senior-architect',
++        role: this.metadata.role,
++        description: this.metadata.description,
++        roleDetailedDescription: this.rolePromptTemplate,
++        agentKey: this.metadata.name,
+       },
+       currentRound,
+       isFinalRound,
+
+```
+
+**[4] src/services/diff-vector-store.service.ts** (business-logic, line undefined, 36.4% match)
+```diff
+@@ -244,12 +236,10 @@ export class DiffVectorStoreService {
+         if (line.startsWith('diff --git')) {
+           const match = line.match(/diff --git a\/(.*?) b\//);
+           currentFile = match ? match[1] : null;
+-          console.log(`   Found file via diff --git: ${currentFile}`);
+         } else if (line.startsWith('+++')) {
+           const match = line.match(/\+\+\+ b\/(.*?)$/);
+           if (match) {
+             currentFile = match[1];
+-            console.log(`   Confirmed file via +++: ${currentFile}`);
+             if (currentFile) {
+               filesChanged.add(currentFile);
+             }
+
+```
+
+**[5] src/agents/developer-author-agent.ts** (undefined, line undefined, 35.2% match)
+```diff
+File: src/agents/developer-author-agent.ts
+Changes: +27 -127 (3 hunks)
+File type: source-code
+Change types: test, business-logic
+
+```
+
+**[6] src/agents/base-agent-workflow.ts** (config, line undefined, 33.8% match)
+```diff
+@@ -647,9 +193,14 @@ export abstract class BaseAgentWorkflow implements Agent {
+   protected buildRefinementSystemPrompt(context: any): string {
+     const depthMode = (context.depthMode || 'normal') as 'fast' | 'normal' | 'deep';
+     const config = DEPTH_MODE_CONFIGS[depthMode];
++    const isFinalRound = context.isFinalRound || false;
++
++    const concernsToAddress = (context.teamConcerns || [])
++      .map((c: any) => `- "${c.concern}" (raised by ${c.agentName})`)
++      .join('\n');
+ 
+     return [
+-      `You are the ${this.getMetadata().role} agent in ${depthMode.toUpperCase()} analysis mode. Refine your previous analysis based on identified gaps.`,
++      `You are the ${this.getMetadata().role} agent in ${depthMode.toUpperCase()} analysis mode. ${isFinalRound ? 'Finalize your analysis with high confidence.' : 'Refine your previous analysis based on team discussion.'}`,
+       '',
+       '## Critical Requirements for Refinement',
+       '- CRITICAL: You MUST return ONLY valid JSON, no markdown, no extra text',
+
+```
+
+**[7] src/agents/senior-architect-agent.ts** (test, line undefined, 31.7% match)
+```diff
+@@ -2,27 +2,40 @@
+ // Senior Architect Agent - Evaluates code complexity and technical debt
+ 
+ import { AppConfig } from '../config/config.interface';
+-import { BaseAgentWorkflow } from './base-agent-workflow';
++import { BaseAgentWorkflow, AgentMetadata, AgentWeights } from './base-agent-workflow';
+ import { AgentContext, AgentResult } from './agent.interface';
+-
+ import { PromptBuilderService } from '../services/prompt-builder.service';
++
+ export class SeniorArchitectAgent extends BaseAgentWorkflow {
+   private config: AppConfig;
+ 
++  // Self-contained agent configuration
++  readonly metadata: AgentMetadata = {
++    name: 'senior-architect',
++    description: 'Evaluates architecture, design patterns, code complexity, and technical debt',
++    role: 'Senior Architect',
++    roleDescription: 'architecture, complexity, and technical debt perspective',
++  };
++
++  readonly expertiseWeights: AgentWeights = {
++    functionalImpact: 0.174, // SECONDARY (17.4%) - Architectural impact awareness
++    idealTimeHours: 0.208, // SECONDARY (20.8%) - Complexity estimation
++    testCoverage: 0.16, // SECONDARY (16%) - Architecture testability
++    codeQuality: 0.208, // SECONDARY (20.8%) - Design quality expert
++    codeComplexity: 0.417, // PRIMARY (41.7%) - Complexity expert
++    actualTimeHours: 0.182, // SECONDARY (18.2%) - Implementation effort insight
++    technicalDebtHours: 0.435, // PRIMARY (43.5%) - Technical debt expert
++  };
+... (truncated)
+```
+
+**[8] src/agents/sdet-agent.ts** (test, line undefined, 29.2% match)
+```diff
+@@ -37,11 +49,10 @@ export class SDETAgent extends BaseAgentWorkflow {
+ 
+     return PromptBuilderService.buildCompleteSystemPrompt(
+       {
+-        role: 'SDET (Test Automation Engineer)',
+-        description:
+-          'Evaluates test automation quality, testing frameworks, and automated test infrastructure',
+-        roleDetailedDescription: `You are an SDET (Software Development Engineer in Test) participating in a code review discussion. Your role is to evaluate the commit across ALL 7 pillars, with special focus on test automation quality and testing infrastructure. You assess the maturity of the testing framework, the quality and maintainability of test code, and identify test automation debt. Your PRIMARY expertise is in evaluating test coverage and automation framework quality, not just testing numbers.`,
+-        agentKey: 'sdet',
++        role: this.metadata.role,
++        description: this.metadata.description,
++        roleDetailedDescription: this.rolePromptTemplate,
++        agentKey: this.metadata.name,
+       },
+       currentRound,
+       isFinalRound,
+
+```
+
+
+---
+
+## Team Discussion from Previous Round
+
+
+**Your Previous Round Analysis:**
+- Summary: The refactor of agent workflows to support multi-round discussions significantly enhances user experience and operational efficiency, though it introduces some complexity.
+- Key metrics: functionalImpact=8, idealTimeHours=40, technicalDebtHours=5
+
+**Concerns raised by the team:**
+1. [Business Analyst] Potential for bugs due to removal of legacy logic
+2. [Business Analyst] Need for comprehensive testing to validate new workflows
+3. [Business Analyst] Insufficient automated tests for new multi-round workflows
+4. [Business Analyst] Lack of clarity on how metrics are validated in tests
+5. [Business Analyst] Potential gaps in coverage for edge cases in multi-round discussions
+6. [SDET (Test Automation Engineer)] Insufficient automated tests for new multi-round workflows.
+7. [SDET (Test Automation Engineer)] Potential gaps in coverage for edge cases in multi-round discussions.
+8. [SDET (Test Automation Engineer)] Need for comprehensive test cases to ensure all new features are covered.
+9. [Developer (Author)] Need for comprehensive testing to validate new workflows
+10. [Developer (Author)] Potential for bugs due to removal of legacy logic
+11. [Developer (Author)] Lack of clarity on how metrics are validated in tests
+12. [Developer (Author)] Potential gaps in coverage for edge cases in multi-round discussions
+13. [Developer (Author)] Increased complexity could lead to higher technical debt if not addressed
+14. [Senior Architect] Potential for bugs due to removal of legacy logic
+15. [Senior Architect] Need for comprehensive testing to validate new workflows
+16. [Senior Architect] Insufficient automated tests for new multi-round workflows
+17. [Senior Architect] Lack of clarity on how metrics are validated in tests
+18. [Senior Architect] Potential gaps in coverage for edge cases in multi-round discussions
+19. [Developer Reviewer] Insufficient automated tests for new multi-round workflows.
+20. [Developer Reviewer] Potential gaps in coverage for edge cases in multi-round discussions.
+21. [Developer Reviewer] Increased complexity could lead to higher technical debt if not addressed.
+22. [Developer Reviewer] Lack of comments in complex sections may hinder future maintainability.
+
+**Your task in this round:**
+- REFINE (don't repeat) your previous analysis based on team concerns
+- Address concerns relevant to your expertise (functionalImpact, idealTimeHours)
+- Update your scores if team discussion revealed new insights
+- Your summary should focus on WHAT CHANGED since last round
+
+---
+
+
+**Your Task:**
+Analyze the commit from a business perspective and score ALL 7 metrics:
+
+1. **functionalImpact** - YOUR PRIMARY EXPERTISE
+2. **idealTimeHours** - YOUR PRIMARY EXPERTISE
+3. **testCoverage** - your tertiary opinion
+4. **codeQuality** - your tertiary opinion
+5. **codeComplexity** - your tertiary opinion
+6. **actualTimeHours** - your tertiary opinion
+7. **technicalDebtHours** - your tertiary opinion
+
+Focus on your expertise (functionalImpact, idealTimeHours) but provide scores for all pillars.
+For metrics outside your expertise, provide reasonable estimates based on the code changes.
+
+**Response Format:**
+Return ONLY valid JSON with this structure:
+json
+
+
+{
+  "summary": "UPDATED summary focusing on what changed based on team discussion",
+  "details": "Explain how team concerns influenced your refined scores",
+  "metrics": {
+    "functionalImpact": <score 0-10>,
+    "idealTimeHours": <hours estimate>,
+    "testCoverage": <score 0-10>,
+    "codeQuality": <score 0-10>,
+    "codeComplexity": <score 0-10>,
+    "actualTimeHours": <hours estimate>,
+    "technicalDebtHours": <hours estimate>
+  },
+  "concerns": ["List any concerns you have"],
+  "questionsForTeam": ["Questions for other agents"]
+}
+CRITICAL: Return ONLY valid JSON, no markdown fences, no extra text.
+
+b) Output
+NONE
