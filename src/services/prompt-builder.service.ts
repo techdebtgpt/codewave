@@ -7,6 +7,10 @@ import {
   AGENT_EXPERTISE_WEIGHTS,
 } from '../constants/agent-weights.constants';
 import { DEPTH_MODE_CONFIGS } from '../config/depth-modes.constants';
+import {
+  AGENT_METRIC_DEFINITIONS,
+  MetricGuidelinesSet,
+} from '../constants/agent-metric-definitions.constants';
 
 export interface AgentPromptConfig {
   role: string; // e.g., "Developer Author", "Senior Architect"
@@ -27,10 +31,14 @@ export interface MetricDefinition {
  * Centralized service for building consistent agent prompts
  * Ensures all agents follow the same rules and structure
  * Makes it easy to extend with new agents
+ *
+ * NOTE: Metric definitions now derive from the centralized AGENT_METRIC_DEFINITIONS
+ * which is the single source of truth. This service transforms them for display purposes.
  */
 export class PromptBuilderService {
   /**
    * Get the metric definitions for an agent based on their expertise
+   * Transforms centralized agent metrics into display format with weights
    */
   static getMetricDefinitions(agentKey: string): Record<string, MetricDefinition> {
     const weights = AGENT_EXPERTISE_WEIGHTS[agentKey];
@@ -38,66 +46,50 @@ export class PromptBuilderService {
       throw new Error(`Unknown agent: ${agentKey}`);
     }
 
-    const definitions: Record<string, MetricDefinition> = {
-      functionalImpact: {
-        name: 'functionalImpact',
-        displayName: 'Functional Impact',
-        definition: 'User-facing impact and business value of the implementation',
-        examples:
-          '9-10: Major feature affecting many users\n5-6: Moderate feature or improvement\n1-2: Internal change, minimal user impact',
-        weight: this.getWeightLabel(weights.functionalImpact),
-      },
-      idealTimeHours: {
-        name: 'idealTimeHours',
-        displayName: 'Ideal Time Hours',
-        definition: 'How long this SHOULD have taken ideally (in hours)',
-        examples: 'Compare against actual time spent - was it efficient?',
-        weight: this.getWeightLabel(weights.idealTimeHours),
-      },
-      testCoverage: {
-        name: 'testCoverage',
-        displayName: 'Test Coverage',
-        definition: 'Quality and extent of test automation (1-10)',
-        examples:
-          '9-10: Comprehensive tests written\n5-6: Basic tests covered\n1-2: Minimal or no tests',
-        weight: this.getWeightLabel(weights.testCoverage),
-      },
-      codeQuality: {
-        name: 'codeQuality',
-        displayName: 'Code Quality',
-        definition: 'Code cleanliness, best practices, maintainability (1-10)',
-        examples:
-          '9-10: Very clean, well-structured code\n5-6: Acceptable quality, some shortcuts\n1-2: Quick-and-dirty implementation',
-        weight: this.getWeightLabel(weights.codeQuality),
-      },
-      codeComplexity: {
-        name: 'codeComplexity',
-        displayName: 'Code Complexity',
-        definition: 'Complexity of implementation (1-10, lower is better)',
-        examples:
-          '1-2: Simple, straightforward solution\n5-6: Moderate complexity needed\n9-10: Complex implementation required',
-        weight: this.getWeightLabel(weights.codeComplexity),
-      },
-      actualTimeHours: {
-        name: 'actualTimeHours',
-        displayName: 'Actual Time Hours',
-        definition: 'How much time was ACTUALLY spent implementing this change (in hours)',
-        examples:
-          '0.5-1h: Quick fixes, simple changes\n1-4h: Small features, straightforward implementations\n5-16h: Moderate features, some complexity\n17-40h: Significant features, substantial work\n40h+: Large-scale changes, major effort',
-        weight: this.getWeightLabel(weights.actualTimeHours),
-      },
-      technicalDebtHours: {
-        name: 'technicalDebtHours',
-        displayName: 'Technical Debt Hours',
-        definition:
-          'Technical debt introduced (hours of future work, can be negative if debt paid down)',
-        examples:
-          'Negative: Cleaned up existing issues\n0: Neutral, no debt added\nPositive: Shortcuts taken, future work needed',
-        weight: this.getWeightLabel(weights.technicalDebtHours),
-      },
-    };
+    // Transform centralized agent metrics into display format
+    const definitions: Record<string, MetricDefinition> = {};
+
+    for (const pillar of SEVEN_PILLARS) {
+      const agentMetric = AGENT_METRIC_DEFINITIONS[pillar];
+      if (!agentMetric) {
+        throw new Error(`Metric definition not found for pillar: ${pillar}`);
+      }
+
+      definitions[pillar] = {
+        name: pillar,
+        displayName: agentMetric.name,
+        definition: agentMetric.description,
+        examples: this.extractExamples(agentMetric),
+        weight: this.getWeightLabel(weights[pillar as keyof AgentWeights] || 0),
+      };
+    }
 
     return definitions;
+  }
+
+  /**
+   * Extract simplified examples from detailed score-level guidelines
+   * Converts detailed guidelines into readable one-liner examples
+   */
+  private static extractExamples(metric: MetricGuidelinesSet): string {
+    const guidelines = metric.guidelines;
+    const examples: string[] = [];
+
+    // Extract high, medium, and low examples
+    const scores = Object.keys(guidelines).sort().reverse();
+    if (scores.length >= 3) {
+      // High score
+      examples.push(guidelines[scores[0]].split(':')[1]?.trim() || 'High quality');
+      // Medium score
+      examples.push(guidelines[scores[Math.floor(scores.length / 2)]].split(':')[1]?.trim() || 'Moderate');
+      // Low score
+      examples.push(guidelines[scores[scores.length - 1]].split(':')[1]?.trim() || 'Low quality');
+    } else {
+      // Fallback: show first description line only
+      examples.push(metric.description);
+    }
+
+    return examples.filter(Boolean).join('\n');
   }
 
   /**

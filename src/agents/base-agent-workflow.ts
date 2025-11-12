@@ -2,63 +2,36 @@ import { Agent, AgentContext, AgentExecutionOptions, AgentResult } from './agent
 import { RunnableSequence, RunnableLambda } from '@langchain/core/runnables';
 import { LLMService } from '../llm/llm-service';
 import { DEPTH_MODE_CONFIGS } from '../config/depth-modes.constants';
-import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
+import {
+  AGENT_METRIC_DEFINITIONS,
+  MetricGuidelinesSet,
+} from '../constants/agent-metric-definitions.constants';
 
-/**
- * LangGraph State Definition for Agent Self-Refinement
- * Manages iterative refinement of agent analysis
- */
-export const AgentRefinementState = Annotation.Root({
-  // Input context
-  context: Annotation<AgentContext>,
-  config: Annotation<any>,
+export interface AgentMetadata {
+  name: string;
+  description: string;
+  role: string;
+  roleDescription: string;
+}
 
-  // Current analysis result
-  result: Annotation<AgentResult>,
+// Re-export for backward compatibility
+export type MetricDefinition = MetricGuidelinesSet;
 
-  // Refinement tracking
-  iteration: Annotation<number>,
-  maxIterations: Annotation<number>,
-  clarityThreshold: Annotation<number>,
-  clarityScore: Annotation<number>,
-
-  // Gap tracking
-  gaps: Annotation<string[]>,
-  allSeenGaps: Annotation<Set<string>>({
-    reducer: (state: Set<string>, update: Set<string>) => {
-      return new Set([...state, ...update]);
-    },
-    default: () => new Set<string>(),
-  }),
-
-  // Refinement notes
-  refinementNotes: Annotation<string[]>({
-    reducer: (state: string[], update: string[]) => {
-      return [...state, ...update];
-    },
-    default: () => [],
-  }),
-
-  // Token usage tracking
-  totalInputTokens: Annotation<number>({
-    reducer: (state: number, update: number) => state + update,
-    default: () => 0,
-  }),
-  totalOutputTokens: Annotation<number>({
-    reducer: (state: number, update: number) => state + update,
-    default: () => 0,
-  }),
-  totalTokens: Annotation<number>({
-    reducer: (state: number, update: number) => state + update,
-    default: () => 0,
-  }),
-
-  // Completion flag
-  completed: Annotation<boolean>,
-});
+export type AgentWeights = Record<string, number>;
 
 export abstract class BaseAgentWorkflow implements Agent {
-  abstract getMetadata(): any;
+  // Abstract properties - each agent must define these
+  abstract readonly metadata: AgentMetadata;
+  abstract readonly expertiseWeights: AgentWeights;
+  abstract readonly rolePromptTemplate: string;
+  abstract readonly systemInstructions: string;
+
+  // Centralized metric definitions - same for all agents
+  readonly metricDefinitions: Record<string, MetricDefinition> = AGENT_METRIC_DEFINITIONS;
+
+  getMetadata(): AgentMetadata {
+    return this.metadata;
+  }
 
   /**
    * Check if agent can execute given the context
@@ -85,190 +58,10 @@ export abstract class BaseAgentWorkflow implements Agent {
       throw new Error('Missing config in agent. Ensure config is passed to agent constructor.');
     }
 
-    // Get depth config
-    const depthMode = context.depthMode || 'normal';
-    const depthConfig = DEPTH_MODE_CONFIGS[depthMode];
-
-    // Build the LangGraph refinement workflow
-    const graph = this.buildRefinementGraph(depthConfig);
-
-    // Initialize state
-    const initialState = {
-      context,
-      config,
-      result: {} as AgentResult, // Will be set in initial analysis
-      iteration: 0,
-      maxIterations: context.maxInternalIterations || depthConfig.maxInternalIterations,
-      clarityThreshold: context.internalClarityThreshold || depthConfig.internalClarityThreshold,
-      clarityScore: 0,
-      gaps: [],
-      allSeenGaps: new Set<string>(),
-      refinementNotes: [],
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      totalTokens: 0,
-      completed: false,
-    };
-
-    // Execute the graph
-    const finalState = await graph.invoke(initialState);
-
-    // Extract final result with accumulated metrics
-    const result = finalState.result;
-    result.internalIterations = finalState.iteration;
-    result.clarityScore = finalState.clarityScore;
-    result.refinementNotes = finalState.refinementNotes;
-    result.missingInformation = Array.from(finalState.allSeenGaps);
-
-    // Update token usage
-    if (!result.tokenUsage) {
-      result.tokenUsage = {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-      };
-    }
-    result.tokenUsage.inputTokens = finalState.totalInputTokens;
-    result.tokenUsage.outputTokens = finalState.totalOutputTokens;
-    result.tokenUsage.totalTokens = finalState.totalTokens;
-
+    // Run initial analysis - the modern multi-round discussion happens at the orchestrator level
+    // (see commit-evaluation-graph.ts for the full refinement workflow)
+    const result = await this.runInitialAnalysis(context, config);
     return result;
-  }
-
-  /**
-   * Build the LangGraph StateGraph for agent self-refinement
-   * Graph structure:
-   *   START → runInitialAnalysis → evaluateAndRefine → shouldContinue? → [YES: evaluateAndRefine | NO: END]
-   */
-  private buildRefinementGraph(depthConfig: any) {
-    // Node 1: Run initial analysis
-    const runInitialAnalysis = async (state: typeof AgentRefinementState.State) => {
-      const result = await this.runInitialAnalysis(state.context, state.config);
-
-      return {
-        result,
-        iteration: 0,
-        totalInputTokens: result.tokenUsage?.inputTokens || 0,
-        totalOutputTokens: result.tokenUsage?.outputTokens || 0,
-        totalTokens: result.tokenUsage?.totalTokens || 0,
-      };
-    };
-
-    // Node 2: Evaluate current analysis and refine if needed
-    const evaluateAndRefine = async (state: typeof AgentRefinementState.State) => {
-      // Self-evaluate the current analysis
-      const evaluation = this.evaluateAnalysis(state.result);
-      const clarityScore = evaluation.clarityScore;
-      const gaps = evaluation.missingInformation;
-
-      // Deduplicate gaps
-      const newGaps = gaps.filter((g) => !state.allSeenGaps.has(g));
-      const updatedGaps = new Set([...state.allSeenGaps, ...gaps]);
-
-      // Check if we should stop
-      if (clarityScore >= state.clarityThreshold) {
-        const note = `Stopped at iteration ${state.iteration + 1}: Clarity target ${clarityScore}% >= ${state.clarityThreshold}% threshold`;
-        return {
-          clarityScore,
-          gaps: newGaps,
-          allSeenGaps: updatedGaps,
-          refinementNotes: [note],
-          completed: true,
-        };
-      }
-
-      if (newGaps.length === 0) {
-        const note = `Stopped at iteration ${state.iteration + 1}: No new gaps identified`;
-        return {
-          clarityScore,
-          gaps: newGaps,
-          allSeenGaps: updatedGaps,
-          refinementNotes: [note],
-          completed: true,
-        };
-      }
-
-      // Generate self-questions for refinement
-      const questions = this.generateSelfQuestions(state.result, newGaps).slice(
-        0,
-        depthConfig.maxSelfQuestions
-      );
-
-      if (questions.length === 0) {
-        const note = `Stopped at iteration ${state.iteration + 1}: Cannot generate new questions`;
-        return {
-          clarityScore,
-          gaps: newGaps,
-          allSeenGaps: updatedGaps,
-          refinementNotes: [note],
-          completed: true,
-        };
-      }
-
-      // Refine analysis based on self-questions
-      const refinementContext = {
-        ...state.context,
-        selfQuestions: questions,
-        previousAnalysis: state.result,
-        gaps: newGaps, // Pass gaps for RAG query generation
-      };
-      const refinedResult = await this.runRefinementPass(refinementContext, state.config);
-
-      // Merge results (keep better analysis)
-      const mergedResult = this.mergeAnalysisResults(state.result, refinedResult);
-
-      const note = `Iteration ${state.iteration + 1}: Clarity ${clarityScore}%, identified ${newGaps.length} gaps, asked ${questions.length} questions`;
-
-      return {
-        result: mergedResult,
-        iteration: state.iteration + 1,
-        clarityScore,
-        gaps: newGaps,
-        allSeenGaps: updatedGaps,
-        refinementNotes: [note],
-        totalInputTokens: refinedResult.tokenUsage?.inputTokens || 0,
-        totalOutputTokens: refinedResult.tokenUsage?.outputTokens || 0,
-        totalTokens: refinedResult.tokenUsage?.totalTokens || 0,
-      };
-    };
-
-    // Conditional edge: Should continue refinement?
-    const shouldContinue = (state: typeof AgentRefinementState.State): typeof END | 'evaluateAndRefine' => {
-      // Stop if completed flag is set
-      if (state.completed) {
-        return END;
-      }
-
-      // Stop if max iterations reached
-      if (state.iteration >= state.maxIterations) {
-        return END;
-      }
-
-      // Stop if skipSelfRefinement is enabled
-      if (depthConfig.skipSelfRefinement) {
-        return END;
-      }
-
-      // Continue refinement
-      return 'evaluateAndRefine';
-    };
-
-    // Build the graph
-    const graph = new StateGraph(AgentRefinementState)
-      .addNode('runInitialAnalysis', runInitialAnalysis)
-      .addNode('evaluateAndRefine', evaluateAndRefine)
-      .addEdge(START, 'runInitialAnalysis')
-      .addConditionalEdges('runInitialAnalysis', shouldContinue, {
-        [END]: END,
-        evaluateAndRefine: 'evaluateAndRefine',
-      })
-      .addConditionalEdges('evaluateAndRefine', shouldContinue, {
-        [END]: END,
-        evaluateAndRefine: 'evaluateAndRefine',
-      })
-      .compile();
-
-    return graph;
   }
 
   /**
@@ -375,253 +168,6 @@ export abstract class BaseAgentWorkflow implements Agent {
     return currentUsage;
   }
 
-  /**
-   * Self-evaluate analysis completeness and clarity
-   * Validates all 7 metrics with focus on PRIMARY metrics (weight >= 0.4)
-   */
-  protected evaluateAnalysis(result: AgentResult): {
-    clarityScore: number;
-    missingInformation: string[];
-  } {
-    const summary = (result.summary || '').toLowerCase();
-    const details = (result.details || '').toLowerCase();
-    const metrics = result.metrics || {};
-
-    const gaps: string[] = [];
-
-    // Import constants
-    const { SEVEN_PILLARS, getAgentWeight } = require('../constants/agent-weights.constants');
-    const { getMetricDefinition, getRequiredMetrics } = require('../constants/metric-definitions.constants');
-
-    // Get agent name for weight lookup
-    const agentMetadata = this.getMetadata();
-    const agentName = agentMetadata.name || 'unknown';
-
-    // Separate metrics by priority
-    const primaryMetrics: string[] = []; // weight >= 0.4
-    const secondaryMetrics: string[] = []; // 0.15 <= weight < 0.4
-    const tertiaryMetrics: string[] = []; // weight < 0.15
-
-    for (const pillar of SEVEN_PILLARS) {
-      const weight = getAgentWeight(agentName, pillar);
-      if (weight >= 0.4) {
-        primaryMetrics.push(pillar);
-      } else if (weight >= 0.15) {
-        secondaryMetrics.push(pillar);
-      } else {
-        tertiaryMetrics.push(pillar);
-      }
-    }
-
-    // Calculate clarity based on weighted metric confidence
-    let primaryConfidence = 0; // 0-100, weighted by importance
-    let secondaryConfidence = 0;
-    let tertiaryConfidence = 0;
-
-    // 1. Evaluate PRIMARY metrics (most important - 60% of clarity score)
-    for (const pillar of primaryMetrics) {
-      const metricDef = getMetricDefinition(pillar);
-      const value = metrics[pillar];
-
-      if (value === undefined) {
-        gaps.push(`CRITICAL: Missing PRIMARY metric ${pillar} - you have ${(getAgentWeight(agentName, pillar) * 100).toFixed(1)}% expertise in this`);
-        primaryConfidence += 0; // No confidence
-      } else if (value === null) {
-        // Null is only acceptable if metric allows it and is justified
-        if (metricDef && !metricDef.canBeNull) {
-          gaps.push(`CRITICAL: ${pillar} cannot be null - this is a required metric`);
-          primaryConfidence += 0;
-        } else {
-          const hasJustification = this.checkJustification(pillar, summary, details);
-          if (!hasJustification) {
-            gaps.push(`PRIMARY metric ${pillar} is null but not justified - explain why you cannot assess it`);
-            primaryConfidence += 30; // Partial confidence
-          } else {
-            primaryConfidence += 70; // Good confidence if justified
-          }
-        }
-      } else if (typeof value === 'number') {
-        // Numeric score - check if reasoning exists
-        const hasReasoning = this.checkJustification(pillar, summary, details);
-        if (!hasReasoning) {
-          gaps.push(`PRIMARY metric ${pillar} score (${value}) needs detailed justification - this is your expertise area`);
-          primaryConfidence += 50; // Partial confidence
-        } else {
-          primaryConfidence += 100; // Full confidence
-        }
-      }
-    }
-
-    // 2. Evaluate SECONDARY metrics (30% of clarity score)
-    for (const pillar of secondaryMetrics) {
-      const metricDef = getMetricDefinition(pillar);
-      const value = metrics[pillar];
-
-      if (value === undefined) {
-        gaps.push(`Missing secondary metric ${pillar} - provide your informed opinion`);
-        secondaryConfidence += 0;
-      } else if (value === null) {
-        const hasJustification = this.checkJustification(pillar, summary, details);
-        if (!hasJustification && metricDef && !metricDef.canBeNull) {
-          gaps.push(`Secondary metric ${pillar} needs justification for null value`);
-          secondaryConfidence += 40;
-        } else {
-          secondaryConfidence += 80;
-        }
-      } else if (typeof value === 'number') {
-        const hasReasoning = this.checkJustification(pillar, summary, details);
-        secondaryConfidence += hasReasoning ? 100 : 70;
-      }
-    }
-
-    // 3. Evaluate TERTIARY metrics (10% of clarity score)
-    for (const pillar of tertiaryMetrics) {
-      const value = metrics[pillar];
-      if (value !== undefined) {
-        tertiaryConfidence += 100;
-      } else {
-        gaps.push(`Missing tertiary metric ${pillar} - provide at least a rough estimate`);
-        tertiaryConfidence += 0;
-      }
-    }
-
-    // Calculate weighted clarity score
-    const primaryWeight = 0.6;
-    const secondaryWeight = 0.3;
-    const tertiaryWeight = 0.1;
-
-    const avgPrimary = primaryMetrics.length > 0 ? primaryConfidence / primaryMetrics.length : 100;
-    const avgSecondary = secondaryMetrics.length > 0 ? secondaryConfidence / secondaryMetrics.length : 100;
-    const avgTertiary = tertiaryMetrics.length > 0 ? tertiaryConfidence / tertiaryMetrics.length : 100;
-
-    let clarityScore = (avgPrimary * primaryWeight) + (avgSecondary * secondaryWeight) + (avgTertiary * tertiaryWeight);
-
-    // Bonus for comprehensive summary and details
-    if (summary.length > 50) clarityScore += 3;
-    if (details.length > 200) clarityScore += 2;
-
-    return {
-      clarityScore: Math.min(100, Math.max(0, clarityScore)),
-      missingInformation: gaps,
-    };
-  }
-
-  /**
-   * Check if a pillar score has justification in summary or details
-   */
-  private checkJustification(pillar: string, summary: string, details: string): boolean {
-    const keywords = this.getPillarKeywords(pillar);
-    return keywords.some(keyword =>
-      details.includes(keyword.toLowerCase()) || summary.includes(keyword.toLowerCase())
-    );
-  }
-
-  /**
-   * Get relevant keywords for each pillar to detect justification
-   */
-  private getPillarKeywords(pillar: string): string[] {
-    const keywordMap: Record<string, string[]> = {
-      functionalImpact: ['impact', 'functional', 'feature', 'user', 'business', 'value'],
-      idealTimeHours: ['ideal', 'time', 'estimate', 'hours', 'effort', 'should take'],
-      testCoverage: ['test', 'coverage', 'testing', 'automated', 'unit', 'integration'],
-      codeQuality: ['quality', 'maintainable', 'readable', 'clean', 'standards'],
-      codeComplexity: ['complexity', 'complex', 'simple', 'cognitive', 'cyclomatic'],
-      actualTimeHours: ['actual', 'spent', 'took', 'implemented', 'time taken'],
-      technicalDebtHours: ['debt', 'technical', 'shortcut', 'refactor', 'maintenance'],
-    };
-    return keywordMap[pillar] || [pillar];
-  }
-
-  /**
-   * Generate self-questions for refinement based on identified gaps
-   * Creates specific questions to help agents refine their analysis
-   */
-  protected generateSelfQuestions(result: AgentResult, gaps: string[]): string[] {
-    const questions: string[] = [];
-    const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
-
-    // Group gaps by type
-    const missingMetrics = gaps.filter(g => g.includes('Missing metric:'));
-    const nullJustifications = gaps.filter(g => g.includes('needs justification'));
-    const weakReasoning = gaps.filter(g => g.includes('should be explained'));
-
-    // Generate questions for missing metrics
-    for (const gap of missingMetrics) {
-      const pillar = SEVEN_PILLARS.find((p: string) => gap.includes(p));
-      if (pillar) {
-        questions.push(this.getMetricQuestion(pillar, 'missing'));
-      }
-    }
-
-    // Generate questions for unjustified nulls
-    for (const gap of nullJustifications) {
-      const pillar = SEVEN_PILLARS.find((p: string) => gap.includes(p));
-      if (pillar) {
-        questions.push(this.getMetricQuestion(pillar, 'null'));
-      }
-    }
-
-    // Generate questions for weak reasoning
-    for (const gap of weakReasoning) {
-      const pillar = SEVEN_PILLARS.find((p: string) => gap.includes(p));
-      if (pillar) {
-        questions.push(this.getMetricQuestion(pillar, 'reasoning'));
-      }
-    }
-
-    // If no specific gaps, ask general improvement questions
-    if (questions.length === 0 && gaps.length > 0) {
-      questions.push('What additional details would make this analysis more complete and actionable?');
-      questions.push('Are there any assumptions I made that should be validated or clarified?');
-    }
-
-    return questions;
-  }
-
-  /**
-   * Generate metric-specific refinement questions
-   */
-  private getMetricQuestion(pillar: string, type: 'missing' | 'null' | 'reasoning'): string {
-    const questionMap: Record<string, Record<string, string>> = {
-      functionalImpact: {
-        missing: 'What is the functional impact of this change on users and business value (1-10 scale)?',
-        null: 'If I cannot assess functional impact, what specific information am I missing about the feature or business context?',
-        reasoning: 'What specific functional changes justify my impact score? Which users or workflows are affected?',
-      },
-      idealTimeHours: {
-        missing: 'How many hours would an ideal implementation of this change require based on the scope?',
-        null: 'If I cannot estimate ideal time, what requirements or specifications am I missing?',
-        reasoning: 'What factors went into my time estimate (complexity, dependencies, unknowns)?',
-      },
-      testCoverage: {
-        missing: 'What is the test coverage quality for this change (1-10 scale)?',
-        null: 'If I cannot assess test coverage, what information about tests or testing strategy am I missing?',
-        reasoning: 'What specific test types, coverage, or quality factors justify my test coverage score?',
-      },
-      codeQuality: {
-        missing: 'How would I rate the code quality of this implementation (1-10 scale)?',
-        null: 'If I cannot assess code quality, what aspects of the implementation am I unable to evaluate?',
-        reasoning: 'What code quality factors (readability, maintainability, standards) support my score?',
-      },
-      codeComplexity: {
-        missing: 'What is the complexity level of this change (1-10 scale, lower is better)?',
-        null: 'If I cannot assess complexity, what architectural or implementation details am I missing?',
-        reasoning: 'What complexity factors (cognitive load, dependencies, logic) justify my complexity score?',
-      },
-      actualTimeHours: {
-        missing: 'How many hours did this implementation actually take based on the scope of changes?',
-        null: 'If I cannot estimate actual time, what clues about implementation effort am I missing from the diff?',
-        reasoning: 'What evidence from the diff supports my actual time estimate?',
-      },
-      technicalDebtHours: {
-        missing: 'How much technical debt (in future hours) was introduced (+) or eliminated (-)?',
-        null: 'If I cannot assess technical debt, what information about shortcuts, maintainability, or future work am I missing?',
-        reasoning: 'What specific debt factors (shortcuts, maintainability issues, future refactoring needs) justify my debt score?',
-      },
-    };
-
-    return questionMap[pillar]?.[type] || `How can I better assess ${pillar}?`;
-  }
 
   /**
    * Merge two analysis results, keeping the more complete one
@@ -647,9 +193,14 @@ export abstract class BaseAgentWorkflow implements Agent {
   protected buildRefinementSystemPrompt(context: any): string {
     const depthMode = (context.depthMode || 'normal') as 'fast' | 'normal' | 'deep';
     const config = DEPTH_MODE_CONFIGS[depthMode];
+    const isFinalRound = context.isFinalRound || false;
+
+    const concernsToAddress = (context.teamConcerns || [])
+      .map((c: any) => `- "${c.concern}" (raised by ${c.agentName})`)
+      .join('\n');
 
     return [
-      `You are the ${this.getMetadata().role} agent in ${depthMode.toUpperCase()} analysis mode. Refine your previous analysis based on identified gaps.`,
+      `You are the ${this.getMetadata().role} agent in ${depthMode.toUpperCase()} analysis mode. ${isFinalRound ? 'Finalize your analysis with high confidence.' : 'Refine your previous analysis based on team discussion.'}`,
       '',
       '## Critical Requirements for Refinement',
       '- CRITICAL: You MUST return ONLY valid JSON, no markdown, no extra text',
@@ -657,45 +208,42 @@ export abstract class BaseAgentWorkflow implements Agent {
       `- Keep details under ${config.detailsLimit} characters`,
       `- ${config.approach}`,
       '- Maintain all 7 metrics in your refined response',
-      '- Address the specific gaps and questions raised',
-    ].join('\n');
+      '',
+      '## What to Include in Your Response',
+      '1. **Metrics**: Provide all 7 scores with confidence levels',
+      `2. **Concerns**: List specific concerns about metrics (e.g., "Need more test coverage details from SDET agent")`,
+      `3. **Questions for Team**: Ask other agents specific questions about inconsistencies you noticed`,
+      `4. **Addressed Concerns**: Acknowledge which team concerns you addressed in your revision`,
+      '',
+      concernsToAddress ? `## Team Concerns to Address:\n${concernsToAddress}` : '',
+    ].filter(s => s).join('\n');
   }
 
   /**
    * Helper method for building multi-round prompts
    * Child agents can use this to build consistent round-based prompts
-   * All agent identity information is derived from getMetadata()
+   * All agent identity information is derived from agent's own properties
    */
   protected async buildMultiRoundPrompt(context: AgentContext): Promise<string> {
-    // Import centralized constants
-    const { AGENT_EXPERTISE_WEIGHTS } = require('../constants/agent-weights.constants');
-    const { PromptBuilderService } = require('../services/prompt-builder.service');
-
     // Get agent identity from metadata
-    const metadata = this.getMetadata();
+    const metadata = this.metadata;
     const agentKey = metadata.name; // Technical key (e.g., 'business-analyst', 'sdet')
     const agentName = metadata.role; // Display name (e.g., 'Business Analyst', 'SDET')
     const roleDescription = metadata.roleDescription; // e.g., 'business perspective'
 
-    // Get agent weights and derive metric priorities
-    const weights = AGENT_EXPERTISE_WEIGHTS[agentKey];
-    if (!weights) {
-      throw new Error(`Unknown agent key: ${agentKey}`);
-    }
-
-    // Get metric definitions from PromptBuilderService
-    const metricDefs = PromptBuilderService.getMetricDefinitions(agentKey);
+    // Get agent's own weights and metric definitions
+    const weights = this.expertiseWeights;
+    const metricDefs = this.metricDefinitions;
 
     // Categorize metrics by weight (same logic as evaluateAnalysis)
     const primaryMetrics: string[] = [];
     const secondaryMetrics: string[] = [];
     const tertiaryMetrics: string[] = [];
 
-    const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
-    for (const pillar of SEVEN_PILLARS) {
+    for (const pillar of Object.keys(weights)) {
       const weight = weights[pillar] || 0;
       const def = metricDefs[pillar];
-      const displayName = def.displayName;
+      const displayName = def.name;
 
       if (weight >= 0.4) {
         primaryMetrics.push(displayName);
@@ -875,57 +423,113 @@ export abstract class BaseAgentWorkflow implements Agent {
   }
 
   protected async buildRefinementHumanPrompt(context: any): Promise<string> {
-    const questions = (context.selfQuestions || [])
-      .map((q: string, i: number) => `${i + 1}. ${q}`)
-      .join('\n');
-    const prevAnalysis = context.previousAnalysis?.details || 'No previous analysis';
+    const isFinalRound = context.isFinalRound || false;
 
-    // Generate RAG queries from gaps if available
+    // Get team concerns for this agent (concerns raised by others or about this agent's metrics)
+    const teamConcerns = (context.teamConcerns || [])
+      .filter((c: any) => c.agentName !== this.metadata.name) // Don't show own concerns
+      .map((c: any, i: number) => `${i + 1}. **${c.concern}** (from ${c.agentName})`)
+      .join('\n');
+
+    // Build team context section
+    let teamContextSection = '';
+    if (context.agentResults && context.agentResults.length > 0) {
+      const teamContext = context.agentResults
+        .map((r: AgentResult) => {
+          let result = `**${r.agentName}** (Round ${r.round || '?'}):\n${r.summary}`;
+          if (r.concerns && r.concerns.length > 0) {
+            result += `\nConcerns: ${r.concerns.join('; ')}`;
+          }
+          return result;
+        })
+        .join('\n\n---\n\n');
+
+      teamContextSection = [
+        '## Team Discussion Context',
+        '',
+        'Here is what other agents have said so far:',
+        '',
+        teamContext,
+        '',
+      ].join('\n');
+    }
+
+    // Generate RAG queries from team concerns if available
     let ragContextSection = '';
-    if (context.gaps && context.gaps.length > 0 && (context.vectorStore || context.documentationStore)) {
+    if (teamConcerns && (context.vectorStore || context.documentationStore)) {
       const { generateRAGQueriesFromGaps } = await import('../utils/gap-to-rag-query-mapper.js');
       const { CombinedRAGHelper } = await import('../utils/combined-rag-helper.js');
 
-      // Generate targeted RAG queries from identified gaps
-      const ragQueries = generateRAGQueriesFromGaps(context.gaps);
+      // Use team concerns as input for RAG queries
+      const concernsList = (context.teamConcerns || [])
+        .map((c: any) => c.concern)
+        .slice(0, 3); // Limit to first 3 concerns
 
-      if (ragQueries.length > 0) {
-        const rag = new CombinedRAGHelper(context.vectorStore, context.documentationStore);
-        const agentName = this.getMetadata().name || 'Agent';
-        rag.setAgentName(agentName);
+      if (concernsList.length > 0) {
+        const ragQueries = generateRAGQueriesFromGaps(concernsList);
 
-        // Execute RAG queries to get relevant context
-        const results = await rag.queryMultiple(ragQueries);
-        const ragContext = results.map((r) => r.results).join('\n\n');
+        if (ragQueries.length > 0) {
+          const rag = new CombinedRAGHelper(context.vectorStore, context.documentationStore);
+          const agentName = this.getMetadata().name || 'Agent';
+          rag.setAgentName(agentName);
 
-        if (ragContext.trim().length > 0) {
-          ragContextSection = [
-            '',
-            '## Additional Context from Code Search',
-            '',
-            'Based on your identified gaps, here is relevant code context:',
-            '',
-            ragContext,
-            '',
-            '---',
-            '',
-          ].join('\n');
+          // Execute RAG queries to get relevant context
+          const results = await rag.queryMultiple(ragQueries);
+          const ragContext = results.map((r) => r.results).join('\n\n');
+
+          if (ragContext.trim().length > 0) {
+            ragContextSection = [
+              '',
+              '## Additional Code Context for Your Refinement',
+              '',
+              'Based on team concerns, here is relevant code to help refine your analysis:',
+              '',
+              ragContext,
+              '',
+              '---',
+              '',
+            ].join('\n');
+          }
         }
       }
     }
 
+    // Build refinement instructions
+    const refinementInstructions = isFinalRound
+      ? [
+          '## Final Review Task',
+          '',
+          'This is the final round. Carefully address remaining concerns and provide your definitive scores with high confidence.',
+        ].join('\n')
+      : [
+          '## Your Refinement Task',
+          '',
+          '1. **Review** the team discussion and concerns above',
+          '2. **Address** specific questions or concerns raised about YOUR metrics (${primaryMetrics})',
+          '3. **Validate** your scores against team feedback',
+          '4. **Raise concerns** of your own about other agents\' inconsistent scores',
+          '5. **Ask questions** to clarify any ambiguities',
+        ].join('\n');
+
     return [
-      'Previous analysis:',
-      prevAnalysis,
+      teamContextSection,
+      '',
+      teamConcerns ? `## Specific Concerns to Address:\n\n${teamConcerns}` : '',
       '',
       ragContextSection,
-      'Refinement questions to address:',
-      questions,
+      refinementInstructions,
       '',
-      'Please refine your analysis to address these gaps.',
-      'IMPORTANT: Return your response ONLY as a valid JSON object with the same structure as before (summary, details, metrics).',
-      'Do NOT include markdown, explanations, or extra text outside the JSON.',
-    ].join('\n');
+      '## Response Format',
+      'Return ONLY a valid JSON object with:',
+      '- summary: Your refined analysis summary',
+      '- details: Detailed explanation of your reasoning',
+      '- metrics: All 7 metric scores (same structure as initial round)',
+      '- concerns: NEW concerns you identified in this round (list of strings)',
+      '- questionsForTeam: NEW questions you have for other agents (list of strings)',
+      '- addressedConcerns: Which team concerns you addressed (array of objects with: fromAgentName, concern, addressed, explanation)',
+      '',
+      'CRITICAL: Return ONLY valid JSON, no markdown, no extra text.',
+    ].filter(s => s).join('\n');
   }
 
   /**
@@ -1025,10 +629,31 @@ export abstract class BaseAgentWorkflow implements Agent {
           }
         }
 
+        // Extract LLM-generated concerns and questions
+        const concerns = Array.isArray(parsed.concerns)
+          ? parsed.concerns.filter((c: any) => typeof c === 'string').slice(0, 5)
+          : [];
+
+        const questionsForTeam = Array.isArray(parsed.questionsForTeam)
+          ? parsed.questionsForTeam.filter((q: any) => typeof q === 'string').slice(0, 5)
+          : [];
+
+        const addressedConcerns = Array.isArray(parsed.addressedConcerns)
+          ? parsed.addressedConcerns
+              .filter(
+                (ac: any) =>
+                  ac && typeof ac.concern === 'string' && typeof ac.addressed === 'boolean'
+              )
+              .slice(0, 5)
+          : [];
+
         return {
           summary: parsed.summary.trim(),
           details: (parsed.details || '').trim(),
           metrics: filteredMetrics,
+          concerns: concerns.length > 0 ? concerns : undefined,
+          questionsForTeam: questionsForTeam.length > 0 ? questionsForTeam : undefined,
+          addressedConcerns: addressedConcerns.length > 0 ? addressedConcerns : undefined,
         };
       } catch (error) {
         const agentName = this.getMetadata().name || 'Agent';

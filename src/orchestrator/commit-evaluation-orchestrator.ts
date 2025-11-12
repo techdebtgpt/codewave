@@ -184,32 +184,59 @@ export class CommitEvaluationOrchestrator {
 
     let finalState: any;
 
-    // Use streaming if enabled
-    if (options?.streaming) {
+    // Check if LangSmith tracing is enabled - if so, disable streaming due to known hanging issue with 1 agent
+    const langsmithEnabled = this.config.tracing.enabled && this.config.tracing.apiKey;
+    const shouldStream = options?.streaming && !langsmithEnabled;
+
+    // Use streaming if enabled AND LangSmith is not tracing (streaming + LangSmith can hang with single agent)
+    if (shouldStream) {
       console.log('📡 Streaming enabled - real-time updates');
 
-      // Stream with values mode to get full state snapshots
-      for await (const event of await this.graph.stream(initialState, {
-        ...graphConfig,
-        streamMode: 'values', // Get full state at each step
-      })) {
-        // In 'values' mode, event is the full state
-        finalState = event;
+      try {
+        // Stream with values mode to get full state snapshots
+        // Note: Adding timeout protection against hanging when only 1 agent is running with LangSmith
+        const streamTimeout = setTimeout(() => {
+          console.warn('⚠️  Stream timeout detected - falling back to standard invoke');
+          throw new Error('Stream iteration timeout');
+        }, 120000); // 2 minute timeout for entire stream
 
-        // Emit progress callback if provided
-        if (options.onProgress) {
-          options.onProgress(event);
+        for await (const event of await this.graph.stream(initialState, {
+          ...graphConfig,
+          streamMode: 'values', // Get full state at each step
+        })) {
+          clearTimeout(streamTimeout);
+
+          // In 'values' mode, event is the full state
+          finalState = event;
+
+          // Emit progress callback if provided
+          if (options.onProgress) {
+            options.onProgress(event);
+          }
+
+          // Log intermediate state updates
+          if (event?.currentRound !== undefined) {
+            const nodeName = event.currentRound === 0 ? 'START' : 'runAgents';
+            console.log(
+              `  📊 State update from ${nodeName}: Round ${event.currentRound}/${event.maxRounds}`
+            );
+          }
+
+          // Reset timeout for next iteration
+          streamTimeout.refresh();
         }
 
-        // Log intermediate state updates
-        if (event?.currentRound !== undefined) {
-          const nodeName = event.currentRound === 0 ? 'START' : 'runAgents';
-          console.log(
-            `  📊 State update from ${nodeName}: Round ${event.currentRound}/${event.maxRounds}`
-          );
-        }
+        clearTimeout(streamTimeout);
+      } catch (streamError) {
+        console.warn(`⚠️  Streaming failed: ${streamError instanceof Error ? streamError.message : String(streamError)}`);
+        console.log('📡 Streaming disabled - using standard invoke instead');
+        // Fall back to standard invoke on any stream error
+        finalState = await this.graph.invoke(initialState, graphConfig);
       }
     } else {
+      if (langsmithEnabled && options?.streaming) {
+        console.log('📡 Streaming disabled due to LangSmith integration - using standard invoke');
+      }
       // Standard invoke (non-streaming)
       finalState = await this.graph.invoke(initialState, graphConfig);
     }

@@ -197,16 +197,8 @@ export class DiffVectorStoreService {
     let deletions = 0;
     const filesChanged = new Set<string>();
 
-    console.log(`   Parsing ${lines.length} lines...`);
-    console.log(`   First 3 lines: ${JSON.stringify(lines.slice(0, 3))}`);
-
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-
-      // Debug: Show diff-related lines
-      if (line.startsWith('diff') || line.startsWith('+++') || line.startsWith('---')) {
-        console.log(`   Line ${i}: ${line.substring(0, 60)}`);
-      }
 
       // Skip commit header lines
       if (
@@ -244,12 +236,10 @@ export class DiffVectorStoreService {
         if (line.startsWith('diff --git')) {
           const match = line.match(/diff --git a\/(.*?) b\//);
           currentFile = match ? match[1] : null;
-          console.log(`   Found file via diff --git: ${currentFile}`);
         } else if (line.startsWith('+++')) {
           const match = line.match(/\+\+\+ b\/(.*?)$/);
           if (match) {
             currentFile = match[1];
-            console.log(`   Confirmed file via +++: ${currentFile}`);
             if (currentFile) {
               filesChanged.add(currentFile);
             }

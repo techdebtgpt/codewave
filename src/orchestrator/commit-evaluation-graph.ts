@@ -52,6 +52,14 @@ export const CommitEvaluationState = Annotation.Root({
     default: () => [],
   }),
 
+  // Team concerns from current round (to be addressed in next round)
+  teamConcerns: Annotation<Array<{ agentName: string; concern: string }>>({
+    reducer: (state: Array<{ agentName: string; concern: string }>, update: Array<{ agentName: string; concern: string }>) => {
+      return update; // Replace concerns each round (not accumulate)
+    },
+    default: () => [],
+  }),
+
   // Aggregated 7-pillar scores (NEW for metrics tracking)
   pillarScores: Annotation<Partial<PillarScores>>({
     reducer: (state: Partial<PillarScores>, update: Partial<PillarScores>) => {
@@ -359,6 +367,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
               documentationStore: state.documentationStore, // Documentation vector store
               currentRound: state.currentRound, // Current round number (0-indexed)
               isFinalRound, // Flag indicating if this is the final round
+              teamConcerns: state.teamConcerns, // Concerns raised by team in previous round
 
               // Pass depth configuration for agent self-iteration
               depthMode: config.agents.depthMode || 'normal',
@@ -395,6 +404,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
           // Attach agent metadata to result for formatters
           result.agentName = agentRole; // Use role as display name
           result.agentRole = agentName; // Use name as technical identifier
+          result.round = state.currentRound; // Attach round number for context
 
           // Create conversation message for this agent's response
           const conversationMessage: ConversationMessage = {
@@ -419,6 +429,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
             metrics: {},
             agentName: agentRole,
             agentRole: agentName,
+            round: state.currentRound,
           };
 
           const conversationMessage: ConversationMessage = {
@@ -649,6 +660,28 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       }
     }
 
+    // Collect concerns raised by agents in this round (to pass to next round)
+    // Each concern is attributed to the agent that raised it
+    const nextRoundConcerns: Array<{ agentName: string; concern: string }> = [];
+    for (const result of results) {
+      if (result.concerns && Array.isArray(result.concerns)) {
+        for (const concern of result.concerns) {
+          if (typeof concern === 'string' && concern.trim().length > 0) {
+            nextRoundConcerns.push({
+              agentName: result.agentName || 'Unknown Agent',
+              concern: concern.trim(),
+            });
+          }
+        }
+      }
+    }
+
+    if (nextRoundConcerns.length > 0 && state.currentRound < state.maxRounds - 1) {
+      console.log(
+        `  💭 Team raised ${nextRoundConcerns.length} concern(s) for next round discussion`
+      );
+    }
+
     return {
       developerOverview: state.developerOverview, // Preserve developer overview through all rounds
       agentResults: results,
@@ -657,6 +690,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       convergenceScore: score,
       converged,
       conversationHistory: conversationMessages, // Add to conversation
+      teamConcerns: nextRoundConcerns, // Pass concerns to next round for validation
       pillarScores: newPillarScores, // Update aggregated scores
       totalInputTokens: roundInputTokens,
       totalOutputTokens: roundOutputTokens,

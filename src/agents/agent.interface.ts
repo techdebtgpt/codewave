@@ -25,7 +25,6 @@ export interface AgentContext {
   // Multi-round conversation tracking
   currentRound?: number; // Current round number (0-indexed)
   isFinalRound?: boolean; // Flag indicating if this is the final round
-  roundPurpose?: 'initial' | 'concerns' | 'validation'; // @deprecated - use currentRound and isFinalRound instead
 
   // Batch evaluation metadata (for progress logging)
   commitHash?: string;
@@ -50,6 +49,7 @@ export interface AgentResult {
   metrics?: Record<string, any>;
   agentName?: string; // Agent identifier (set by orchestrator)
   agentRole?: string; // Agent role/description (set by orchestrator)
+  round?: number; // Round number in which this result was produced (0-indexed)
   tokenUsage?: {
     inputTokens: number;
     outputTokens: number;
@@ -61,6 +61,18 @@ export interface AgentResult {
   clarityScore?: number; // Final self-evaluation clarity score (0-100)
   refinementNotes?: string[]; // Notes on improvements per iteration
   missingInformation?: string[]; // Information gaps identified (if any)
+
+  // LLM-generated concerns and questions (replaces static gaps)
+  // Agents dynamically raise concerns about metrics that need validation
+  concerns?: string[]; // Concerns raised by agent in this round (e.g., "Need clarity on test coverage scope")
+  questionsForTeam?: string[]; // Questions for other agents to address specific score discrepancies
+  addressedConcerns?: {
+    // Tracks which previous concerns were addressed in this round
+    fromAgentName: string; // Which agent raised the concern
+    concern: string; // The original concern
+    addressed: boolean; // Whether agent addressed this concern
+    explanation?: string; // How the concern was addressed or why it wasn't
+  }[];
 }
 
 /**
