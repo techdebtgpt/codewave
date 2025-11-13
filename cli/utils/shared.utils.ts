@@ -732,6 +732,21 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
         .btn-sm { font-size: 0.85rem; padding: 6px 12px; }
         .author-filter { display: inline-block; margin: 5px; }
         .filter-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+        /* Table column sizing for better readability */
+        #commitsTable th:nth-child(1) { min-width: 100px; } /* Hash */
+        #commitsTable th:nth-child(2) { min-width: 110px; } /* Author */
+        #commitsTable th:nth-child(3) { min-width: 280px; } /* Message */
+        #commitsTable th:nth-child(4) { min-width: 110px; } /* Date */
+        #commitsTable th:nth-child(5) { min-width: 110px; } /* Last Evaluated */
+        #commitsTable th:nth-child(6) { min-width: 85px; } /* Source */
+        #commitsTable th:nth-child(7) { min-width: 90px; } /* Quality */
+        #commitsTable th:nth-child(8) { min-width: 95px; } /* Complexity */
+        #commitsTable th:nth-child(9) { min-width: 80px; } /* Tests */
+        #commitsTable th:nth-child(10) { min-width: 85px; } /* Impact */
+        #commitsTable th:nth-child(11) { min-width: 80px; } /* Time */
+        #commitsTable th:nth-child(12) { min-width: 90px; } /* Tech Debt */
+        #commitsTable th:nth-child(13) { min-width: 75px; } /* Action */
+        #commitsTable td:nth-child(3) { max-width: 280px; word-wrap: break-word; overflow-wrap: break-word; } /* Message text wrapping */
     </style>
 </head>
 <body>
@@ -1109,6 +1124,20 @@ async function generateAuthorPage(
         .metric-medium { color: #ffc107; }
         .metric-bad { color: #dc3545; }
         .btn-sm { font-size: 0.85rem; padding: 6px 12px; }
+        /* Table column sizing for author dashboard */
+        #authorCommitsTable th:nth-child(1) { min-width: 100px; } /* Hash */
+        #authorCommitsTable th:nth-child(2) { min-width: 280px; } /* Message */
+        #authorCommitsTable th:nth-child(3) { min-width: 110px; } /* Date */
+        #authorCommitsTable th:nth-child(4) { min-width: 110px; } /* Last Evaluated */
+        #authorCommitsTable th:nth-child(5) { min-width: 85px; } /* Source */
+        #authorCommitsTable th:nth-child(6) { min-width: 90px; } /* Quality */
+        #authorCommitsTable th:nth-child(7) { min-width: 95px; } /* Complexity */
+        #authorCommitsTable th:nth-child(8) { min-width: 80px; } /* Tests */
+        #authorCommitsTable th:nth-child(9) { min-width: 85px; } /* Impact */
+        #authorCommitsTable th:nth-child(10) { min-width: 80px; } /* Time */
+        #authorCommitsTable th:nth-child(11) { min-width: 90px; } /* Tech Debt */
+        #authorCommitsTable th:nth-child(12) { min-width: 75px; } /* Action */
+        #authorCommitsTable td:nth-child(2) { max-width: 280px; word-wrap: break-word; overflow-wrap: break-word; } /* Message text wrapping */
     </style>
 </head>
 <body>
@@ -1165,7 +1194,7 @@ async function generateAuthorPage(
         <div class="table-container">
             <h3 class="section-title">📝 Commits by ${author}</h3>
             <div style="overflow-x: auto;">
-                <table>
+                <table id="authorCommitsTable">
                     <thead>
                         <tr>
                             <th>Hash</th>

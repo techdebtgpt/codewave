@@ -31,79 +31,52 @@ function getVisibleLength(str: string): number {
 }
 
 /**
- * Generate aligned header using table library
- * Returns both the header line and format string with proper spacing
+ * Pad a cell value to match the expected column width
+ * Accounts for ANSI color codes in the length calculation
+ * Pads on the RIGHT for text columns, LEFT for numeric columns
  */
-function generateHeaderAndFormat(): { header: string; format: string } {
-  // Define column headers
+function padCellToWidth(value: string, targetWidth: number, rightAlign: boolean = false): string {
+  const visibleLen = getVisibleLength(value);
+  const padLength = Math.max(0, targetWidth - visibleLen);
+
+  if (rightAlign) {
+    // Right-align: pad on the left
+    return ' '.repeat(padLength) + value;
+  } else {
+    // Left-align: pad on the right
+    return value + ' '.repeat(padLength);
+  }
+}
+
+/**
+ * Generate aligned header and column widths
+ * Uses fixed, sensible widths that accommodate typical data
+ */
+function generateHeaderAndFormat(): { header: string; format: string; columnWidths: number[] } {
+  // Define headers and fixed column widths
+  // These widths are chosen to accommodate typical values while maintaining readability
   const headers = ['Commit', 'User', 'Diff', 'Chunks', 'Analysis', 'State', 'Tokens', 'Cost', 'Round'];
 
-  // Create sample data row to determine column widths (with extra space for readability)
-  const sampleData = [
-    headers,
-    [
-      '6b66968',
-      'john-doe-long',
-      '125KB +234/-89',
-      '45/8',
-      '███░░░░░░░░░░░░░░',
-      'running',
-      '1250000/284000',
-      '$1.2345',
-      '3/3',
-    ],
-  ];
+  // Fixed column widths that work well with typical data
+  // Commit: 7 chars for hash + 2 padding = 9
+  // User: 12 chars for author + 2 padding = 14
+  // Diff: 18 chars for "1000KB +12000/-5000" + 2 padding = 20
+  // Chunks: 5 chars for "100/50" + 2 padding = 7
+  // Analysis (bar): 22 chars (progress bar width)
+  // State: 14 chars for "complete/failed" + 2 padding = 16
+  // Tokens: 15 chars for "9999999/9999999" + 2 padding = 17
+  // Cost: 8 chars for "$99.9999" + 2 padding = 10
+  // Round: 5 chars for "10/10" + 2 padding = 7
+  const columnWidths = [9, 14, 20, 7, 22, 16, 17, 10, 7];
 
-  // Generate table to get proper widths
-  const tableOutput = table(sampleData, {
-    border: {
-      topBody: '',
-      topJoin: '',
-      topLeft: '',
-      topRight: '',
-      bottomBody: '',
-      bottomRight: '',
-      bodyLeft: '',
-      bodyRight: '',
-      bodyJoin: '',
-      joinBody: '',
-      joinLeft: '',
-      joinRight: '',
-      joinJoin: '',
-    },
-    drawHorizontalLine: () => false,
-  });
-
-  // Extract widths from the table output
-  const lines = tableOutput.split('\n');
-  const dataLine = lines[1];
-
-  // Parse column widths from the data line
-  const dataColumns = dataLine.split(/  +/);
-  const widths = dataColumns.map((col) => col.length);
-
-  // Generate colored header
-  const coloredHeaders = [
-    `${colors.bright}${colors.cyan}${headers[0]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[1]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[2]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[3]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[4]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[5]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[6]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[7]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[8]}${colors.reset}`,
-  ];
-
-  // Pad columns to match widths, accounting for ANSI code lengths
-  const paddedHeaders = coloredHeaders.map((h, i) => {
-    const visibleLen = getVisibleLength(h);
-    const padLength = widths[i] - visibleLen;
-    return h + ' '.repeat(Math.max(0, padLength));
+  // Generate colored header with proper padding
+  const paddedHeaders = headers.map((h, i) => {
+    const colored = `${colors.bright}${colors.cyan}${h}${colors.reset}`;
+    return padCellToWidth(colored, columnWidths[i]);
   });
   const header = `\n${paddedHeaders.join('  ')}\n`;
 
-  // Generate format string for cli-progress with proper spacing
+  // Generate format string for cli-progress with double-space separation
   const coloredFormats = [
     `${colors.green}{commit}${colors.reset}`,
     `${colors.white}{user}${colors.reset}`,
@@ -116,30 +89,9 @@ function generateHeaderAndFormat(): { header: string; format: string } {
     `${colors.green}{round}${colors.reset}`,
   ];
 
-  // Build format string with placeholders for dynamic values
-  // Use the same sample data values to calculate expected lengths
-  const sampleValues = [
-    '6b66968',
-    'john-doe-long',
-    '125KB +234/-89',
-    '45/8',
-    '███░░░░░░░░░░░░░░',
-    'running',
-    '1250000/284000',
-    '$1.2345',
-    '3/3',
-  ];
+  const format = coloredFormats.join('  ');
 
-  const format = coloredFormats
-    .map((fmt, i) => {
-      // Use actual sample data length as the expected visible length
-      const estimatedLen = sampleValues[i].length;
-      const padLength = widths[i] - estimatedLen;
-      return fmt + ' '.repeat(Math.max(0, padLength));
-    })
-    .join('  ');
-
-  return { header, format };
+  return { header, format, columnWidths };
 }
 
 interface CommitProgress {
@@ -171,6 +123,7 @@ export class ProgressTracker {
   private commitTokens: Map<string, { input: number; output: number; cost: number }> = new Map();
   private commitErrors: Map<string, string> = new Map(); // Track errors per commit
   private commitCurrentAgent: Map<string, string> = new Map(); // Track current agent
+  private columnWidths: number[] = []; // Store column widths for consistent padding
   private totalInputTokens = 0;
   private totalOutputTokens = 0;
   private totalCost = 0;
@@ -189,7 +142,8 @@ export class ProgressTracker {
     commitHashes: Array<{ hash: string; shortHash: string; author: string; date: string }>
   ) {
     // Generate aligned header and format string with proper column widths
-    const { header, format } = generateHeaderAndFormat();
+    const { header, format, columnWidths } = generateHeaderAndFormat();
+    this.columnWidths = columnWidths; // Store for use in updateProgress
 
     // Print aligned header with column labels (using original console.log to avoid suppression)
     const logFn = this.originalLog || console.log;
@@ -233,18 +187,26 @@ export class ProgressTracker {
       const shortCommit = c.shortHash.substring(0, 7);
       const user = c.author.substring(0, 12).padEnd(12);
 
+      // Pre-pad all initial values to match column widths
+      const initialDiff = `${colors.dim}0KB +0/-0${colors.reset}`;
+      const initialChunks = `${colors.dim}0/0${colors.reset}`;
+      const initialState = `${colors.dim}pending${colors.reset}`;
+      const initialTokens = `${colors.dim}0/0${colors.reset}`;
+      const initialCost = `${colors.dim}$0.00${colors.reset}`;
+      const initialRound = `${colors.dim}0/0${colors.reset}`;
+
       const bar = this.multibar!.create(100, 0, {
-        commit: shortCommit,
-        user: user,
-        diff: `${colors.dim}0KB +0/-0${colors.reset}`, // NEW: Initialize diff column
-        chunks: `${colors.dim}0/0${colors.reset}`, // NEW: Initialize chunks column
+        commit: padCellToWidth(shortCommit, this.columnWidths[0]),
+        user: padCellToWidth(user, this.columnWidths[1]),
+        diff: padCellToWidth(initialDiff, this.columnWidths[2]),
+        chunks: padCellToWidth(initialChunks, this.columnWidths[3]),
         percentage: 0,
         value: 0,
         total: 100,
-        state: `${colors.dim}pending${colors.reset}`,
-        tokens: `${colors.dim}0/0${colors.reset}`,
-        cost: `${colors.dim}$0.00${colors.reset}`,
-        round: `${colors.dim}0/0${colors.reset}`,
+        state: padCellToWidth(initialState, this.columnWidths[5]),
+        tokens: padCellToWidth(initialTokens, this.columnWidths[6]),
+        cost: padCellToWidth(initialCost, this.columnWidths[7]),
+        round: padCellToWidth(initialRound, this.columnWidths[8]),
         agent: '', // Initialize agent field (empty initially)
       });
 
@@ -411,15 +373,26 @@ export class ProgressTracker {
     const currentAgent = this.commitCurrentAgent.get(commitHash);
     const agentStr = currentAgent ? `[${currentAgent.substring(0, 8)}...]` : '';
 
-    bar.update(currentProgress, {
-      diff: diffStr,
-      chunks: chunksStr,
-      state: currentState,
-      tokens: tokenStr,
-      cost: costStr,
-      round: roundStr,
+    // Get commit and user data for padding
+    const commit = this.commits.get(commitHash);
+    const shortCommit = commit?.shortHash.substring(0, 7) || commitHash.substring(0, 7);
+    const user = commit?.author.substring(0, 12).padEnd(12) || 'unknown';
+
+    // Pad each cell to match column widths for consistent alignment
+    // Column indices: 0=commit, 1=user, 2=diff, 3=chunks, 4=bar, 5=state, 6=tokens, 7=cost, 8=round
+    const paddedValues = {
+      commit: padCellToWidth(shortCommit, this.columnWidths[0]),
+      user: padCellToWidth(user, this.columnWidths[1]),
+      diff: padCellToWidth(diffStr, this.columnWidths[2]),
+      chunks: padCellToWidth(chunksStr, this.columnWidths[3]),
+      state: padCellToWidth(currentState, this.columnWidths[5]),
+      tokens: padCellToWidth(tokenStr, this.columnWidths[6]),
+      cost: padCellToWidth(costStr, this.columnWidths[7]),
+      round: padCellToWidth(roundStr, this.columnWidths[8]),
       agent: agentStr,
-    });
+    };
+
+    bar.update(currentProgress, paddedValues);
   }
 
   /**
