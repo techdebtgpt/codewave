@@ -301,38 +301,65 @@ function groupResultsByAgent(results: AgentResult[]): Map<string, AgentEvaluatio
 function calculateMetricEvolution(
   groupedResults: Map<string, AgentEvaluation[]>
 ): MetricEvolution[] {
-  // Import centralized pillar constants
-  const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+  // Import centralized pillar constants and weight functions
+  const { SEVEN_PILLARS, getAgentWeight, calculateWeightedAverage } = require('../constants/agent-weights.constants');
 
   const metricMap = new Map<string, MetricEvolution>();
 
+  // Group all evaluations by round
+  const roundMap = new Map<number, AgentEvaluation[]>();
   groupedResults.forEach((evaluations) => {
     evaluations.forEach((evaluation) => {
-      if (evaluation.metrics) {
-        Object.entries(evaluation.metrics)
-          .filter(([metric]) => SEVEN_PILLARS.includes(metric))
-          .forEach(([metric, value]) => {
-            if (!metricMap.has(metric)) {
-              metricMap.set(metric, {
-                metric,
-                rounds: new Map<number, number>(),
-                changed: false,
-              });
-            }
-            const evolution = metricMap.get(metric)!;
-
-            // Store value for this round
-            evolution.rounds.set(evaluation.round, value);
-
-            // Check if value changed from first round
-            const firstRound = Math.min(...Array.from(evolution.rounds.keys()));
-            const firstValue = evolution.rounds.get(firstRound);
-            if (evaluation.round > firstRound && firstValue !== undefined) {
-              evolution.changed = evolution.changed || firstValue !== value;
-            }
-          });
+      if (!roundMap.has(evaluation.round)) {
+        roundMap.set(evaluation.round, []);
       }
+      roundMap.get(evaluation.round)!.push(evaluation);
     });
+  });
+
+  // For each metric, calculate consensus score per round
+  SEVEN_PILLARS.forEach((metric: string) => {
+    const metricEvolution: MetricEvolution = {
+      metric,
+      rounds: new Map<number, number>(),
+      changed: false,
+    };
+
+    // Process each round in order
+    Array.from(roundMap.keys())
+      .sort((a, b) => a - b)
+      .forEach((round) => {
+        const evaluationsInRound = roundMap.get(round)!;
+
+        // Build contributor list for this round and metric
+        const contributors: Array<{ agentName: string; score: number | null; weight: number }> = [];
+        evaluationsInRound.forEach((evaluation) => {
+          if (evaluation.metrics && metric in evaluation.metrics) {
+            const score = evaluation.metrics[metric];
+            const agentKey = evaluation.agentRole || evaluation.agentName;
+            const weight = getAgentWeight(agentKey, metric);
+            contributors.push({ agentName: evaluation.agentName, score, weight });
+          }
+        });
+
+        // Calculate weighted consensus for this round
+        if (contributors.length > 0) {
+          const consensusScore = calculateWeightedAverage(
+            contributors.map((c) => ({ agentName: c.agentName, score: c.score })),
+            metric
+          );
+          metricEvolution.rounds.set(round, consensusScore);
+
+          // Check if value changed from first round
+          const firstRound = Math.min(...Array.from(metricEvolution.rounds.keys()));
+          const firstValue = metricEvolution.rounds.get(firstRound);
+          if (round > firstRound && firstValue !== undefined) {
+            metricEvolution.changed = metricEvolution.changed || Math.abs(firstValue - consensusScore) > 0.01;
+          }
+        }
+      });
+
+    metricMap.set(metric, metricEvolution);
   });
 
   return Array.from(metricMap.values());
@@ -948,57 +975,20 @@ export function generateEnhancedHtmlReport(
   // Calculate consensus values (for comprehensive metrics table)
   const consensusValues = calculateConsensusValues(groupedResults);
 
-  // Extract final pillar scores from last round's finalSynthesis (if available)
-  // This provides the definitive final scores from each agent's comprehensive evaluation
+  // Extract final pillar scores using consensus-based weighted averages
+  // This ensures the 7-Pillar scores match the Final Agreed consensus values
   const finalPillarScores: Record<string, { value: number | null; agent: string }> = {};
 
-  // First, try to get scores from finalSynthesis (last round)
-  groupedResults.forEach((evaluations, agentName) => {
-    const lastEval = evaluations[evaluations.length - 1];
-
-    // Check if the last evaluation has finalSynthesis with metrics
-    const metricsSource = lastEval.metrics; // Always use latest metrics
-
-    if (metricsSource) {
-      Object.entries(metricsSource).forEach(([metric, value]) => {
-        // If we don't have this metric yet, or if this agent is the primary expert, use their score
-        if (!finalPillarScores[metric]) {
-          finalPillarScores[metric] = {
-            value: typeof value === 'number' ? value : null,
-            agent: agentName
-          };
-        } else {
-          // Use the agent with highest expertise weight for this metric
-          const currentAgentKey = lastEval.agentRole || agentName;
-          const existingAgentKey = groupedResults.get(finalPillarScores[metric].agent)?.[0]?.agentRole || finalPillarScores[metric].agent;
-
-          const { getAgentWeight } = require('../constants/agent-weights.constants');
-          const currentWeight = getAgentWeight(currentAgentKey, metric);
-          const existingWeight = getAgentWeight(existingAgentKey, metric);
-
-          // Replace with this agent's score if they have higher expertise
-          if (currentWeight > existingWeight) {
-            finalPillarScores[metric] = {
-              value: typeof value === 'number' ? value : null,
-              agent: agentName
-            };
-          }
-        }
-      });
-    }
-  });
-
-  // Fallback to consensus values if no finalSynthesis scores available
+  // Use consensus values directly - these are already weighted averages
   consensusValues.forEach((data, metric) => {
-    if (!finalPillarScores[metric]) {
-      const topContributor = data.contributors.reduce((max: any, current: any) =>
-        current.weight > max.weight ? current : max
-      );
-      finalPillarScores[metric] = {
-        value: data.value,
-        agent: topContributor.name,
-      };
-    }
+    // Identify the top contributor for attribution
+    const topContributor = data.contributors.reduce((max: any, current: any) =>
+      current.weight > max.weight ? current : max
+    );
+    finalPillarScores[metric] = {
+      value: data.value,
+      agent: topContributor.name,
+    };
   });
 
   // Generate 7-Pillar Summary Card
