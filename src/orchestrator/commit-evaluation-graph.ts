@@ -312,6 +312,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       console.log(
         `✅ Developer overview generated successfully (${formattedOverview.length} chars)`
       );
+      console.log(`🔍 [DEBUG] Developer overview tokens: ${devOverviewInputTokens} input / ${devOverviewOutputTokens} output ($${devOverviewCost.toFixed(4)})`);
 
       return {
         developerOverview: formattedOverview,
@@ -348,10 +349,6 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
         ? `[${state.commitIndex}/${state.totalCommits}]`
         : '';
 
-    console.log(
-      `\n${commitPrefix} 🔄 ${commitId} - Round ${state.currentRound + 1}/${state.maxRounds} (${roundLabel})`
-    );
-
     // Track agent execution for inline status updates
     const agentNames = agents
       .filter((agent) => {
@@ -366,6 +363,11 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
         });
       })
       .map((agent) => agent.getMetadata().name);
+
+    console.log(
+      `\n${commitPrefix}🔄 ${commitId} - Round ${state.currentRound + 1}/${state.maxRounds} (${roundLabel})`
+    );
+    console.log(`   🚀 Starting ${agentNames.length} agent${agentNames.length > 1 ? 's' : ''}...`);
 
     // Track completed agents for inline progress
     let completedCount = 0;
@@ -678,15 +680,22 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
     let roundOutputTokens = 0;
     let roundCost = 0;
 
+    console.log(`\n🔍 [DEBUG] Token accumulation for Round ${state.currentRound + 1}:`);
     for (const result of results) {
       if (result.tokenUsage) {
+        console.log(`  • ${result.agentName}: ${result.tokenUsage.inputTokens} input / ${result.tokenUsage.outputTokens} output`);
         roundInputTokens += result.tokenUsage.inputTokens;
         roundOutputTokens += result.tokenUsage.outputTokens;
 
         const costCalc = calculateCost(config.llm.provider, config.llm.model, result.tokenUsage);
         roundCost += costCalc.totalCost;
+      } else {
+        console.log(`  ⚠️  ${result.agentName}: NO TOKEN USAGE DATA`);
       }
     }
+    console.log(`  📊 Round total: ${roundInputTokens} input / ${roundOutputTokens} output ($${roundCost.toFixed(4)})`);
+    console.log(`  📊 Cumulative before round: ${state.totalInputTokens} input / ${state.totalOutputTokens} output ($${state.totalCost.toFixed(4)})`);
+    console.log(`  📊 Cumulative after round: ${state.totalInputTokens + roundInputTokens} input / ${state.totalOutputTokens + roundOutputTokens} output ($${(state.totalCost + roundCost).toFixed(4)})\n`);
 
     // Collect concerns raised by agents in this round (to pass to next round)
     // Each concern is attributed to the agent that raised it
@@ -704,9 +713,33 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       }
     }
 
+    // Print round summary with agent results
+    console.log(`\n📋 Round ${state.currentRound + 1}/${state.maxRounds} Summary:`);
+    console.log(`   ✅ Completed: ${results.length} agent${results.length > 1 ? 's' : ''}`);
+
+    // Show each agent's final clarity and metrics
+    results.forEach((result) => {
+      const clarityScore = result.clarityScore || 0;
+      const clarityEmoji = clarityScore >= 0.8 ? '✅' : '🔄';
+      // Check if clarity is already a percentage (>1) or a decimal (0-1)
+      const clarityPct = clarityScore > 1 ? clarityScore.toFixed(0) : (clarityScore * 100).toFixed(0);
+      const iterations = result.internalIterations || 1;
+      console.log(`   ${clarityEmoji} ${result.agentName}: ${clarityPct}% clarity (${iterations} iteration${iterations > 1 ? 's' : ''})`);
+    });
+
+    // Show token usage and cost for this round
+    console.log(`   💰 Tokens: ${roundInputTokens.toLocaleString()} in / ${roundOutputTokens.toLocaleString()} out | Cost: $${roundCost.toFixed(4)}`);
+
+    // Show convergence info
+    if (score !== undefined) {
+      const convergenceEmoji = converged ? '🎯' : '🔄';
+      console.log(`   ${convergenceEmoji} Team Convergence: ${(score * 100).toFixed(1)}%${converged ? ' (CONVERGED)' : ''}`);
+    }
+
+    // Show concerns raised
     if (nextRoundConcerns.length > 0 && state.currentRound < state.maxRounds - 1) {
       console.log(
-        `  💭 Team raised ${nextRoundConcerns.length} concern(s) for next round discussion`
+        `   💭 Team raised ${nextRoundConcerns.length} concern(s) for next round discussion`
       );
     }
 

@@ -259,7 +259,11 @@ function groupResultsByAgent(results: AgentResult[]): Map<string, AgentEvaluatio
     // Round is determined by how many times we've seen this agent
     const round = occurrences;
 
-    const concerns = extractConcerns(result.details || '');
+    // Use structured concerns from agent if available, fallback to regex extraction
+    const concerns = result.concerns && result.concerns.length > 0
+      ? result.concerns
+      : extractConcerns(result.details || '');
+
     const references = extractReferences(result.summary || '', result.details || '');
 
     const evaluation: AgentEvaluation = {
@@ -1108,7 +1112,7 @@ export function generateEnhancedHtmlReport(
             ${
               latestEval.concernsRaised.length > 0
                 ? `
-              <h6 class="text-danger mb-2">⚠️ Concerns</h6>
+              <h6 class="text-danger mb-2">⚠️ Concerns (Round ${latestEval.round})</h6>
               <ul class="small">
                 ${latestEval.concernsRaised.map((concern) => `<li>${concern}</li>`).join('')}
               </ul>

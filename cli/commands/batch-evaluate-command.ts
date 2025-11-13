@@ -155,6 +155,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
     // Filter out orchestrator status messages
     if (message.includes('🚀 Starting commit evaluation')) return true;
     if (message.includes('Large diff detected')) return true;
+    if (message.includes('📦 Initializing RAG vector store')) return true; // NEW: Always-on RAG message
     if (message.includes('First 3 lines:')) return true;
     if (message.includes('files | +') && message.includes('-')) return true;
     if (message.includes('📝 Generating developer overview')) return true;
@@ -174,6 +175,21 @@ export async function runBatchEvaluateCommand(args: string[]) {
     if (message.includes('All agents returned null for pillar')) return true;
     if (message.includes('Total weight is 0 for pillar')) return true;
     if (message.includes('Invalid type for') && message.includes('setting to null')) return true;
+    // Filter out ALL agent iteration logs (these are now ALWAYS filtered in batch mode)
+    if (message.includes('🚀 Starting') && message.includes('agents...')) return true;
+    if (message.includes('Starting initial analysis (iteration')) return true;
+    if (message.includes('Refining analysis (iteration')) return true;
+    if (message.includes('Clarity ') && message.includes('% (threshold:')) return true;
+    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Starting')) return true;
+    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Refining')) return true;
+    if (message.includes('📊') && message.includes('[Round ') && message.includes(']: Clarity')) return true;
+    if (message.includes('🔍 [Round ') && message.includes('] Executing ')) return true;
+    // Filter out round summary logs (these are verbose in batch mode)
+    if (message.includes('📋 Round') && message.includes('Summary:')) return true;
+    if (message.includes('✅ Completed:') && message.includes('agents')) return true;
+    if (message.includes('✅') && message.includes('clarity (') && message.includes('iteration')) return true;
+    if (message.includes('🔄 Team Convergence:')) return true;
+    if (message.includes('💭 Team raised') && message.includes('concern')) return true;
     return false;
   };
 
@@ -235,15 +251,24 @@ export async function runBatchEvaluateCommand(args: string[]) {
   const evaluationTasks = commits.map((commit, i) =>
     limit(async () => {
       try {
-        // Mark as started
+        // Get commit diff FIRST
+        const diff = await getCommitDiff(options.repository, commit.hash);
+
+        // Calculate diff size and stats for progress display
+        const diffSize = diff.length;
+        const diffSizeKB = (diffSize / 1024).toFixed(1);
+        const additions = (diff.match(/^\+[^+]/gm) || []).length;
+        const deletions = (diff.match(/^-[^-]/gm) || []).length;
+
+        // Mark as started with diff stats
         progressTracker.updateProgress(commit.hash, {
           status: 'analyzing',
           progress: 0,
           currentStep: 'Starting evaluation...',
+          diffSizeKB: `${diffSizeKB}KB`,
+          additions,
+          deletions,
         });
-
-        // Get commit diff
-        const diff = await getCommitDiff(options.repository, commit.hash);
 
         if (!diff || diff.trim().length === 0) {
           progressTracker.updateProgress(commit.hash, {
@@ -265,6 +290,8 @@ export async function runBatchEvaluateCommand(args: string[]) {
         let commitTokensOutput = 0;
         let commitCost = 0;
         let lastRoundReported = -1; // Track last round to avoid duplicate updates
+        let vectorChunks = 0; // Track chunks count from vectorization
+        let vectorFiles = filesChanged.length; // Track files count
 
         // Evaluate commit with metadata for better logging and progress tracking
         const evaluationResult = await orchestrator.evaluateCommit(
@@ -281,10 +308,13 @@ export async function runBatchEvaluateCommand(args: string[]) {
             onProgress: (state: any) => {
               // Track vector store indexing progress
               if (state.type === 'vectorizing') {
+                vectorChunks = state.total; // Save chunks count for later updates
                 progressTracker.updateProgress(commit.hash, {
                   status: 'vectorizing',
                   progress: state.progress,
-                  currentStep: `Indexing: ${state.current}/${state.total} chunks`,
+                  currentStep: `${diffSizeKB}KB | ${state.current}/${state.total} chunks | +${additions}/-${deletions}`,
+                  chunks: state.total, // Total chunks to be indexed
+                  files: vectorFiles, // Number of files
                 });
               }
               // Track agent execution progress (from LangGraph workflow)
@@ -319,6 +349,8 @@ export async function runBatchEvaluateCommand(args: string[]) {
                   currentRound: currentRound,
                   maxRounds: maxRounds,
                   currentAgent: currentAgent, // Show which agent is/was running
+                  chunks: vectorChunks, // Persist chunks count during analysis
+                  files: vectorFiles, // Persist files count during analysis
                 });
 
                 lastRoundReported = currentRound;
@@ -385,6 +417,8 @@ export async function runBatchEvaluateCommand(args: string[]) {
           totalCost: commitCost,
           internalIterations: agentCount > 0 ? totalInternalIterations : undefined,
           clarityScore: agentCount > 0 ? avgClarityScore : undefined,
+          chunks: vectorChunks, // Persist chunks count in final state
+          files: vectorFiles, // Persist files count in final state
         });
 
         successCount++;

@@ -112,11 +112,52 @@ export function validateWeights(): { valid: boolean; errors: string[] } {
   };
 }
 
+/**
+ * Map display names to technical role keys
+ * This handles variations in agent naming across the system
+ */
+export function normalizeAgentName(agentName: string): string {
+  const normalized = agentName.toLowerCase().trim();
+
+  // Map display names to technical keys
+  const nameMap: Record<string, string> = {
+    'business analyst': 'business-analyst',
+    'sdet': 'sdet',
+    'sdet (test automation engineer)': 'sdet',
+    'test automation engineer': 'sdet',
+    'developer (author)': 'developer-author',
+    'developer author': 'developer-author',
+    'senior architect': 'senior-architect',
+    'developer reviewer': 'developer-reviewer',
+    'developer (reviewer)': 'developer-reviewer',
+  };
+
+  // Check if we have a mapping
+  if (nameMap[normalized]) {
+    return nameMap[normalized];
+  }
+
+  // Try to match technical keys directly
+  if (AGENT_EXPERTISE_WEIGHTS[normalized]) {
+    return normalized;
+  }
+
+  // If agentName is already a technical key, return as-is
+  if (AGENT_EXPERTISE_WEIGHTS[agentName]) {
+    return agentName;
+  }
+
+  return agentName; // Return original if no mapping found
+}
+
 // Helper: Get agent's weight for a specific pillar
 export function getAgentWeight(agentName: string, pillar: keyof AgentWeights): number {
-  const weights = AGENT_EXPERTISE_WEIGHTS[agentName];
+  // Normalize agent name before lookup
+  const normalizedName = normalizeAgentName(agentName);
+  const weights = AGENT_EXPERTISE_WEIGHTS[normalizedName];
+
   if (!weights) {
-    console.warn(`Unknown agent: ${agentName}, using equal weight`);
+    console.warn(`Unknown agent: ${agentName} (normalized: ${normalizedName}), using equal weight`);
     return 0.2; // Fallback: equal weight across 5 agents
   }
   return weights[pillar];
@@ -151,7 +192,9 @@ export function calculateWeightedAverage(
   let totalWeight = 0;
 
   for (const { agentName, score } of validScores) {
-    const weight = getAgentWeight(agentName, pillar);
+    // Normalize agent name before getting weight
+    const normalizedName = normalizeAgentName(agentName);
+    const weight = getAgentWeight(normalizedName, pillar);
     weightedSum += score * weight;
     totalWeight += weight;
   }

@@ -114,38 +114,35 @@ export class CommitEvaluationOrchestrator {
     const startTime = Date.now();
     const threadId = options?.threadId || `eval-${Date.now()}`;
 
-    // Initialize RAG vector store for large diffs (>100KB)
+    // Initialize RAG vector store for all diffs (always enabled)
     const diffSize = context.commitDiff?.length || 0;
-    const USE_RAG_THRESHOLD = 100_000; // 100KB
+    console.log(
+      `📦 Initializing RAG vector store (${(diffSize / 1024).toFixed(1)}KB diff)...`
+    );
 
-    if (diffSize > USE_RAG_THRESHOLD) {
-      console.log(
-        `📦 Large diff detected (${(diffSize / 1024).toFixed(1)}KB) - initializing RAG vector store...`
-      );
-      const { DiffVectorStoreService } = await import('../services/diff-vector-store.service.js');
-      const vectorStore = new DiffVectorStoreService(context.commitHash); // NEW: Pass commit hash for tagging
+    const { DiffVectorStoreService } = await import('../services/diff-vector-store.service.js');
+    const vectorStore = new DiffVectorStoreService(context.commitHash);
 
-      // Initialize with progress callback
-      await vectorStore.initialize(context.commitDiff, (progress, current, total) => {
-        if (options?.onProgress) {
-          options.onProgress({
-            type: 'vectorizing',
-            progress,
-            current,
-            total,
-            commitHash: context.commitHash,
-          });
-        }
-      });
+    // Initialize with progress callback
+    await vectorStore.initialize(context.commitDiff, (progress, current, total) => {
+      if (options?.onProgress) {
+        options.onProgress({
+          type: 'vectorizing',
+          progress,
+          current,
+          total,
+          commitHash: context.commitHash,
+        });
+      }
+    });
 
-      const stats = vectorStore.getStats();
-      console.log(
-        `   ✅ Indexed ${stats.documentCount} chunks from ${stats.filesChanged} files (+${stats.additions}/-${stats.deletions})`
-      );
+    const stats = vectorStore.getStats();
+    console.log(
+      `   ✅ Indexed ${stats.documentCount} chunks from ${stats.filesChanged} files (+${stats.additions}/-${stats.deletions})`
+    );
 
-      // Add vector store to context (agents can use it for RAG queries)
-      context.vectorStore = vectorStore;
-    }
+    // Add vector store to context (agents can use it for RAG queries)
+    context.vectorStore = vectorStore;
 
     // Add global documentation store to context (if initialized)
     if (this.documentationStore) {
@@ -237,9 +234,11 @@ export class CommitEvaluationOrchestrator {
         finalState = await this.graph.invoke(initialState, graphConfig);
       }
     } else {
-      if (langsmithEnabled && options?.streaming) {
-        console.log('📡 Streaming disabled due to LangSmith integration - using standard invoke');
-      }
+      // Only log streaming message if user explicitly requested streaming (not just default)
+      // Silent for single evaluate mode where streaming is enabled by default
+      // if (langsmithEnabled && options?.streaming) {
+      //   console.log('📡 Streaming disabled due to LangSmith integration - using standard invoke');
+      // }
       // Standard invoke (non-streaming)
       finalState = await this.graph.invoke(initialState, graphConfig);
 

@@ -36,7 +36,7 @@ function getVisibleLength(str: string): number {
  */
 function generateHeaderAndFormat(): { header: string; format: string } {
   // Define column headers
-  const headers = ['Commit', 'User', 'Vector', 'Analysis', 'State', 'Tokens', 'Cost', 'Round'];
+  const headers = ['Commit', 'User', 'Diff', 'Chunks', 'Analysis', 'State', 'Tokens', 'Cost', 'Round'];
 
   // Create sample data row to determine column widths (with extra space for readability)
   const sampleData = [
@@ -44,7 +44,8 @@ function generateHeaderAndFormat(): { header: string; format: string } {
     [
       '6b66968',
       'john-doe-long',
-      '100%',
+      '125KB +234/-89',
+      '45/8',
       '███░░░░░░░░░░░░░░',
       'running',
       '1250000/284000',
@@ -91,6 +92,7 @@ function generateHeaderAndFormat(): { header: string; format: string } {
     `${colors.bright}${colors.cyan}${headers[5]}${colors.reset}`,
     `${colors.bright}${colors.cyan}${headers[6]}${colors.reset}`,
     `${colors.bright}${colors.cyan}${headers[7]}${colors.reset}`,
+    `${colors.bright}${colors.cyan}${headers[8]}${colors.reset}`,
   ];
 
   // Pad columns to match widths, accounting for ANSI code lengths
@@ -105,7 +107,8 @@ function generateHeaderAndFormat(): { header: string; format: string } {
   const coloredFormats = [
     `${colors.green}{commit}${colors.reset}`,
     `${colors.white}{user}${colors.reset}`,
-    `${colors.yellow}{vector}${colors.reset}`,
+    `${colors.dim}{diff}${colors.reset}`,
+    `${colors.yellow}{chunks}${colors.reset}`,
     `${colors.blue}{bar}${colors.reset} ${colors.dim}{agent}${colors.reset}`,
     `${colors.magenta}{state}${colors.reset}`,
     `${colors.bright}{tokens}${colors.reset}`,
@@ -118,7 +121,8 @@ function generateHeaderAndFormat(): { header: string; format: string } {
   const sampleValues = [
     '6b66968',
     'john-doe-long',
-    '100%',
+    '125KB +234/-89',
+    '45/8',
     '███░░░░░░░░░░░░░░',
     'running',
     '1250000/284000',
@@ -147,6 +151,11 @@ interface CommitProgress {
   state?: string;
   currentRound?: number;
   maxRounds?: number;
+  diffSizeKB?: string;
+  additions?: number;
+  deletions?: number;
+  chunks?: number;
+  files?: number;
 }
 
 export class ProgressTracker {
@@ -155,6 +164,8 @@ export class ProgressTracker {
   private commits: Map<string, CommitProgress> = new Map();
   private commitProgress: Map<string, number> = new Map();
   private commitVectorProgress: Map<string, number> = new Map();
+  private commitDiffStats: Map<string, { sizeKB: string; additions: number; deletions: number }> = new Map(); // NEW: Track diff stats
+  private commitChunks: Map<string, { chunks: number; files: number }> = new Map(); // NEW: Track chunks/files
   private commitState: Map<string, string> = new Map();
   private commitRound: Map<string, { current: number; max: number }> = new Map();
   private commitTokens: Map<string, { input: number; output: number; cost: number }> = new Map();
@@ -213,6 +224,8 @@ export class ProgressTracker {
 
       this.commitProgress.set(c.hash, 0);
       this.commitVectorProgress.set(c.hash, 0);
+      this.commitDiffStats.set(c.hash, { sizeKB: '0KB', additions: 0, deletions: 0 }); // Initialize diff stats
+      this.commitChunks.set(c.hash, { chunks: 0, files: 0 }); // Initialize chunks/files
       this.commitState.set(c.hash, 'pending');
       this.commitRound.set(c.hash, { current: 0, max: 0 });
       this.commitTokens.set(c.hash, { input: 0, output: 0, cost: 0 });
@@ -223,7 +236,8 @@ export class ProgressTracker {
       const bar = this.multibar!.create(100, 0, {
         commit: shortCommit,
         user: user,
-        vector: `${colors.dim}0%${colors.reset}`,
+        diff: `${colors.dim}0KB +0/-0${colors.reset}`, // NEW: Initialize diff column
+        chunks: `${colors.dim}0/0${colors.reset}`, // NEW: Initialize chunks column
         percentage: 0,
         value: 0,
         total: 100,
@@ -258,10 +272,32 @@ export class ProgressTracker {
       maxRounds?: number;
       currentAgent?: string; // Name of currently executing agent
       errorMessage?: string; // Error message if failed
+      diffSizeKB?: string; // NEW: Diff size in KB
+      additions?: number; // NEW: Lines added
+      deletions?: number; // NEW: Lines deleted
+      chunks?: number; // NEW: Number of chunks indexed
+      files?: number; // NEW: Number of files indexed
     }
   ) {
     const bar = this.bars.get(commitHash);
     if (!bar) return;
+
+    // Track diff stats (store once when provided)
+    if (update.diffSizeKB !== undefined && update.additions !== undefined && update.deletions !== undefined) {
+      this.commitDiffStats.set(commitHash, {
+        sizeKB: update.diffSizeKB,
+        additions: update.additions,
+        deletions: update.deletions,
+      });
+    }
+
+    // Track chunks/files (store once when provided)
+    if (update.chunks !== undefined && update.files !== undefined) {
+      this.commitChunks.set(commitHash, {
+        chunks: update.chunks,
+        files: update.files,
+      });
+    }
 
     // Track round information
     if (update.currentRound !== undefined && update.maxRounds !== undefined) {
@@ -361,12 +397,23 @@ export class ProgressTracker {
     // Get current state
     const currentState = this.commitState.get(commitHash) || `${colors.dim}pending${colors.reset}`;
 
+    // Format diff stats
+    const diffStats = this.commitDiffStats.get(commitHash) || { sizeKB: '0KB', additions: 0, deletions: 0 };
+    const diffColor = diffStats.sizeKB !== '0KB' ? colors.white : colors.dim;
+    const diffStr = `${diffColor}${diffStats.sizeKB} +${diffStats.additions}/-${diffStats.deletions}${colors.reset}`;
+
+    // Format chunks/files stats
+    const chunksData = this.commitChunks.get(commitHash) || { chunks: 0, files: 0 };
+    const chunksColor = chunksData.chunks > 0 ? colors.yellow : colors.dim;
+    const chunksStr = `${chunksColor}${chunksData.chunks}/${chunksData.files}${colors.reset}`;
+
     // Get current agent (show abbreviated name after bar)
     const currentAgent = this.commitCurrentAgent.get(commitHash);
     const agentStr = currentAgent ? `[${currentAgent.substring(0, 8)}...]` : '';
 
     bar.update(currentProgress, {
-      vector: vectorStr,
+      diff: diffStr,
+      chunks: chunksStr,
       state: currentState,
       tokens: tokenStr,
       cost: costStr,
