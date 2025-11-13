@@ -186,7 +186,6 @@ Return ONLY valid JSON with this structure:
     "technicalDebtHours": <hours estimate>
   },
   "concerns": ["List quality concerns"],
-  "shouldParticipateInNextRound": <true if you need another round to refine, false if confident in current analysis>,
   "confidenceLevel": <0-100, your confidence in this analysis>${context.isFinalRound ? `,
   "finalSynthesis": {
     "summary": "Consolidated summary across all ${(context.currentRound || 0) + 1} rounds from your perspective",

@@ -191,7 +191,6 @@ Return ONLY valid JSON with this structure:
     "technicalDebtHours": <hours estimate>
   },
   "concerns": ["List any concerns you have"],
-  "shouldParticipateInNextRound": false,
   "confidenceLevel": <0-100, your confidence in this analysis>,
   "finalSynthesis": {
     "summary": "Consolidated summary across all ${(context.currentRound || 0) + 1} rounds from your perspective",
@@ -216,7 +215,6 @@ Return ONLY valid JSON with this structure:
     "technicalDebtHours": <hours estimate>
   },
   "concerns": ["List any concerns you have"],
-  "shouldParticipateInNextRound": <true if you need another round to refine, false if confident in current analysis>,
   "confidenceLevel": <0-100, your confidence in this analysis>
 }
 \`\`\``}

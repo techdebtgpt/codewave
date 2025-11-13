@@ -4,6 +4,7 @@ import { AgentResult } from '../agents/agent.interface';
 import { ConversationMessage, PillarScores } from '../types/agent.types';
 import { AppConfig } from '../config/config.interface';
 import { calculateCost, formatTokenUsage, formatCost } from '../utils/token-tracker';
+import { SEVEN_PILLARS } from '../constants/agent-weights.constants';
 
 /**
  * LangGraph State Definition for Commit Evaluation
@@ -105,6 +106,25 @@ export const CommitEvaluationState = Annotation.Root({
     default: () => 0,
   }),
 });
+
+/**
+ * Detect if an agent's metrics have remained stable (identical) compared to previous round
+ * If metrics are stable, agent has confirmed their assessment and should exit
+ */
+function detectStableMetrics(agentRole: string, currentResult: AgentResult, previousResult: AgentResult | null): boolean {
+  if (!previousResult) {
+    return false; // First round, no previous result to compare
+  }
+
+  // Check if all 7 pillars have identical values
+  const allMetricsMatch = SEVEN_PILLARS.every((metric) => {
+    const currentValue = (currentResult.metrics as any)?.[metric];
+    const previousValue = (previousResult.metrics as any)?.[metric];
+    return currentValue === previousValue;
+  });
+
+  return allMetricsMatch;
+}
 
 /**
  * Calculate similarity between two agent results
@@ -691,16 +711,26 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
     }
 
     // Track agents that opted out for next round
+    // An agent opts out if their metrics are stable (identical to previous round) = confirmed agreement
     const newlyOptedOutAgents = new Set<string>();
     for (const result of results) {
-      // Default to true (participate) if not specified
-      const shouldParticipate = result.shouldParticipateInNextRound !== false;
-      if (!shouldParticipate) {
-        const agentKey = result.agentRole; // Technical identifier (e.g., 'business-analyst')
-        if (agentKey) {
-          newlyOptedOutAgents.add(agentKey);
-          console.log(`  ⏭️  ${result.agentName} opted out of future rounds (confidence: ${result.confidenceLevel || 'N/A'}%)`);
-        }
+      const agentKey = result.agentRole; // Technical identifier (e.g., 'business-analyst')
+
+      if (!agentKey) {
+        continue; // Skip if no agent key
+      }
+
+      // Find this agent's previous round result for comparison
+      const previousResult = state.previousRoundResults?.find(
+        (r) => r.agentRole === agentKey
+      );
+
+      // Check if metrics have stabilized (identical to previous round)
+      const metricsAreStable = detectStableMetrics(agentKey, result, previousResult || null);
+
+      if (metricsAreStable) {
+        newlyOptedOutAgents.add(agentKey);
+        console.log(`  ✅ ${result.agentName} confirmed assessment (stable metrics). Will not participate in next round.`);
       }
     }
 

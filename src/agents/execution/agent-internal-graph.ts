@@ -283,18 +283,9 @@ export function createAgentInternalGraph(
       refineAnalysis(state, config, refinementPromptBuilder, depthConfig)
     )
     .addEdge(START, 'generateInitialAnalysis')
-    .addConditionalEdges('generateInitialAnalysis', shouldContinueIterating, {
-      evaluateClarity: 'evaluateClarity',
-      [END]: END,
-    })
-    .addConditionalEdges('evaluateClarity', shouldContinueIterating, {
-      refineAnalysis: 'refineAnalysis',
-      [END]: END,
-    })
-    .addConditionalEdges('refineAnalysis', shouldContinueIterating, {
-      evaluateClarity: 'evaluateClarity',
-      [END]: END,
-    });
+    .addConditionalEdges('generateInitialAnalysis', shouldContinueIterating)
+    .addConditionalEdges('evaluateClarity', shouldContinueIterating)
+    .addConditionalEdges('refineAnalysis', shouldContinueIterating);
 
   return graph.compile();
 }
