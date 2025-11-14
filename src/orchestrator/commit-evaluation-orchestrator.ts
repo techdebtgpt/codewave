@@ -171,10 +171,12 @@ export class CommitEvaluationOrchestrator {
     };
 
     // Configure for LangSmith tracing
+    const commitShortSha = context.commitHash ? context.commitHash.substring(0, 7) : 'unknown';
     const graphConfig = {
       configurable: { thread_id: threadId },
-      runName: 'CommitEvaluation',
+      runName: `CommitEvaluation-${commitShortSha}`,
       metadata: {
+        commitHash: context.commitHash,
         commitSize: context.commitDiff?.length || 0,
         filesChanged: context.filesChanged?.length || 0,
       },

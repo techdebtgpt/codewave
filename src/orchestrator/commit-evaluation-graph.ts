@@ -312,7 +312,6 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       console.log(
         `✅ Developer overview generated successfully (${formattedOverview.length} chars)`
       );
-      console.log(`🔍 [DEBUG] Developer overview tokens: ${devOverviewInputTokens} input / ${devOverviewOutputTokens} output ($${devOverviewCost.toFixed(4)})`);
 
       return {
         developerOverview: formattedOverview,
@@ -680,22 +679,15 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
     let roundOutputTokens = 0;
     let roundCost = 0;
 
-    console.log(`\n🔍 [DEBUG] Token accumulation for Round ${state.currentRound + 1}:`);
     for (const result of results) {
       if (result.tokenUsage) {
-        console.log(`  • ${result.agentName}: ${result.tokenUsage.inputTokens} input / ${result.tokenUsage.outputTokens} output`);
         roundInputTokens += result.tokenUsage.inputTokens;
         roundOutputTokens += result.tokenUsage.outputTokens;
 
         const costCalc = calculateCost(config.llm.provider, config.llm.model, result.tokenUsage);
         roundCost += costCalc.totalCost;
-      } else {
-        console.log(`  ⚠️  ${result.agentName}: NO TOKEN USAGE DATA`);
       }
     }
-    console.log(`  📊 Round total: ${roundInputTokens} input / ${roundOutputTokens} output ($${roundCost.toFixed(4)})`);
-    console.log(`  📊 Cumulative before round: ${state.totalInputTokens} input / ${state.totalOutputTokens} output ($${state.totalCost.toFixed(4)})`);
-    console.log(`  📊 Cumulative after round: ${state.totalInputTokens + roundInputTokens} input / ${state.totalOutputTokens + roundOutputTokens} output ($${(state.totalCost + roundCost).toFixed(4)})\n`);
 
     // Collect concerns raised by agents in this round (to pass to next round)
     // Each concern is attributed to the agent that raised it

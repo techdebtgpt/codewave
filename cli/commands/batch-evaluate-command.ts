@@ -137,6 +137,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
   // Helper to check if a message is a diagnostic log (should be filtered)
   const isDiagnosticLog = (args: any[]): boolean => {
     const message = String(args[0] || '');
+
     // Filter out vector store diagnostic logs
     if (message.includes('Found file via diff')) return true;
     if (message.includes('Line ') && message.includes(':')) return true;
