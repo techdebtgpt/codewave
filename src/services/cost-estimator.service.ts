@@ -40,13 +40,20 @@ export interface CostEstimate {
  * - Note: Actual multi-round discussions typically cost 30-50% more than single-round
  */
 export class CostEstimatorService {
-  // Real token usage data from actual evaluated commits:
-  // These represent AVERAGE per agent across all agents and rounds
-  private readonly AVG_INPUT_TOKENS_PER_AGENT = 11128; // Updated from real data
-  private readonly MAX_INPUT_TOKENS_PER_AGENT = 13083;
-  private readonly AVG_OUTPUT_TOKENS_PER_AGENT = 151; // Updated from real data
-  private readonly MAX_OUTPUT_TOKENS_PER_AGENT = 174;
-  private readonly NUM_AGENTS = 5; // 5 agents evaluate each commit
+  // Real token usage data from actual evaluated commits (Nov 2025):
+  // Multi-round evaluation with clarity-based iterations and early exit logic
+  // Data collected from 6 commits × 5 agents × 3 rounds = 90 agent evaluations
+  // - Round 0 (initial): 7,007 input, 595 output
+  // - Round 1 (discussion): 7,735 input, 687 output
+  // - Round 2 (final): 10,639 input, 1,295 output
+  // Average across all rounds: 8,461 input, 859 output per agent-round
+  private readonly AVG_INPUT_TOKENS_PER_AGENT = 8461; // Updated with actual data
+  private readonly MAX_INPUT_TOKENS_PER_AGENT = 10639; // Round 2 (final review)
+  private readonly AVG_OUTPUT_TOKENS_PER_AGENT = 859; // Updated with actual data (was 151!)
+  private readonly MAX_OUTPUT_TOKENS_PER_AGENT = 1295; // Round 2 final output
+  private readonly AVG_AGENTS_PER_COMMIT = 5; // 5 agents per commit
+  private readonly AVG_ROUNDS = 3; // Average 3 discussion rounds
+  private readonly NUM_AGENTS = this.AVG_AGENTS_PER_COMMIT * this.AVG_ROUNDS; // 15 agent-rounds per commit
 
   constructor(private config: AppConfig) {}
 
@@ -124,18 +131,19 @@ export class CostEstimatorService {
 
     if (!pricing) return;
 
-    const totalAgents = commitCount * this.NUM_AGENTS;
+    const totalAgentRounds = commitCount * this.NUM_AGENTS;
     const perCommitAverage = estimate.average.totalCost / commitCount;
-    const perAgentAverage = perCommitAverage / this.NUM_AGENTS;
+    const perAgentRoundAverage = perCommitAverage / this.NUM_AGENTS;
 
     console.log('💰 Cost Estimation:');
     console.log(`   Model: ${provider}/${model}`);
     console.log(`   Commits to evaluate: ${commitCount}`);
-    console.log(`   Agents per commit: ${this.NUM_AGENTS}`);
-    console.log(`   Total agent evaluations: ${totalAgents}\n`);
+    console.log(`   Agents per commit: ${this.AVG_AGENTS_PER_COMMIT}`);
+    console.log(`   Discussion rounds: ${this.AVG_ROUNDS}`);
+    console.log(`   Total agent-round evaluations: ${totalAgentRounds}\n`);
 
     console.log(
-      `   ℹ️  Note: These estimates are based on multi-round evaluations (typically 10 agents per commit after all discussion rounds)\n`
+      `   ℹ️  Note: Estimates based on multi-round evaluations (${this.AVG_AGENTS_PER_COMMIT} agents × ${this.AVG_ROUNDS} rounds per commit)\n`
     );
 
     console.log(`   📊 AVERAGE CASE (typical multi-round discussion):`);
@@ -143,7 +151,7 @@ export class CostEstimatorService {
       `     Total cost for ${commitCount} commits: ${formatCost(estimate.average.totalCost)}`
     );
     console.log(`     Per commit: ${formatCost(perCommitAverage)}`);
-    console.log(`     Per agent: ${formatCost(perAgentAverage)}`);
+    console.log(`     Per agent-round: ${formatCost(perAgentRoundAverage)}`);
     console.log(
       `     - Input:  ${estimate.average.inputTokens.toLocaleString()} tokens @ $${pricing.input.toFixed(2)}/M = ${formatCost(estimate.average.inputCost)}`
     );
