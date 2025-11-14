@@ -950,6 +950,9 @@ export function generateEnhancedHtmlReport(
     commitMessage?: string;
     commitDate?: string;
     developerOverview?: string;
+    filesChanged?: number;
+    insertions?: number;
+    deletions?: number;
   }
 ) {
   const groupedResults = groupResultsByAgent(results);
@@ -1507,6 +1510,35 @@ export function generateEnhancedHtmlReport(
           <div class="col-12 mb-3">
             <strong>💬 Commit Message:</strong><br>
             <div class="mt-2 p-3 bg-light rounded" style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 0.9rem;">${metadata.commitMessage}</div>
+          </div>
+          `
+              : ''
+          }
+          ${
+            metadata?.filesChanged !== undefined || metadata?.insertions !== undefined || metadata?.deletions !== undefined
+              ? `
+          <div class="col-12 mb-3">
+            <strong>📊 Commit Statistics:</strong><br>
+            <div class="mt-2 p-3 bg-light rounded" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; text-align: center;">
+              ${metadata?.filesChanged !== undefined ? `
+              <div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #667eea;">${metadata.filesChanged}</div>
+                <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Files Changed</div>
+              </div>
+              ` : ''}
+              ${metadata?.insertions !== undefined ? `
+              <div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #28a745;">+${metadata.insertions}</div>
+                <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Insertions</div>
+              </div>
+              ` : ''}
+              ${metadata?.deletions !== undefined ? `
+              <div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #dc3545;">-${metadata.deletions}</div>
+                <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Deletions</div>
+              </div>
+              ` : ''}
+            </div>
           </div>
           `
               : ''

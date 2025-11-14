@@ -91,6 +91,11 @@ export interface EvaluationMetadata {
   timestamp?: string;
   source?: string; // 'commit', 'staged', 'current', 'file'
   developerOverview?: string;
+  commitStats?: {
+    filesChanged: number;
+    insertions: number;
+    deletions: number;
+  };
 }
 
 /**
@@ -146,6 +151,9 @@ export async function saveEvaluationReports(options: SaveReportsOptions): Promis
     commitDate: metadata.commitDate,
     timestamp: metadata.timestamp || new Date().toISOString(),
     developerOverview,
+    filesChanged: metadata.commitStats?.filesChanged,
+    insertions: metadata.commitStats?.insertions,
+    deletions: metadata.commitStats?.deletions,
   });
 
   // 3. Generate conversation transcript

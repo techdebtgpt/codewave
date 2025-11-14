@@ -15,6 +15,7 @@ import {
   EvaluationMetadata,
   printEvaluateCompletionMessage,
 } from '../utils/shared.utils';
+import { parseCommitStats } from '../../src/common/utils/commit-utils';
 
 /**
  * Extract commit hash from diff content
@@ -472,6 +473,9 @@ export async function runEvaluateCommand(args: string[]) {
   // Create evaluation directory
   const outputDir = await createEvaluationDirectory(commitHash);
 
+  // Calculate commit statistics from diff
+  const commitStats = parseCommitStats(diff);
+
   // Prepare metadata
   const metadata: EvaluationMetadata = {
     timestamp: new Date().toISOString(),
@@ -481,6 +485,7 @@ export async function runEvaluateCommand(args: string[]) {
     commitDate,
     source,
     developerOverview: evaluationResult.developerOverview,
+    commitStats,
   };
 
   // Save all reports using shared utility

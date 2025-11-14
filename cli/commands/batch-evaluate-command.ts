@@ -18,6 +18,7 @@ import {
 } from '../utils/shared.utils';
 import { ProgressTracker } from '../utils/progress-tracker';
 import { CostEstimatorService } from '../../src/services/cost-estimator.service';
+import { parseCommitStats } from '../../src/common/utils/commit-utils';
 
 interface CommitInfo {
   hash: string;
@@ -367,6 +368,9 @@ export async function runBatchEvaluateCommand(args: string[]) {
         const shortHash = commit.hash.substring(0, 8);
         const commitOutputDir = await createEvaluationDirectory(shortHash);
 
+        // Calculate commit statistics from diff
+        const commitStats = parseCommitStats(diff);
+
         // Prepare metadata
         const metadata: EvaluationMetadata = {
           timestamp: new Date().toISOString(),
@@ -375,6 +379,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
           commitMessage: commit.message,
           commitDate: commit.date,
           source: 'batch',
+          commitStats,
         };
 
         // Save all reports using shared utility
