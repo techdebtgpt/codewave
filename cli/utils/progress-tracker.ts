@@ -70,8 +70,13 @@ function generateHeaderAndFormat(): { header: string; format: string; columnWidt
   const columnWidths = [9, 14, 20, 7, 22, 16, 17, 10, 7];
 
   // Generate colored header with proper padding
+  // Note: Analysis column (index 4) is NOT padded because it contains dynamic bar + agent
   const paddedHeaders = headers.map((h, i) => {
     const colored = `${colors.bright}${colors.cyan}${h}${colors.reset}`;
+    // Skip padding for Analysis column (index 4) since it contains the progress bar
+    if (i === 4) {
+      return colored;
+    }
     return padCellToWidth(colored, columnWidths[i]);
   });
   const header = `\n${paddedHeaders.join('  ')}\n`;
