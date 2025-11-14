@@ -55,28 +55,34 @@ function padCellToWidth(value: string, targetWidth: number, rightAlign: boolean 
 function generateHeaderAndFormat(): { header: string; format: string; columnWidths: number[] } {
   // Define headers and fixed column widths
   // These widths are chosen to accommodate typical values while maintaining readability
-  const headers = ['Commit', 'User', 'Diff', 'Chunks', 'Analysis', 'State', 'Tokens', 'Cost', 'Round'];
+  const headers = [
+    'Commit',
+    'User',
+    'Diff',
+    'Chunks',
+    'Analysis',
+    'State',
+    'Tokens',
+    'Cost',
+    'Round',
+  ];
 
   // Fixed column widths that work well with typical data
   // Commit: 7 chars for hash + 2 padding = 9
   // User: 12 chars for author + 2 padding = 14
   // Diff: 18 chars for "1000KB +12000/-5000" + 2 padding = 20
   // Chunks: 5 chars for "100/50" + 2 padding = 7
-  // Analysis (bar): 22 chars (progress bar width)
+  // Analysis (bar): 13 chars (progress bar width)
   // State: 14 chars for "complete/failed" + 2 padding = 16
   // Tokens: 15 chars for "9999999/9999999" + 2 padding = 17
   // Cost: 8 chars for "$99.9999" + 2 padding = 10
   // Round: 5 chars for "10/10" + 2 padding = 7
-  const columnWidths = [9, 14, 20, 7, 22, 16, 17, 10, 7];
+  const columnWidths = [9, 14, 20, 7, 13, 16, 17, 10, 7];
 
   // Generate colored header with proper padding
   // Note: Analysis column (index 4) is NOT padded because it contains dynamic bar + agent
   const paddedHeaders = headers.map((h, i) => {
     const colored = `${colors.bright}${colors.cyan}${h}${colors.reset}`;
-    // Skip padding for Analysis column (index 4) since it contains the progress bar
-    if (i === 4) {
-      return colored;
-    }
     return padCellToWidth(colored, columnWidths[i]);
   });
   const header = `\n${paddedHeaders.join('  ')}\n`;
@@ -121,7 +127,8 @@ export class ProgressTracker {
   private commits: Map<string, CommitProgress> = new Map();
   private commitProgress: Map<string, number> = new Map();
   private commitVectorProgress: Map<string, number> = new Map();
-  private commitDiffStats: Map<string, { sizeKB: string; additions: number; deletions: number }> = new Map(); // NEW: Track diff stats
+  private commitDiffStats: Map<string, { sizeKB: string; additions: number; deletions: number }> =
+    new Map(); // NEW: Track diff stats
   private commitChunks: Map<string, { chunks: number; files: number }> = new Map(); // NEW: Track chunks/files
   private commitState: Map<string, string> = new Map();
   private commitRound: Map<string, { current: number; max: number }> = new Map();
@@ -250,7 +257,11 @@ export class ProgressTracker {
     if (!bar) return;
 
     // Track diff stats (store once when provided)
-    if (update.diffSizeKB !== undefined && update.additions !== undefined && update.deletions !== undefined) {
+    if (
+      update.diffSizeKB !== undefined &&
+      update.additions !== undefined &&
+      update.deletions !== undefined
+    ) {
       this.commitDiffStats.set(commitHash, {
         sizeKB: update.diffSizeKB,
         additions: update.additions,
@@ -365,7 +376,11 @@ export class ProgressTracker {
     const currentState = this.commitState.get(commitHash) || `${colors.dim}pending${colors.reset}`;
 
     // Format diff stats
-    const diffStats = this.commitDiffStats.get(commitHash) || { sizeKB: '0KB', additions: 0, deletions: 0 };
+    const diffStats = this.commitDiffStats.get(commitHash) || {
+      sizeKB: '0KB',
+      additions: 0,
+      deletions: 0,
+    };
     const diffColor = diffStats.sizeKB !== '0KB' ? colors.white : colors.dim;
     const diffStr = `${diffColor}${diffStats.sizeKB} +${diffStats.additions}/-${diffStats.deletions}${colors.reset}`;
 
@@ -425,7 +440,9 @@ export class ProgressTracker {
         const commit = this.commits.get(commitHash);
         const shortHash = commit?.shortHash || commitHash.substring(0, 7);
         const author = commit?.author || 'unknown';
-        console.log(`  ${colors.red}●${colors.reset} ${colors.bright}${shortHash}${colors.reset} (${author})`);
+        console.log(
+          `  ${colors.red}●${colors.reset} ${colors.bright}${shortHash}${colors.reset} (${author})`
+        );
         console.log(`    ${colors.dim}Error: ${errorMessage}${colors.reset}\n`);
       }
     }
