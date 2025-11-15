@@ -531,6 +531,7 @@ CLI Arguments > Project Config > User Config > Defaults
 ```
 
 **How it works**:
+
 1. **Defaults** - Built-in sensible defaults
 2. **User Config** - Global settings from `~/.codewave/config.json` (or `%APPDATA%\codewave\config.json` on Windows)
 3. **Project Config** - Local settings from `.codewave.config.json` in project root
@@ -744,6 +745,7 @@ CodeWave provides three configurable depth modes that control the thoroughness o
 - **Self-Refinement**: Skipped for speed
 
 **Usage**:
+
 ```bash
 # Single evaluation
 codewave evaluate HEAD --depth fast
@@ -766,6 +768,7 @@ codewave batch --count 50 --depth fast
 - **Self-Refinement**: Active (agents refine their analysis)
 
 **Usage**:
+
 ```bash
 # Single evaluation (default)
 codewave evaluate HEAD
@@ -789,6 +792,7 @@ codewave batch --count 20 --depth normal
 - **Self-Refinement**: Full multi-pass refinement
 
 **Usage**:
+
 ```bash
 # Single evaluation
 codewave evaluate HEAD --depth deep
@@ -822,24 +826,24 @@ This creates more thoughtful, comprehensive evaluations but takes longer.
 
 #### Choosing the Right Depth Mode
 
-| Scenario | Recommended Mode | Reasoning |
-|----------|------------------|-----------|
-| Pre-commit validation | Fast | Speed matters, basic quality checks |
-| CI/CD pipeline | Fast | Quick feedback, cost-effective |
-| Code review preparation | Normal | Balanced analysis, good quality |
-| Team retrospectives | Normal | Standard depth sufficient |
-| Architecture review | Deep | Maximum insight needed |
-| Tech debt assessment | Deep | Comprehensive analysis required |
-| Production incident | Deep | Critical decisions require thoroughness |
-| Large refactoring | Deep | Need to understand all implications |
+| Scenario                | Recommended Mode | Reasoning                               |
+| ----------------------- | ---------------- | --------------------------------------- |
+| Pre-commit validation   | Fast             | Speed matters, basic quality checks     |
+| CI/CD pipeline          | Fast             | Quick feedback, cost-effective          |
+| Code review preparation | Normal           | Balanced analysis, good quality         |
+| Team retrospectives     | Normal           | Standard depth sufficient               |
+| Architecture review     | Deep             | Maximum insight needed                  |
+| Tech debt assessment    | Deep             | Comprehensive analysis required         |
+| Production incident     | Deep             | Critical decisions require thoroughness |
+| Large refactoring       | Deep             | Need to understand all implications     |
 
 #### Cost Comparison (using Claude 3.5 Sonnet)
 
-| Depth Mode | Tokens/Commit | Cost/Commit | Cost/100 Commits |
-|------------|---------------|-------------|------------------|
-| Fast | ~2,000-3,000 | $0.01-0.015 | $1.00-1.50 |
-| Normal | ~3,000-5,000 | $0.015-0.025 | $1.50-2.50 |
-| Deep | ~5,000-8,000 | $0.025-0.040 | $2.50-4.00 |
+| Depth Mode | Tokens/Commit | Cost/Commit  | Cost/100 Commits |
+| ---------- | ------------- | ------------ | ---------------- |
+| Fast       | ~2,000-3,000  | $0.01-0.015  | $1.00-1.50       |
+| Normal     | ~3,000-5,000  | $0.015-0.025 | $1.50-2.50       |
+| Deep       | ~5,000-8,000  | $0.025-0.040 | $2.50-4.00       |
 
 #### Setting Default Depth Mode
 
@@ -943,17 +947,17 @@ codewave batch --count 100 --verbose
 
 **Progress Table Columns**:
 
-| Column | Description | Example |
-|--------|-------------|---------|
-| **Commit** | Short SHA (7 chars) | `e48066e` |
-| **User** | Author username | `john-doe` |
-| **Diff** | Size and line changes | `125.3KB +234/-89` |
-| **Chunks** | RAG indexing stats | `45/8` (45 chunks from 8 files) |
-| **Analysis** | Progress bar + current agent | `████████░░░░ [architect...]` |
-| **State** | Current evaluation status | `analyzing`, `done`, `failed` |
-| **Tokens** | Input/output token usage | `85,011/10,500` |
-| **Cost** | Estimated cost in USD | `$0.0191` |
-| **Round** | Current discussion round | `3/3` |
+| Column       | Description                  | Example                         |
+| ------------ | ---------------------------- | ------------------------------- |
+| **Commit**   | Short SHA (7 chars)          | `e48066e`                       |
+| **User**     | Author username              | `john-doe`                      |
+| **Diff**     | Size and line changes        | `125.3KB +234/-89`              |
+| **Chunks**   | RAG indexing stats           | `45/8` (45 chunks from 8 files) |
+| **Analysis** | Progress bar + current agent | `████████░░░░ [architect...]`   |
+| **State**    | Current evaluation status    | `analyzing`, `done`, `failed`   |
+| **Tokens**   | Input/output token usage     | `85,011/10,500`                 |
+| **Cost**     | Estimated cost in USD        | `$0.0191`                       |
+| **Round**    | Current discussion round     | `3/3`                           |
 
 **Example Output**:
 

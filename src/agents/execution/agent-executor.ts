@@ -113,9 +113,8 @@ export class AgentExecutor {
 
     // Add internal iteration metrics for progress tracking
     result.internalIterations = finalState.iterationCount;
-    result.clarityScore = finalState.clarityScore !== undefined
-      ? Math.round(finalState.clarityScore * 100)
-      : undefined;
+    result.clarityScore =
+      finalState.clarityScore !== undefined ? Math.round(finalState.clarityScore * 100) : undefined;
 
     return result;
   }
@@ -153,9 +152,7 @@ export class AgentExecutor {
             if (typeof value === 'number' || value === null) {
               filteredMetrics[pillar] = value;
             } else {
-              console.warn(
-                `${this.metadata.name}: Invalid type for ${pillar}, setting to null`
-              );
+              console.warn(`${this.metadata.name}: Invalid type for ${pillar}, setting to null`);
               filteredMetrics[pillar] = null;
             }
           } else {

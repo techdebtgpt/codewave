@@ -260,9 +260,10 @@ function groupResultsByAgent(results: AgentResult[]): Map<string, AgentEvaluatio
     const round = occurrences;
 
     // Use structured concerns from agent if available, fallback to regex extraction
-    const concerns = result.concerns && result.concerns.length > 0
-      ? result.concerns
-      : extractConcerns(result.details || '');
+    const concerns =
+      result.concerns && result.concerns.length > 0
+        ? result.concerns
+        : extractConcerns(result.details || '');
 
     const references = extractReferences(result.summary || '', result.details || '');
 
@@ -306,7 +307,11 @@ function calculateMetricEvolution(
   groupedResults: Map<string, AgentEvaluation[]>
 ): MetricEvolution[] {
   // Import centralized pillar constants and weight functions
-  const { SEVEN_PILLARS, getAgentWeight, calculateWeightedAverage } = require('../constants/agent-weights.constants');
+  const {
+    SEVEN_PILLARS,
+    getAgentWeight,
+    calculateWeightedAverage,
+  } = require('../constants/agent-weights.constants');
 
   const metricMap = new Map<string, MetricEvolution>();
 
@@ -358,7 +363,8 @@ function calculateMetricEvolution(
           const firstRound = Math.min(...Array.from(metricEvolution.rounds.keys()));
           const firstValue = metricEvolution.rounds.get(firstRound);
           if (round > firstRound && firstValue !== undefined) {
-            metricEvolution.changed = metricEvolution.changed || Math.abs(firstValue - consensusScore) > 0.01;
+            metricEvolution.changed =
+              metricEvolution.changed || Math.abs(firstValue - consensusScore) > 0.01;
           }
         }
       });
@@ -372,9 +378,7 @@ function calculateMetricEvolution(
 /**
  * Calculate consensus values with contributor tracking
  */
-function calculateConsensusValues(
-  groupedResults: Map<string, AgentEvaluation[]>
-): Map<
+function calculateConsensusValues(groupedResults: Map<string, AgentEvaluation[]>): Map<
   string,
   {
     value: number | null;
@@ -1026,16 +1030,17 @@ export function generateEnhancedHtmlReport(
   const netDebtValue = technicalDebtValue - debtReductionValue;
 
   // Filter out individual debt metrics and add NET debt instead
-  const displayMetrics = Object.entries(finalPillarScores)
-    .filter(([metric]) => metric !== 'technicalDebtHours' && metric !== 'debtReductionHours');
+  const displayMetrics = Object.entries(finalPillarScores).filter(
+    ([metric]) => metric !== 'technicalDebtHours' && metric !== 'debtReductionHours'
+  );
 
   // Add NET debt as a composite metric
   displayMetrics.push([
     'netDebt',
     {
       value: netDebtValue,
-      agent: finalPillarScores['technicalDebtHours']?.agent || 'Team'
-    }
+      agent: finalPillarScores['technicalDebtHours']?.agent || 'Team',
+    },
   ]);
 
   const pillarSummaryHtml = `
@@ -1092,12 +1097,18 @@ export function generateEnhancedHtmlReport(
               } else if (metric === 'netDebt') {
                 formattedValue = `${data.value > 0 ? '+' : ''}${data.value.toFixed(1)}h`;
               } else {
-                formattedValue = metadata
-                  ? metadata.format(data.value)
-                  : data.value.toFixed(1);
+                formattedValue = metadata ? metadata.format(data.value) : data.value.toFixed(1);
               }
-              const scale = metadata ? metadata.scale : (metric === 'netDebt' ? 'Positive = added debt, Negative = removed debt' : '');
-              const tooltip = metadata ? metadata.tooltip : (metric === 'netDebt' ? 'Net technical debt: debt introduced minus debt removed' : '');
+              const scale = metadata
+                ? metadata.scale
+                : metric === 'netDebt'
+                  ? 'Positive = added debt, Negative = removed debt'
+                  : '';
+              const tooltip = metadata
+                ? metadata.tooltip
+                : metric === 'netDebt'
+                  ? 'Net technical debt: debt introduced minus debt removed'
+                  : '';
 
               return `
               <div class="col-md-6 mb-2">
@@ -1362,19 +1373,33 @@ export function generateEnhancedHtmlReport(
                     .join('')}
                   <!-- NET Debt column -->
                   ${(() => {
-                    const techDebtMetric = metricEvolution.find(e => e.metric === 'technicalDebtHours');
-                    const debtReductionMetric = metricEvolution.find(e => e.metric === 'debtReductionHours');
+                    const techDebtMetric = metricEvolution.find(
+                      (e) => e.metric === 'technicalDebtHours'
+                    );
+                    const debtReductionMetric = metricEvolution.find(
+                      (e) => e.metric === 'debtReductionHours'
+                    );
                     const techDebtValue = techDebtMetric?.rounds.get(roundNum) ?? 0;
                     const debtReductionValue = debtReductionMetric?.rounds.get(roundNum) ?? 0;
                     const netDebt = techDebtValue - debtReductionValue;
 
-                    const prevTechDebt = roundNum > minRound ? techDebtMetric?.rounds.get(roundNum - 1) ?? 0 : undefined;
-                    const prevDebtReduction = roundNum > minRound ? debtReductionMetric?.rounds.get(roundNum - 1) ?? 0 : undefined;
-                    const prevNetDebt = prevTechDebt !== undefined && prevDebtReduction !== undefined ? prevTechDebt - prevDebtReduction : undefined;
+                    const prevTechDebt =
+                      roundNum > minRound
+                        ? (techDebtMetric?.rounds.get(roundNum - 1) ?? 0)
+                        : undefined;
+                    const prevDebtReduction =
+                      roundNum > minRound
+                        ? (debtReductionMetric?.rounds.get(roundNum - 1) ?? 0)
+                        : undefined;
+                    const prevNetDebt =
+                      prevTechDebt !== undefined && prevDebtReduction !== undefined
+                        ? prevTechDebt - prevDebtReduction
+                        : undefined;
 
                     let netDebtContent = netDebt.toFixed(1);
                     let netDebtStyle = '';
-                    let netDebtColor = netDebt > 0 ? '#dc3545' : netDebt < 0 ? '#28a745' : '#6c757d';
+                    let netDebtColor =
+                      netDebt > 0 ? '#dc3545' : netDebt < 0 ? '#28a745' : '#6c757d';
 
                     // Add change indicator
                     if (prevNetDebt !== undefined) {
@@ -1382,12 +1407,27 @@ export function generateEnhancedHtmlReport(
                       if (Math.abs(diff) > 0.05) {
                         const arrow = diff > 0 ? '↑' : '↓';
                         const arrowColor = diff > 0 ? '#dc3545' : '#28a745';
-                        netDebtContent = '<span style="color: ' + arrowColor + '; font-weight: 600;">' + arrow + ' ' + netDebtContent + '</span>';
+                        netDebtContent =
+                          '<span style="color: ' +
+                          arrowColor +
+                          '; font-weight: 600;">' +
+                          arrow +
+                          ' ' +
+                          netDebtContent +
+                          '</span>';
                         netDebtStyle = 'background-color: rgba(0,0,0,0.02);';
                       }
                     }
 
-                    return '<td style="text-align: center; color: ' + netDebtColor + '; font-weight: 600; ' + netDebtStyle + '; padding: 0.75rem 0.5rem;">' + netDebtContent + '</td>';
+                    return (
+                      '<td style="text-align: center; color: ' +
+                      netDebtColor +
+                      '; font-weight: 600; ' +
+                      netDebtStyle +
+                      '; padding: 0.75rem 0.5rem;">' +
+                      netDebtContent +
+                      '</td>'
+                    );
                   })()}
                 </tr>
               `;
@@ -1596,29 +1636,43 @@ export function generateEnhancedHtmlReport(
               : ''
           }
           ${
-            metadata?.filesChanged !== undefined || metadata?.insertions !== undefined || metadata?.deletions !== undefined
+            metadata?.filesChanged !== undefined ||
+            metadata?.insertions !== undefined ||
+            metadata?.deletions !== undefined
               ? `
           <div class="col-12 mb-3">
             <strong>📊 Commit Statistics:</strong><br>
             <div class="mt-2 p-3 bg-light rounded" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; text-align: center;">
-              ${metadata?.filesChanged !== undefined ? `
+              ${
+                metadata?.filesChanged !== undefined
+                  ? `
               <div>
                 <div style="font-size: 1.8rem; font-weight: bold; color: #667eea;">${metadata.filesChanged}</div>
                 <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Files Changed</div>
               </div>
-              ` : ''}
-              ${metadata?.insertions !== undefined ? `
+              `
+                  : ''
+              }
+              ${
+                metadata?.insertions !== undefined
+                  ? `
               <div>
                 <div style="font-size: 1.8rem; font-weight: bold; color: #28a745;">+${metadata.insertions}</div>
                 <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Insertions</div>
               </div>
-              ` : ''}
-              ${metadata?.deletions !== undefined ? `
+              `
+                  : ''
+              }
+              ${
+                metadata?.deletions !== undefined
+                  ? `
               <div>
                 <div style="font-size: 1.8rem; font-weight: bold; color: #dc3545;">-${metadata.deletions}</div>
                 <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Deletions</div>
               </div>
-              ` : ''}
+              `
+                  : ''
+              }
             </div>
           </div>
           `

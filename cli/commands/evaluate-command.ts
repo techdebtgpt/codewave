@@ -319,13 +319,16 @@ export async function runEvaluateCommand(args: string[]) {
     // These should NOT be filtered even if they match other patterns
     if (message.includes('📋 Round') && message.includes('Summary:')) return false;
     if (message.includes('💰 Tokens:') && message.includes('Cost:')) return false;
-    if (message.includes('🎯 Team Convergence:') || message.includes('🔄 Team Convergence:')) return false;
+    if (message.includes('🎯 Team Convergence:') || message.includes('🔄 Team Convergence:'))
+      return false;
     if (message.includes('💭 Team raised') && message.includes('concern')) return false;
-    if (message.includes('✅') && message.includes('% clarity (') && message.includes('iteration')) return false;
+    if (message.includes('✅') && message.includes('% clarity (') && message.includes('iteration'))
+      return false;
     if (message.includes('✅ Completed:') && message.includes('agent')) return false;
     if (message.includes('🚀 Starting') && message.includes('agent')) return false;
     // Allow round start headers
-    if (message.match(/🔄.*Round \d+\/\d+ \((Initial Analysis|Team Discussion|Final Review)\)/)) return false;
+    if (message.match(/🔄.*Round \d+\/\d+ \((Initial Analysis|Team Discussion|Final Review)\)/))
+      return false;
     // Allow final evaluation summary
     if (message.includes('✅ Evaluation complete in')) return false;
     if (message.includes('Total agents:')) return false;
@@ -367,8 +370,10 @@ export async function runEvaluateCommand(args: string[]) {
     if (message.includes('Starting initial analysis (iteration')) return true;
     if (message.includes('Refining analysis (iteration')) return true;
     if (message.includes('Clarity ') && message.includes('% (threshold:')) return true;
-    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: ')) return true;
-    if (message.includes('📊') && message.includes('[Round ') && message.includes(']: ')) return true;
+    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: '))
+      return true;
+    if (message.includes('📊') && message.includes('[Round ') && message.includes(']: '))
+      return true;
     if (message.includes('🔍 [Round ') && message.includes('] Executing ')) return true;
     // Filter HTML formatter diagnostic logs
     if (message.includes('Detected') && message.includes('unique agents:')) return true;

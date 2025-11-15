@@ -466,7 +466,10 @@ async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
     const finalAgents = results.agents.slice(-5);
 
     // Import weight functions for weighted averaging
-    const { getAgentWeight, calculateWeightedAverage } = require('../../src/constants/agent-weights.constants');
+    const {
+      getAgentWeight,
+      calculateWeightedAverage,
+    } = require('../../src/constants/agent-weights.constants');
 
     // Metric names for weighted calculation
     const metrics = [
@@ -615,7 +618,8 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
       overallMetrics.avgTestCoverage += item.metrics.testCoverage || 0;
       overallMetrics.avgActualTime += item.metrics.actualTimeHours || 0;
       // Calculate NET debt (debt introduced - debt reduction)
-      const netDebt = (item.metrics.technicalDebtHours || 0) - (item.metrics.debtReductionHours || 0);
+      const netDebt =
+        (item.metrics.technicalDebtHours || 0) - (item.metrics.debtReductionHours || 0);
       overallMetrics.totalTechDebt += netDebt;
       overallMetrics.count++;
     }

@@ -182,42 +182,44 @@ export class CombinedRAGHelper {
 
     // Sort all results by score and take top results (limit to avoid overwhelming context)
     const maxResults = 10; // Maximum 10 code snippets total
-    const topResults = allResults
-      .sort((a, b) => b.score - a.score)
-      .slice(0, maxResults);
+    const topResults = allResults.sort((a, b) => b.score - a.score).slice(0, maxResults);
 
     // Format consolidated results
-    const formattedChunks = topResults.map((result, idx) => {
-      const relevancePercent = (result.score * 100).toFixed(1);
+    const formattedChunks = topResults
+      .map((result, idx) => {
+        const relevancePercent = (result.score * 100).toFixed(1);
 
-      if (result.source === 'diff') {
-        const { file, hunkStartLine, changeType } = result.metadata;
-        const contentLines = result.content.split('\n');
-        const maxLines = 30;
-        const truncated = contentLines.length > maxLines;
+        if (result.source === 'diff') {
+          const { file, hunkStartLine, changeType } = result.metadata;
+          const contentLines = result.content.split('\n');
+          const maxLines = 30;
+          const truncated = contentLines.length > maxLines;
 
-        return [
-          `**[${idx + 1}] ${file}** (${changeType}, line ${hunkStartLine}, ${relevancePercent}% match)`,
-          '```diff',
-          contentLines.slice(0, maxLines).join('\n'),
-          truncated ? '... (truncated)' : '',
-          '```',
-        ].join('\n');
-      }
+          return [
+            `**[${idx + 1}] ${file}** (${changeType}, line ${hunkStartLine}, ${relevancePercent}% match)`,
+            '```diff',
+            contentLines.slice(0, maxLines).join('\n'),
+            truncated ? '... (truncated)' : '',
+            '```',
+          ].join('\n');
+        }
 
-      return ''; // No doc results in current implementation
-    }).filter(Boolean);
+        return ''; // No doc results in current implementation
+      })
+      .filter(Boolean);
 
     const consolidatedResults = formattedChunks.join('\n\n');
 
     // Return single consolidated response
-    return [{
-      query: `${queries.length} concern(s)`,
-      results: consolidatedResults,
-      diffResults: totalDiffResults,
-      docResults: totalDocResults,
-      relevantFiles: allRelevantFiles,
-    }];
+    return [
+      {
+        query: `${queries.length} concern(s)`,
+        results: consolidatedResults,
+        diffResults: totalDiffResults,
+        docResults: totalDocResults,
+        relevantFiles: allRelevantFiles,
+      },
+    ];
   }
 
   /**

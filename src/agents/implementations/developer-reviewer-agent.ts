@@ -17,7 +17,8 @@ export class DeveloperReviewerAgent extends BaseAgent {
   protected readonly metadata: AgentMetadata = {
     name: 'developer-reviewer',
     role: 'Developer Reviewer',
-    description: 'Reviews code quality, suggests improvements, and evaluates implementation details',
+    description:
+      'Reviews code quality, suggests improvements, and evaluates implementation details',
     roleDescription: 'code quality, readability, and best practices perspective',
   };
 
@@ -86,7 +87,7 @@ Return your analysis as JSON with all 8 metrics, even if some are outside your p
             q: c.concern,
             topK: 2,
             store: 'diff' as const,
-            purpose: `Investigating concern from ${c.agentName}`
+            purpose: `Investigating concern from ${c.agentName}`,
           }));
         } else {
           queries = getInitialQueriesForRole(this.metadata.name);
@@ -110,9 +111,8 @@ ${context.commitDiff}
     }
 
     // Developer overview section (only in Round 1)
-    const developerSection = isFirstRound && context.developerOverview
-      ? `${context.developerOverview}\n\n---\n\n`
-      : '';
+    const developerSection =
+      isFirstRound && context.developerOverview ? `${context.developerOverview}\n\n---\n\n` : '';
 
     // Build previous round context section (Round 2+)
     let previousRoundContext = '';
@@ -199,14 +199,18 @@ Return ONLY valid JSON with this structure:
     "debtReductionHours": <hours estimate, 0-40>
   },
   "concerns": ["List quality concerns"],
-  "confidenceLevel": <0-100, your confidence in this analysis>${context.isFinalRound ? `,
+  "confidenceLevel": <0-100, your confidence in this analysis>${
+    context.isFinalRound
+      ? `,
   "finalSynthesis": {
     "summary": "Consolidated summary across all ${(context.currentRound || 0) + 1} rounds from your perspective",
     "details": "Full analysis incorporating insights from all rounds and team discussions - this is your complete evaluation",
     "metrics": { <same as above - your final scores> },
     "unresolvedConcerns": ["Only concerns that remain unclear/unresolved for you specifically"],
     "evolutionNotes": "How your analysis evolved across rounds"
-  }` : ''}
+  }`
+      : ''
+  }
 }
 \`\`\`
 

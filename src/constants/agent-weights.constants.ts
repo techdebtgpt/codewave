@@ -133,7 +133,7 @@ export function normalizeAgentName(agentName: string): string {
   // Map display names to technical keys
   const nameMap: Record<string, string> = {
     'business analyst': 'business-analyst',
-    'sdet': 'sdet',
+    sdet: 'sdet',
     'sdet (test automation engineer)': 'sdet',
     'test automation engineer': 'sdet',
     'developer (author)': 'developer-author',

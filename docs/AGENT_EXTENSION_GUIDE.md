@@ -49,13 +49,13 @@ export class SecurityReviewerAgent extends BaseAgent {
 
   // Define expertise weights (must sum to ~1.0 across all 7 pillars)
   protected readonly expertise: AgentExpertise = {
-    functionalImpact: 0.15,      // Security affects functionality
-    idealTimeHours: 0.1,          // Limited time estimation
-    testCoverage: 0.2,            // Security testing important
-    codeQuality: 0.3,             // PRIMARY: Security code quality
-    codeComplexity: 0.15,         // Security complexity
-    actualTimeHours: 0.05,        // Limited time tracking
-    technicalDebtHours: 0.05,     // Security debt
+    functionalImpact: 0.15, // Security affects functionality
+    idealTimeHours: 0.1, // Limited time estimation
+    testCoverage: 0.2, // Security testing important
+    codeQuality: 0.3, // PRIMARY: Security code quality
+    codeComplexity: 0.15, // Security complexity
+    actualTimeHours: 0.05, // Limited time tracking
+    technicalDebtHours: 0.05, // Security debt
   };
 
   // Define system instructions (clear, complete prompt)

@@ -10,5 +10,5 @@ export {
   AgentMetadata,
   AgentExpertise,
   AgentConfiguration,
-  categorizeExpertise
+  categorizeExpertise,
 } from './agent-metadata';

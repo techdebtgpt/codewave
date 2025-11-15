@@ -152,12 +152,7 @@ async function evaluateClarity(state: typeof AgentInternalState.State, _config: 
 async function refineAnalysis(
   state: typeof AgentInternalState.State,
   config: any,
-  refinementPromptBuilder: (
-    ctx: any,
-    prev: string,
-    questions: string[],
-    clarity: number
-  ) => string,
+  refinementPromptBuilder: (ctx: any, prev: string, questions: string[], clarity: number) => string,
   depthConfig: DepthModeConfig
 ) {
   const nextIteration = state.iterationCount + 1;
@@ -263,12 +258,7 @@ function createShouldContinueIterating(depthConfig: DepthModeConfig) {
 export function createAgentInternalGraph(
   config: any,
   promptBuilder: (context: any) => Promise<string>,
-  refinementPromptBuilder: (
-    ctx: any,
-    prev: string,
-    questions: string[],
-    clarity: number
-  ) => string,
+  refinementPromptBuilder: (ctx: any, prev: string, questions: string[], clarity: number) => string,
   depthConfig: DepthModeConfig
 ) {
   // Create the conditional edge function with depthConfig in closure

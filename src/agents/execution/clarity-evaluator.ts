@@ -34,9 +34,9 @@ interface ClarityCriteria {
   hasConfidence: boolean;
 
   // Layer 2: Quality & reasoning (forces refinement)
-  summaryQuality: boolean;        // Summary mentions specific metrics or concerns
-  detailsQuality: boolean;        // Details show substantive analysis
-  metricsJustified: boolean;      // Scores are explained/justified in details
+  summaryQuality: boolean; // Summary mentions specific metrics or concerns
+  detailsQuality: boolean; // Details show substantive analysis
+  metricsJustified: boolean; // Scores are explained/justified in details
 }
 
 /**
@@ -46,15 +46,15 @@ interface ClarityCriteria {
  */
 const CLARITY_WEIGHTS: Record<keyof ClarityCriteria, number> = {
   // Layer 1: Structural (40% total)
-  hasSummary: 0.10,
-  hasDetails: 0.10,
-  hasMetrics: 0.10,
+  hasSummary: 0.1,
+  hasDetails: 0.1,
+  hasMetrics: 0.1,
   metricsNotNull: 0.05,
   hasReasonableScores: 0.05,
-  hasConfidence: 0.00,  // Removed from scoring (always present)
+  hasConfidence: 0.0, // Removed from scoring (always present)
 
   // Layer 2: Quality (60% total)
-  summaryQuality: 0.20,
+  summaryQuality: 0.2,
   detailsQuality: 0.25,
   metricsJustified: 0.15,
 };
@@ -71,8 +71,15 @@ function evaluateSummaryQuality(summary: string, _metrics: any): boolean {
   const lowerSummary = summary.toLowerCase();
 
   // Check for generic phrases that indicate lack of specificity
-  const genericPhrases = ['needs review', 'further analysis', 'requires improvement', 'should be evaluated'];
-  const isGeneric = genericPhrases.some((phrase) => lowerSummary.includes(phrase) && summary.length < 80);
+  const genericPhrases = [
+    'needs review',
+    'further analysis',
+    'requires improvement',
+    'should be evaluated',
+  ];
+  const isGeneric = genericPhrases.some(
+    (phrase) => lowerSummary.includes(phrase) && summary.length < 80
+  );
 
   if (isGeneric) {
     return false; // Too generic
@@ -86,9 +93,8 @@ function evaluateSummaryQuality(summary: string, _metrics: any): boolean {
     );
 
   // 2. Mentions specific concerns (refactoring, debt, architecture, performance, etc.)
-  const hasSpecificConcerns = /refactor|debt|architecture|performance|complexity|maintainability|risk/i.test(
-    summary
-  );
+  const hasSpecificConcerns =
+    /refactor|debt|architecture|performance|complexity|maintainability|risk/i.test(summary);
 
   // 3. References multiple areas (multiple commas, semicolons suggest broader analysis)
   const hasMultiplePoints = (summary.match(/[,;]/g) || []).length >= 2;
@@ -107,19 +113,20 @@ function evaluateDetailsQuality(details: string, _summary: string): boolean {
 
   // Check for substantive indicators:
   // 1. References specific technical concepts
-  const hasSubstantiveContent = /(?:function|class|method|loop|branch|conditional|exception|error handling|test|mock|interface|abstract|inheritance|encapsulation|cohesion|coupling)/i.test(
-    details
-  );
+  const hasSubstantiveContent =
+    /(?:function|class|method|loop|branch|conditional|exception|error handling|test|mock|interface|abstract|inheritance|encapsulation|cohesion|coupling)/i.test(
+      details
+    );
 
   // 2. Contains detailed reasoning (words like "because", "since", "due to")
-  const hasReasoning = /because|since|due to|therefore|however|moreover|moreover|specifically|notably/i.test(
-    details
-  );
+  const hasReasoning =
+    /because|since|due to|therefore|however|moreover|moreover|specifically|notably/i.test(details);
 
   // 3. Makes specific observations (numbers, file types, patterns)
-  const hasSpecificObservations = /\d+\s*(?:files?|functions?|classes?|lines?|changes?)|\.(?:ts|js|py|go|java|rs)|nested|cyclomatic|depth|circular/i.test(
-    details
-  );
+  const hasSpecificObservations =
+    /\d+\s*(?:files?|functions?|classes?|lines?|changes?)|\.(?:ts|js|py|go|java|rs)|nested|cyclomatic|depth|circular/i.test(
+      details
+    );
 
   return hasSubstantiveContent && (hasReasoning || hasSpecificObservations);
 }
@@ -148,9 +155,10 @@ function evaluateMetricsJustification(metrics: any, details: string): boolean {
   }
 
   // Check for scoring indicators (e.g., "why complexity is X", "justifies score")
-  const hasScoringLogic = /(?:complexity|quality|impact|coverage|debt)[\s]*(?:is|=|:|of)[\s]*\d+|score|rated|assessed|evaluated|given|warrant/i.test(
-    details
-  );
+  const hasScoringLogic =
+    /(?:complexity|quality|impact|coverage|debt)[\s]*(?:is|=|:|of)[\s]*\d+|score|rated|assessed|evaluated|given|warrant/i.test(
+      details
+    );
 
   // Details should demonstrate scoring logic or be substantial enough
   return hasScoringLogic || details.length > minDetailsLength * 1.5;
@@ -232,8 +240,7 @@ export function evaluateClarity(
     hasSummary: !!summary && summary.length > 20,
     hasDetails: !!details && details.length > 50,
     hasMetrics: !!metrics && Object.keys(metrics).length === 7,
-    metricsNotNull:
-      metrics && Object.values(metrics).filter((v) => v !== null).length >= 5,
+    metricsNotNull: metrics && Object.values(metrics).filter((v) => v !== null).length >= 5,
     hasReasonableScores:
       metrics &&
       Object.values(metrics).every(

@@ -183,14 +183,18 @@ export async function runBatchEvaluateCommand(args: string[]) {
     if (message.includes('Starting initial analysis (iteration')) return true;
     if (message.includes('Refining analysis (iteration')) return true;
     if (message.includes('Clarity ') && message.includes('% (threshold:')) return true;
-    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Starting')) return true;
-    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Refining')) return true;
-    if (message.includes('📊') && message.includes('[Round ') && message.includes(']: Clarity')) return true;
+    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Starting'))
+      return true;
+    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Refining'))
+      return true;
+    if (message.includes('📊') && message.includes('[Round ') && message.includes(']: Clarity'))
+      return true;
     if (message.includes('🔍 [Round ') && message.includes('] Executing ')) return true;
     // Filter out round summary logs (these are verbose in batch mode)
     if (message.includes('📋 Round') && message.includes('Summary:')) return true;
     if (message.includes('✅ Completed:') && message.includes('agents')) return true;
-    if (message.includes('✅') && message.includes('clarity (') && message.includes('iteration')) return true;
+    if (message.includes('✅') && message.includes('clarity (') && message.includes('iteration'))
+      return true;
     if (message.includes('🔄 Team Convergence:')) return true;
     if (message.includes('💭 Team raised') && message.includes('concern')) return true;
     return false;
@@ -339,7 +343,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
 
                 // Calculate granular progress: (completed rounds + agent progress in current round)
                 const roundProgress = currentRound / maxRounds;
-                const agentProgressInRound = (completedAgents / totalAgents) / maxRounds;
+                const agentProgressInRound = completedAgents / totalAgents / maxRounds;
                 const totalProgress = Math.floor((roundProgress + agentProgressInRound) * 100);
 
                 // Update progress bar (more frequent updates now)
@@ -745,7 +749,7 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
             <td class="text-center">${result.metrics.codeComplexity.toFixed(1)}</td>
             <td class="text-center">${(() => {
               const netDebt = result.metrics.technicalDebtHours - result.metrics.debtReductionHours;
-              const color = netDebt > 0 ? '#dc3545' : (netDebt < 0 ? '#28a745' : '#6c757d');
+              const color = netDebt > 0 ? '#dc3545' : netDebt < 0 ? '#28a745' : '#6c757d';
               const sign = netDebt > 0 ? '+' : '';
               return `<span style="color: ${color}; font-weight: bold;">${sign}${netDebt.toFixed(1)}h</span>`;
             })()}</td>
@@ -765,7 +769,10 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
         codeComplexity:
           commits.reduce((sum, c) => sum + c.metrics.codeComplexity, 0) / commits.length,
         technicalDebtHours: commits.reduce((sum, c) => sum + c.metrics.technicalDebtHours, 0),
-        debtReductionHours: commits.reduce((sum, c) => sum + (c.metrics.debtReductionHours || 0), 0),
+        debtReductionHours: commits.reduce(
+          (sum, c) => sum + (c.metrics.debtReductionHours || 0),
+          0
+        ),
       };
 
       return `
@@ -778,7 +785,7 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
                 <td class="text-center">${avgMetrics.codeComplexity.toFixed(1)}</td>
                 <td class="text-center">${(() => {
                   const netDebt = avgMetrics.technicalDebtHours - avgMetrics.debtReductionHours;
-                  const color = netDebt > 0 ? '#dc3545' : (netDebt < 0 ? '#28a745' : '#6c757d');
+                  const color = netDebt > 0 ? '#dc3545' : netDebt < 0 ? '#28a745' : '#6c757d';
                   const sign = netDebt > 0 ? '+' : '';
                   return `<span style="color: ${color}; font-weight: bold;">${sign}${netDebt.toFixed(1)}h</span>`;
                 })()}</td>
@@ -942,5 +949,7 @@ function printBatchUsage() {
   );
   console.log('  codewave batch --since "2025-01-01"                # All commits since date');
   console.log('  codewave batch --since "2025-01-01" --until "2025-01-31"  # Date range');
-  console.log('  codewave batch --count 20 --depth deep             # Deep analysis for 20 commits');
+  console.log(
+    '  codewave batch --count 20 --depth deep             # Deep analysis for 20 commits'
+  );
 }

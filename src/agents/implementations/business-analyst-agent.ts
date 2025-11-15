@@ -17,7 +17,8 @@ export class BusinessAnalystAgent extends BaseAgent {
   protected readonly metadata: AgentMetadata = {
     name: 'business-analyst',
     role: 'Business Analyst',
-    description: 'Evaluates business value, functional impact, and estimates ideal implementation time',
+    description:
+      'Evaluates business value, functional impact, and estimates ideal implementation time',
     roleDescription: 'business perspective',
   };
 
@@ -82,9 +83,9 @@ Return your analysis as JSON with all 8 metrics, even if some are outside your p
           // Convert concerns to RAG query objects
           queries = limitedConcerns.map((c: any) => ({
             q: c.concern,
-            topK: 2,  // Reduce topK to 2 to avoid too many results
+            topK: 2, // Reduce topK to 2 to avoid too many results
             store: 'diff' as const,
-            purpose: `Investigating concern from ${c.agentName}`
+            purpose: `Investigating concern from ${c.agentName}`,
           }));
         } else {
           // Fallback to role-specific queries if no concerns
@@ -110,9 +111,8 @@ ${context.commitDiff}
     }
 
     // Developer overview section (only in Round 1)
-    const developerSection = isFirstRound && context.developerOverview
-      ? `${context.developerOverview}\n\n---\n\n`
-      : '';
+    const developerSection =
+      isFirstRound && context.developerOverview ? `${context.developerOverview}\n\n---\n\n` : '';
 
     // Build previous round context section (Round 2+)
     let previousRoundContext = '';
@@ -185,7 +185,9 @@ Focus on your expertise (functionalImpact, idealTimeHours) but provide scores fo
 For metrics outside your expertise, provide reasonable estimates based on the code changes.
 
 **Response Format:**
-${context.isFinalRound ? `This is the FINAL round. Include a comprehensive finalSynthesis.
+${
+  context.isFinalRound
+    ? `This is the FINAL round. Include a comprehensive finalSynthesis.
 Return ONLY valid JSON with this structure:
 \`\`\`json
 {
@@ -211,7 +213,8 @@ Return ONLY valid JSON with this structure:
     "evolutionNotes": "How your analysis evolved across rounds (e.g., 'Round 1: scored functionalImpact as 8. Round 2: team raised concerns about X, adjusted to 7. Round 3: final score remains 7 after validation')"
   }
 }
-\`\`\`` : `Return ONLY valid JSON with this structure:
+\`\`\``
+    : `Return ONLY valid JSON with this structure:
 \`\`\`json
 {
   "summary": "${isFirstRound ? 'High-level summary of your analysis' : 'UPDATED summary focusing on what changed based on team discussion'}",
@@ -229,7 +232,8 @@ Return ONLY valid JSON with this structure:
   "concerns": ["List any concerns you have"],
   "confidenceLevel": <0-100, your confidence in this analysis>
 }
-\`\`\``}
+\`\`\``
+}
 
 CRITICAL: Return ONLY valid JSON, no markdown fences, no extra text.`;
   }

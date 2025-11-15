@@ -81,7 +81,9 @@ export class PromptBuilderService {
       // High score
       examples.push(guidelines[scores[0]].split(':')[1]?.trim() || 'High quality');
       // Medium score
-      examples.push(guidelines[scores[Math.floor(scores.length / 2)]].split(':')[1]?.trim() || 'Moderate');
+      examples.push(
+        guidelines[scores[Math.floor(scores.length / 2)]].split(':')[1]?.trim() || 'Moderate'
+      );
       // Low score
       examples.push(guidelines[scores[scores.length - 1]].split(':')[1]?.trim() || 'Low quality');
     } else {
@@ -125,10 +127,7 @@ export class PromptBuilderService {
   /**
    * Build round-specific instructions
    */
-  static buildRoundInstructions(
-    currentRound: number = 0,
-    isFinalRound: boolean = false
-  ): string {
+  static buildRoundInstructions(currentRound: number = 0, isFinalRound: boolean = false): string {
     if (currentRound === 0) {
       return '## Round 1: Initial Analysis\nProvide your independent assessment based on the code changes.';
     } else if (isFinalRound) {

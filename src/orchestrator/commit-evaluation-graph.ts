@@ -55,7 +55,10 @@ export const CommitEvaluationState = Annotation.Root({
 
   // Team concerns from current round (to be addressed in next round)
   teamConcerns: Annotation<Array<{ agentName: string; concern: string }>>({
-    reducer: (state: Array<{ agentName: string; concern: string }>, update: Array<{ agentName: string; concern: string }>) => {
+    reducer: (
+      state: Array<{ agentName: string; concern: string }>,
+      update: Array<{ agentName: string; concern: string }>
+    ) => {
       return update; // Replace concerns each round (not accumulate)
     },
     default: () => [],
@@ -111,7 +114,11 @@ export const CommitEvaluationState = Annotation.Root({
  * Detect if an agent's metrics have remained stable (identical) compared to previous round
  * If metrics are stable, agent has confirmed their assessment and should exit
  */
-function detectStableMetrics(agentRole: string, currentResult: AgentResult, previousResult: AgentResult | null): boolean {
+function detectStableMetrics(
+  agentRole: string,
+  currentResult: AgentResult,
+  previousResult: AgentResult | null
+): boolean {
   if (!previousResult) {
     return false; // First round, no previous result to compare
   }
@@ -714,18 +721,25 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       const clarityScore = result.clarityScore || 0;
       const clarityEmoji = clarityScore >= 0.8 ? '✅' : '🔄';
       // Check if clarity is already a percentage (>1) or a decimal (0-1)
-      const clarityPct = clarityScore > 1 ? clarityScore.toFixed(0) : (clarityScore * 100).toFixed(0);
+      const clarityPct =
+        clarityScore > 1 ? clarityScore.toFixed(0) : (clarityScore * 100).toFixed(0);
       const iterations = result.internalIterations || 1;
-      console.log(`   ${clarityEmoji} ${result.agentName}: ${clarityPct}% clarity (${iterations} iteration${iterations > 1 ? 's' : ''})`);
+      console.log(
+        `   ${clarityEmoji} ${result.agentName}: ${clarityPct}% clarity (${iterations} iteration${iterations > 1 ? 's' : ''})`
+      );
     });
 
     // Show token usage and cost for this round
-    console.log(`   💰 Tokens: ${roundInputTokens.toLocaleString()} in / ${roundOutputTokens.toLocaleString()} out | Cost: $${roundCost.toFixed(4)}`);
+    console.log(
+      `   💰 Tokens: ${roundInputTokens.toLocaleString()} in / ${roundOutputTokens.toLocaleString()} out | Cost: $${roundCost.toFixed(4)}`
+    );
 
     // Show convergence info
     if (score !== undefined) {
       const convergenceEmoji = converged ? '🎯' : '🔄';
-      console.log(`   ${convergenceEmoji} Team Convergence: ${(score * 100).toFixed(1)}%${converged ? ' (CONVERGED)' : ''}`);
+      console.log(
+        `   ${convergenceEmoji} Team Convergence: ${(score * 100).toFixed(1)}%${converged ? ' (CONVERGED)' : ''}`
+      );
     }
 
     // Show concerns raised
@@ -746,16 +760,16 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       }
 
       // Find this agent's previous round result for comparison
-      const previousResult = state.previousRoundResults?.find(
-        (r) => r.agentRole === agentKey
-      );
+      const previousResult = state.previousRoundResults?.find((r) => r.agentRole === agentKey);
 
       // Check if metrics have stabilized (identical to previous round)
       const metricsAreStable = detectStableMetrics(agentKey, result, previousResult || null);
 
       if (metricsAreStable) {
         newlyOptedOutAgents.add(agentKey);
-        console.log(`  ✅ ${result.agentName} confirmed assessment (stable metrics). Will not participate in next round.`);
+        console.log(
+          `  ✅ ${result.agentName} confirmed assessment (stable metrics). Will not participate in next round.`
+        );
       }
     }
 

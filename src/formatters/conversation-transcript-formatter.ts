@@ -252,7 +252,12 @@ export function generateConversationTranscript(
       const lastValue = [...roundValues].reverse().find((v) => v !== undefined && v !== null);
 
       let change = '-';
-      if (firstValue !== undefined && firstValue !== null && lastValue !== undefined && lastValue !== null) {
+      if (
+        firstValue !== undefined &&
+        firstValue !== null &&
+        lastValue !== undefined &&
+        lastValue !== null
+      ) {
         const diff = lastValue - firstValue;
         if (diff > 0) {
           change = `↑ ${diff.toFixed(2)}`;

@@ -86,7 +86,7 @@ Return your analysis as JSON with all 8 metrics, even if some are outside your p
             q: c.concern,
             topK: 2,
             store: 'diff' as const,
-            purpose: `Investigating concern from ${c.agentName}`
+            purpose: `Investigating concern from ${c.agentName}`,
           }));
         } else {
           queries = getInitialQueriesForRole(this.metadata.name);
@@ -110,9 +110,8 @@ ${context.commitDiff}
     }
 
     // Developer overview section (only in Round 1)
-    const developerSection = isFirstRound && context.developerOverview
-      ? `${context.developerOverview}\n\n---\n\n`
-      : '';
+    const developerSection =
+      isFirstRound && context.developerOverview ? `${context.developerOverview}\n\n---\n\n` : '';
 
     // Build previous round context section (Round 2+)
     let previousRoundContext = '';
@@ -181,7 +180,9 @@ As the developer who wrote this code, analyze it from ${this.metadata.roleDescri
 Focus on your expertise (actualTimeHours, codeComplexity, idealTimeHours) but provide scores for all pillars.
 
 **Response Format:**
-${context.isFinalRound ? `This is the FINAL round. Include a comprehensive finalSynthesis.
+${
+  context.isFinalRound
+    ? `This is the FINAL round. Include a comprehensive finalSynthesis.
 Return ONLY valid JSON with this structure:
 \`\`\`json
 {
@@ -207,7 +208,8 @@ Return ONLY valid JSON with this structure:
     "evolutionNotes": "How your analysis evolved across rounds"
   }
 }
-\`\`\`` : `Return ONLY valid JSON with this structure:
+\`\`\``
+    : `Return ONLY valid JSON with this structure:
 \`\`\`json
 {
   "summary": "${isFirstRound ? 'High-level summary of implementation decisions' : 'UPDATED summary focusing on what changed based on team discussion'}",
@@ -225,7 +227,8 @@ Return ONLY valid JSON with this structure:
   "concerns": ["List any concerns"],
   "confidenceLevel": <0-100, your confidence in this analysis>
 }
-\`\`\``}
+\`\`\``
+}
 
 CRITICAL: Return ONLY valid JSON, no markdown fences, no extra text.`;
   }

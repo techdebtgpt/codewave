@@ -9,5 +9,5 @@ export {
   PromptBuilder,
   SystemPromptBuilder,
   InitialPromptBuilder,
-  RefinementPromptBuilder
+  RefinementPromptBuilder,
 } from './prompt-builder.interface';

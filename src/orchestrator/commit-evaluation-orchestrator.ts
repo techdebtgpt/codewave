@@ -116,9 +116,7 @@ export class CommitEvaluationOrchestrator {
 
     // Initialize RAG vector store for all diffs (always enabled)
     const diffSize = context.commitDiff?.length || 0;
-    console.log(
-      `📦 Initializing RAG vector store (${(diffSize / 1024).toFixed(1)}KB diff)...`
-    );
+    console.log(`📦 Initializing RAG vector store (${(diffSize / 1024).toFixed(1)}KB diff)...`);
 
     const { DiffVectorStoreService } = await import('../services/diff-vector-store.service.js');
     const vectorStore = new DiffVectorStoreService(context.commitHash);
@@ -230,7 +228,9 @@ export class CommitEvaluationOrchestrator {
 
         clearTimeout(streamTimeout);
       } catch (streamError) {
-        console.warn(`⚠️  Streaming failed: ${streamError instanceof Error ? streamError.message : String(streamError)}`);
+        console.warn(
+          `⚠️  Streaming failed: ${streamError instanceof Error ? streamError.message : String(streamError)}`
+        );
         console.log('📡 Streaming disabled - using standard invoke instead');
         // Fall back to standard invoke on any stream error
         finalState = await this.graph.invoke(initialState, graphConfig);
