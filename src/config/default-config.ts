@@ -14,7 +14,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     provider: 'anthropic',
     model: 'claude-haiku-4-5-20251001', // Cost-optimized for multi-agent discussion (6x cheaper than Sonnet)
     temperature: 0.2,
-    maxTokens: 16000, // Increased to 16000 for all models - prevents truncation and JSON parsing errors
+    maxTokens: 16000, // Safety ceiling for all depth modes - depth modes control actual usage (2000/4500/8000)
   },
   agents: {
     // Enabled agents: business-analyst, sdet, developer-author, senior-architect, developer-reviewer
@@ -29,7 +29,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     retries: 3, // Max discussion rounds (for backwards compatibility, overridden by maxRounds if set)
     timeout: 300000, // 5 minutes per agent
     minRounds: 2, // Minimum 2 rounds before allowing early convergence stop
-    maxRounds: 3, // Maximum 3 rounds: Initial → Concerns → Validation
+    maxRounds: 3, // Maximum rounds: Round 1 (Initial) → Round 2+ (Discussion) → Final Round (Convergence)
     clarityThreshold: 0.85, // Stop early if 85% similarity between rounds (only after minRounds)
   },
   output: {

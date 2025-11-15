@@ -31,111 +31,78 @@ function getVisibleLength(str: string): number {
 }
 
 /**
- * Generate aligned header using table library
- * Returns both the header line and format string with proper spacing
+ * Pad a cell value to match the expected column width
+ * Accounts for ANSI color codes in the length calculation
+ * Pads on the RIGHT for text columns, LEFT for numeric columns
  */
-function generateHeaderAndFormat(): { header: string; format: string } {
-  // Define column headers
-  const headers = ['Commit', 'User', 'Vector', 'Analysis', 'State', 'Tokens', 'Cost', 'Round'];
+function padCellToWidth(value: string, targetWidth: number, rightAlign: boolean = false): string {
+  const visibleLen = getVisibleLength(value);
+  const padLength = Math.max(0, targetWidth - visibleLen);
 
-  // Create sample data row to determine column widths (with extra space for readability)
-  const sampleData = [
-    headers,
-    [
-      '6b66968',
-      'john-doe-long',
-      '100%',
-      '███░░░░░░░░░░░░░░',
-      'running',
-      '1250000/284000',
-      '$1.2345',
-      '3/3',
-    ],
+  if (rightAlign) {
+    // Right-align: pad on the left
+    return ' '.repeat(padLength) + value;
+  } else {
+    // Left-align: pad on the right
+    return value + ' '.repeat(padLength);
+  }
+}
+
+/**
+ * Generate aligned header and column widths
+ * Uses fixed, sensible widths that accommodate typical data
+ */
+function generateHeaderAndFormat(): { header: string; format: string; columnWidths: number[] } {
+  // Define headers and fixed column widths
+  // These widths are chosen to accommodate typical values while maintaining readability
+  const headers = [
+    'Commit',
+    'User',
+    'Diff',
+    'Chunks',
+    'Analysis',
+    'State',
+    'Tokens',
+    'Cost',
+    'Round',
   ];
 
-  // Generate table to get proper widths
-  const tableOutput = table(sampleData, {
-    border: {
-      topBody: '',
-      topJoin: '',
-      topLeft: '',
-      topRight: '',
-      bottomBody: '',
-      bottomRight: '',
-      bodyLeft: '',
-      bodyRight: '',
-      bodyJoin: '',
-      joinBody: '',
-      joinLeft: '',
-      joinRight: '',
-      joinJoin: '',
-    },
-    drawHorizontalLine: () => false,
-  });
+  // Fixed column widths that work well with typical data
+  // Commit: 7 chars for hash + 2 padding = 9
+  // User: 12 chars for author + 2 padding = 14
+  // Diff: 18 chars for "1000KB +12000/-5000" + 2 padding = 20
+  // Chunks: 5 chars for "100/50" + 2 padding = 7
+  // Analysis (bar): 13 chars (progress bar width)
+  // State: 14 chars for "complete/failed" + 2 padding = 16
+  // Tokens: 15 chars for "9999999/9999999" + 2 padding = 17
+  // Cost: 8 chars for "$99.9999" + 2 padding = 10
+  // Round: 5 chars for "10/10" + 2 padding = 7
+  const columnWidths = [9, 14, 20, 7, 13, 16, 17, 10, 7];
 
-  // Extract widths from the table output
-  const lines = tableOutput.split('\n');
-  const dataLine = lines[1];
-
-  // Parse column widths from the data line
-  const dataColumns = dataLine.split(/  +/);
-  const widths = dataColumns.map((col) => col.length);
-
-  // Generate colored header
-  const coloredHeaders = [
-    `${colors.bright}${colors.cyan}${headers[0]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[1]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[2]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[3]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[4]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[5]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[6]}${colors.reset}`,
-    `${colors.bright}${colors.cyan}${headers[7]}${colors.reset}`,
-  ];
-
-  // Pad columns to match widths, accounting for ANSI code lengths
-  const paddedHeaders = coloredHeaders.map((h, i) => {
-    const visibleLen = getVisibleLength(h);
-    const padLength = widths[i] - visibleLen;
-    return h + ' '.repeat(Math.max(0, padLength));
+  // Generate colored header with proper padding
+  // Note: Analysis column (index 4) is NOT padded because it contains dynamic bar + agent
+  const paddedHeaders = headers.map((h, i) => {
+    const colored = `${colors.bright}${colors.cyan}${h}${colors.reset}`;
+    return padCellToWidth(colored, columnWidths[i]);
   });
   const header = `\n${paddedHeaders.join('  ')}\n`;
 
-  // Generate format string for cli-progress with proper spacing
+  // Generate format string for cli-progress with double-space separation
   const coloredFormats = [
     `${colors.green}{commit}${colors.reset}`,
     `${colors.white}{user}${colors.reset}`,
-    `${colors.yellow}{vector}${colors.reset}`,
-    `${colors.blue}{bar}${colors.reset}`,
+    `${colors.dim}{diff}${colors.reset}`,
+    `${colors.yellow}{chunks}${colors.reset}`,
+    `${colors.blue}{bar}${colors.reset} ${colors.dim}{agent}${colors.reset}`,
     `${colors.magenta}{state}${colors.reset}`,
     `${colors.bright}{tokens}${colors.reset}`,
     `${colors.cyan}{cost}${colors.reset}`,
     `${colors.green}{round}${colors.reset}`,
   ];
 
-  // Build format string with placeholders for dynamic values
-  // Use the same sample data values to calculate expected lengths
-  const sampleValues = [
-    '6b66968',
-    'john-doe-long',
-    '100%',
-    '███░░░░░░░░░░░░░░',
-    'running',
-    '1250000/284000',
-    '$1.2345',
-    '3/3',
-  ];
+  const format = coloredFormats.join('  ');
 
-  const format = coloredFormats
-    .map((fmt, i) => {
-      // Use actual sample data length as the expected visible length
-      const estimatedLen = sampleValues[i].length;
-      const padLength = widths[i] - estimatedLen;
-      return fmt + ' '.repeat(Math.max(0, padLength));
-    })
-    .join('  ');
-
-  return { header, format };
+  return { header, format, columnWidths };
 }
 
 interface CommitProgress {
@@ -147,6 +114,11 @@ interface CommitProgress {
   state?: string;
   currentRound?: number;
   maxRounds?: number;
+  diffSizeKB?: string;
+  additions?: number;
+  deletions?: number;
+  chunks?: number;
+  files?: number;
 }
 
 export class ProgressTracker {
@@ -155,9 +127,15 @@ export class ProgressTracker {
   private commits: Map<string, CommitProgress> = new Map();
   private commitProgress: Map<string, number> = new Map();
   private commitVectorProgress: Map<string, number> = new Map();
+  private commitDiffStats: Map<string, { sizeKB: string; additions: number; deletions: number }> =
+    new Map(); // NEW: Track diff stats
+  private commitChunks: Map<string, { chunks: number; files: number }> = new Map(); // NEW: Track chunks/files
   private commitState: Map<string, string> = new Map();
   private commitRound: Map<string, { current: number; max: number }> = new Map();
   private commitTokens: Map<string, { input: number; output: number; cost: number }> = new Map();
+  private commitErrors: Map<string, string> = new Map(); // Track errors per commit
+  private commitCurrentAgent: Map<string, string> = new Map(); // Track current agent
+  private columnWidths: number[] = []; // Store column widths for consistent padding
   private totalInputTokens = 0;
   private totalOutputTokens = 0;
   private totalCost = 0;
@@ -176,7 +154,8 @@ export class ProgressTracker {
     commitHashes: Array<{ hash: string; shortHash: string; author: string; date: string }>
   ) {
     // Generate aligned header and format string with proper column widths
-    const { header, format } = generateHeaderAndFormat();
+    const { header, format, columnWidths } = generateHeaderAndFormat();
+    this.columnWidths = columnWidths; // Store for use in updateProgress
 
     // Print aligned header with column labels (using original console.log to avoid suppression)
     const logFn = this.originalLog || console.log;
@@ -211,6 +190,8 @@ export class ProgressTracker {
 
       this.commitProgress.set(c.hash, 0);
       this.commitVectorProgress.set(c.hash, 0);
+      this.commitDiffStats.set(c.hash, { sizeKB: '0KB', additions: 0, deletions: 0 }); // Initialize diff stats
+      this.commitChunks.set(c.hash, { chunks: 0, files: 0 }); // Initialize chunks/files
       this.commitState.set(c.hash, 'pending');
       this.commitRound.set(c.hash, { current: 0, max: 0 });
       this.commitTokens.set(c.hash, { input: 0, output: 0, cost: 0 });
@@ -218,17 +199,27 @@ export class ProgressTracker {
       const shortCommit = c.shortHash.substring(0, 7);
       const user = c.author.substring(0, 12).padEnd(12);
 
+      // Pre-pad all initial values to match column widths
+      const initialDiff = `${colors.dim}0KB +0/-0${colors.reset}`;
+      const initialChunks = `${colors.dim}0/0${colors.reset}`;
+      const initialState = `${colors.dim}pending${colors.reset}`;
+      const initialTokens = `${colors.dim}0/0${colors.reset}`;
+      const initialCost = `${colors.dim}$0.00${colors.reset}`;
+      const initialRound = `${colors.dim}0/0${colors.reset}`;
+
       const bar = this.multibar!.create(100, 0, {
-        commit: shortCommit,
-        user: user,
-        vector: `${colors.dim}0%${colors.reset}`,
+        commit: padCellToWidth(shortCommit, this.columnWidths[0]),
+        user: padCellToWidth(user, this.columnWidths[1]),
+        diff: padCellToWidth(initialDiff, this.columnWidths[2]),
+        chunks: padCellToWidth(initialChunks, this.columnWidths[3]),
         percentage: 0,
         value: 0,
         total: 100,
-        state: `${colors.dim}pending${colors.reset}`,
-        tokens: `${colors.dim}0/0${colors.reset}`,
-        cost: `${colors.dim}$0.00${colors.reset}`,
-        round: `${colors.dim}0/0${colors.reset}`,
+        state: padCellToWidth(initialState, this.columnWidths[5]),
+        tokens: padCellToWidth(initialTokens, this.columnWidths[6]),
+        cost: padCellToWidth(initialCost, this.columnWidths[7]),
+        round: padCellToWidth(initialRound, this.columnWidths[8]),
+        agent: '', // Initialize agent field (empty initially)
       });
 
       this.bars.set(c.hash, bar);
@@ -253,14 +244,52 @@ export class ProgressTracker {
       clarityScore?: number;
       currentRound?: number;
       maxRounds?: number;
+      currentAgent?: string; // Name of currently executing agent
+      errorMessage?: string; // Error message if failed
+      diffSizeKB?: string; // NEW: Diff size in KB
+      additions?: number; // NEW: Lines added
+      deletions?: number; // NEW: Lines deleted
+      chunks?: number; // NEW: Number of chunks indexed
+      files?: number; // NEW: Number of files indexed
     }
   ) {
     const bar = this.bars.get(commitHash);
     if (!bar) return;
 
+    // Track diff stats (store once when provided)
+    if (
+      update.diffSizeKB !== undefined &&
+      update.additions !== undefined &&
+      update.deletions !== undefined
+    ) {
+      this.commitDiffStats.set(commitHash, {
+        sizeKB: update.diffSizeKB,
+        additions: update.additions,
+        deletions: update.deletions,
+      });
+    }
+
+    // Track chunks/files (store once when provided)
+    if (update.chunks !== undefined && update.files !== undefined) {
+      this.commitChunks.set(commitHash, {
+        chunks: update.chunks,
+        files: update.files,
+      });
+    }
+
     // Track round information
     if (update.currentRound !== undefined && update.maxRounds !== undefined) {
       this.commitRound.set(commitHash, { current: update.currentRound, max: update.maxRounds });
+    }
+
+    // Track current agent
+    if (update.currentAgent) {
+      this.commitCurrentAgent.set(commitHash, update.currentAgent);
+    }
+
+    // Track error message
+    if (update.errorMessage) {
+      this.commitErrors.set(commitHash, update.errorMessage);
     }
 
     // Update status/state
@@ -346,13 +375,44 @@ export class ProgressTracker {
     // Get current state
     const currentState = this.commitState.get(commitHash) || `${colors.dim}pending${colors.reset}`;
 
-    bar.update(currentProgress, {
-      vector: vectorStr,
-      state: currentState,
-      tokens: tokenStr,
-      cost: costStr,
-      round: roundStr,
-    });
+    // Format diff stats
+    const diffStats = this.commitDiffStats.get(commitHash) || {
+      sizeKB: '0KB',
+      additions: 0,
+      deletions: 0,
+    };
+    const diffColor = diffStats.sizeKB !== '0KB' ? colors.white : colors.dim;
+    const diffStr = `${diffColor}${diffStats.sizeKB} +${diffStats.additions}/-${diffStats.deletions}${colors.reset}`;
+
+    // Format chunks/files stats
+    const chunksData = this.commitChunks.get(commitHash) || { chunks: 0, files: 0 };
+    const chunksColor = chunksData.chunks > 0 ? colors.yellow : colors.dim;
+    const chunksStr = `${chunksColor}${chunksData.chunks}/${chunksData.files}${colors.reset}`;
+
+    // Get current agent (show abbreviated name after bar)
+    const currentAgent = this.commitCurrentAgent.get(commitHash);
+    const agentStr = currentAgent ? `[${currentAgent.substring(0, 8)}...]` : '';
+
+    // Get commit and user data for padding
+    const commit = this.commits.get(commitHash);
+    const shortCommit = commit?.shortHash.substring(0, 7) || commitHash.substring(0, 7);
+    const user = commit?.author.substring(0, 12).padEnd(12) || 'unknown';
+
+    // Pad each cell to match column widths for consistent alignment
+    // Column indices: 0=commit, 1=user, 2=diff, 3=chunks, 4=bar, 5=state, 6=tokens, 7=cost, 8=round
+    const paddedValues = {
+      commit: padCellToWidth(shortCommit, this.columnWidths[0]),
+      user: padCellToWidth(user, this.columnWidths[1]),
+      diff: padCellToWidth(diffStr, this.columnWidths[2]),
+      chunks: padCellToWidth(chunksStr, this.columnWidths[3]),
+      state: padCellToWidth(currentState, this.columnWidths[5]),
+      tokens: padCellToWidth(tokenStr, this.columnWidths[6]),
+      cost: padCellToWidth(costStr, this.columnWidths[7]),
+      round: padCellToWidth(roundStr, this.columnWidths[8]),
+      agent: agentStr,
+    };
+
+    bar.update(currentProgress, paddedValues);
   }
 
   /**
@@ -372,6 +432,20 @@ export class ProgressTracker {
     console.log(
       `\n📊 ${colors.bright}Total:${colors.reset} ${colors.green}${inputTokensFormatted}${colors.reset} input | ${colors.yellow}${outputTokensFormatted}${colors.reset} output | ${colors.magenta}${costFormatted}${colors.reset}\n`
     );
+
+    // Print error summary if there were any failures
+    if (this.failedCommits > 0 && this.commitErrors.size > 0) {
+      console.log(`${colors.red}${colors.bright}❌ Failed Commits:${colors.reset}\n`);
+      for (const [commitHash, errorMessage] of this.commitErrors.entries()) {
+        const commit = this.commits.get(commitHash);
+        const shortHash = commit?.shortHash || commitHash.substring(0, 7);
+        const author = commit?.author || 'unknown';
+        console.log(
+          `  ${colors.red}●${colors.reset} ${colors.bright}${shortHash}${colors.reset} (${author})`
+        );
+        console.log(`    ${colors.dim}Error: ${errorMessage}${colors.reset}\n`);
+      }
+    }
   }
 
   /**

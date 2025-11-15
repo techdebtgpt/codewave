@@ -2,11 +2,11 @@
 // Shared utilities for CLI commands to eliminate duplication
 
 import { AgentRegistry } from '../../src/agents/agent-registry';
-import { BusinessAnalystAgent } from '../../src/agents/business-analyst-agent';
-import { SDETAgent } from '../../src/agents/sdet-agent';
-import { DeveloperAuthorAgent } from '../../src/agents/developer-author-agent';
-import { SeniorArchitectAgent } from '../../src/agents/senior-architect-agent';
-import { DeveloperReviewerAgent } from '../../src/agents/developer-reviewer-agent';
+import { BusinessAnalystAgent } from '../../src/agents/implementations/business-analyst-agent';
+import { SDETAgent } from '../../src/agents/implementations/sdet-agent';
+import { DeveloperAuthorAgent } from '../../src/agents/implementations/developer-author-agent';
+import { SeniorArchitectAgent } from '../../src/agents/implementations/senior-architect-agent';
+import { DeveloperReviewerAgent } from '../../src/agents/implementations/developer-reviewer-agent';
 import { AppConfig } from '../../src/config/config.interface';
 import { generateEnhancedHtmlReport } from '../../src/formatters/html-report-formatter-enhanced';
 import { generateConversationTranscript } from '../../src/formatters/conversation-transcript-formatter';
@@ -91,6 +91,11 @@ export interface EvaluationMetadata {
   timestamp?: string;
   source?: string; // 'commit', 'staged', 'current', 'file'
   developerOverview?: string;
+  commitStats?: {
+    filesChanged: number;
+    insertions: number;
+    deletions: number;
+  };
 }
 
 /**
@@ -146,6 +151,9 @@ export async function saveEvaluationReports(options: SaveReportsOptions): Promis
     commitDate: metadata.commitDate,
     timestamp: metadata.timestamp || new Date().toISOString(),
     developerOverview,
+    filesChanged: metadata.commitStats?.filesChanged,
+    insertions: metadata.commitStats?.insertions,
+    deletions: metadata.commitStats?.deletions,
   });
 
   // 3. Generate conversation transcript
@@ -180,50 +188,57 @@ function extractMetricsSnapshot(agentResults: AgentResult[]): MetricsSnapshot {
   // Get final round agents (last 5)
   const finalAgents = agentResults.slice(-5);
 
-  const metricSums = {
-    functionalImpact: 0,
-    idealTimeHours: 0,
-    testCoverage: 0,
-    codeQuality: 0,
-    codeComplexity: 0,
-    actualTimeHours: 0,
-    technicalDebtHours: 0,
-  };
+  // Import weight functions for weighted averaging
+  const { calculateWeightedAverage } = require('../../src/constants/agent-weights.constants');
 
-  let count = 0;
-  finalAgents.forEach((agent) => {
-    if (agent.metrics) {
-      metricSums.functionalImpact += agent.metrics.functionalImpact || 0;
-      metricSums.idealTimeHours += agent.metrics.idealTimeHours || 0;
-      metricSums.testCoverage += agent.metrics.testCoverage || 0;
-      metricSums.codeQuality += agent.metrics.codeQuality || 0;
-      metricSums.codeComplexity += agent.metrics.codeComplexity || 0;
-      metricSums.actualTimeHours += agent.metrics.actualTimeHours || 0;
-      metricSums.technicalDebtHours += agent.metrics.technicalDebtHours || 0;
-      count++;
+  const metrics = [
+    'functionalImpact',
+    'idealTimeHours',
+    'testCoverage',
+    'codeQuality',
+    'codeComplexity',
+    'actualTimeHours',
+    'technicalDebtHours',
+    'debtReductionHours',
+  ];
+
+  const result: any = {};
+
+  // Calculate weighted average for each metric
+  metrics.forEach((metricName) => {
+    const contributors: Array<{ agentName: string; score: number | null }> = [];
+    finalAgents.forEach((agent) => {
+      if (agent.metrics && metricName in agent.metrics) {
+        const score = agent.metrics[metricName];
+        contributors.push({
+          agentName: agent.agentName || agent.agentRole || 'Unknown',
+          score: score !== null && score !== undefined ? score : null,
+        });
+      }
+    });
+
+    if (contributors.length > 0) {
+      const weightedValue = calculateWeightedAverage(contributors, metricName);
+      // Determine decimal places based on metric
+      if (metricName.includes('Hours') || metricName.includes('Time')) {
+        result[metricName] = Number(weightedValue.toFixed(2));
+      } else {
+        result[metricName] = Number(weightedValue.toFixed(1));
+      }
+    } else {
+      result[metricName] = 0;
     }
   });
 
-  if (count === 0) {
-    return {
-      functionalImpact: 0,
-      idealTimeHours: 0,
-      testCoverage: 0,
-      codeQuality: 0,
-      codeComplexity: 0,
-      actualTimeHours: 0,
-      technicalDebtHours: 0,
-    };
-  }
-
   return {
-    functionalImpact: Number((metricSums.functionalImpact / count).toFixed(1)),
-    idealTimeHours: Number((metricSums.idealTimeHours / count).toFixed(2)),
-    testCoverage: Number((metricSums.testCoverage / count).toFixed(1)),
-    codeQuality: Number((metricSums.codeQuality / count).toFixed(1)),
-    codeComplexity: Number((metricSums.codeComplexity / count).toFixed(1)),
-    actualTimeHours: Number((metricSums.actualTimeHours / count).toFixed(2)),
-    technicalDebtHours: Number((metricSums.technicalDebtHours / count).toFixed(2)),
+    functionalImpact: result.functionalImpact,
+    idealTimeHours: result.idealTimeHours,
+    testCoverage: result.testCoverage,
+    codeQuality: result.codeQuality,
+    codeComplexity: result.codeComplexity,
+    actualTimeHours: result.actualTimeHours,
+    technicalDebtHours: result.technicalDebtHours,
+    debtReductionHours: result.debtReductionHours,
   };
 }
 
@@ -319,6 +334,7 @@ async function trackEvaluationHistory(
           codeComplexity: 0,
           actualTimeHours: 0,
           technicalDebtHours: 0,
+          debtReductionHours: 0,
         },
     tokens: agentResults
       ? extractTokenSnapshot(agentResults)
@@ -434,7 +450,7 @@ export async function createBatchDirectory(
 }
 
 /**
- * Calculate averaged metrics from agent results
+ * Calculate averaged metrics from agent results using weighted averaging (matching report calculations)
  */
 async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
   try {
@@ -446,46 +462,50 @@ async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
       return null;
     }
 
-    // Get final round agents (last 5 entries)
+    // Get final round agents (last 5 entries) - should be 1 per agent role
     const finalAgents = results.agents.slice(-5);
 
-    // Aggregate metrics from all final agents
-    const metricSums = {
-      functionalImpact: 0,
-      idealTimeHours: 0,
-      testCoverage: 0,
-      codeQuality: 0,
-      codeComplexity: 0,
-      actualTimeHours: 0,
-      technicalDebtHours: 0,
-    };
+    // Import weight functions for weighted averaging
+    const { getAgentWeight, calculateWeightedAverage } = require('../../src/constants/agent-weights.constants');
 
-    let count = 0;
-    finalAgents.forEach((agent: any) => {
-      if (agent.metrics) {
-        metricSums.functionalImpact += agent.metrics.functionalImpact || 0;
-        metricSums.idealTimeHours += agent.metrics.idealTimeHours || 0;
-        metricSums.testCoverage += agent.metrics.testCoverage || 0;
-        metricSums.codeQuality += agent.metrics.codeQuality || 0;
-        metricSums.codeComplexity += agent.metrics.codeComplexity || 0;
-        metricSums.actualTimeHours += agent.metrics.actualTimeHours || 0;
-        metricSums.technicalDebtHours += agent.metrics.technicalDebtHours || 0;
-        count++;
+    // Metric names for weighted calculation
+    const metrics = [
+      'functionalImpact',
+      'idealTimeHours',
+      'testCoverage',
+      'codeQuality',
+      'codeComplexity',
+      'actualTimeHours',
+      'technicalDebtHours',
+      'debtReductionHours',
+    ];
+
+    // Calculate weighted average for each metric
+    const averagedMetrics: any = {};
+    metrics.forEach((metricName) => {
+      const contributors: Array<{ agentName: string; score: number | null }> = [];
+      finalAgents.forEach((agent: any) => {
+        if (agent.metrics && metricName in agent.metrics) {
+          const score = agent.metrics[metricName];
+          contributors.push({
+            agentName: agent.agentRole || agent.agentName || 'Unknown',
+            score: score !== null && score !== undefined ? score : null,
+          });
+        }
+      });
+
+      if (contributors.length > 0) {
+        const weightedValue = calculateWeightedAverage(contributors, metricName);
+        // Determine decimal places based on metric
+        if (metricName.includes('Hours') || metricName.includes('Time')) {
+          averagedMetrics[metricName] = Number(weightedValue.toFixed(2));
+        } else {
+          averagedMetrics[metricName] = Number(weightedValue.toFixed(1));
+        }
       }
     });
 
-    if (count === 0) return null;
-
-    // Calculate averages
-    return {
-      functionalImpact: Number((metricSums.functionalImpact / count).toFixed(1)),
-      idealTimeHours: Number((metricSums.idealTimeHours / count).toFixed(2)),
-      testCoverage: Number((metricSums.testCoverage / count).toFixed(1)),
-      codeQuality: Number((metricSums.codeQuality / count).toFixed(1)),
-      codeComplexity: Number((metricSums.codeComplexity / count).toFixed(1)),
-      actualTimeHours: Number((metricSums.actualTimeHours / count).toFixed(2)),
-      technicalDebtHours: Number((metricSums.technicalDebtHours / count).toFixed(2)),
-    };
+    return averagedMetrics;
   } catch {
     return null;
   }
@@ -594,7 +614,9 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
       overallMetrics.avgFunctionalImpact += item.metrics.functionalImpact || 0;
       overallMetrics.avgTestCoverage += item.metrics.testCoverage || 0;
       overallMetrics.avgActualTime += item.metrics.actualTimeHours || 0;
-      overallMetrics.totalTechDebt += item.metrics.technicalDebtHours || 0;
+      // Calculate NET debt (debt introduced - debt reduction)
+      const netDebt = (item.metrics.technicalDebtHours || 0) - (item.metrics.debtReductionHours || 0);
+      overallMetrics.totalTechDebt += netDebt;
       overallMetrics.count++;
     }
   });
@@ -639,7 +661,9 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
           authorMetrics.testCoverage += c.metrics.testCoverage || 0;
           authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
           authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
-          authorMetrics.techDebt += c.metrics.technicalDebtHours || 0;
+          // Calculate NET debt (debt introduced - debt reduction)
+          const netDebt = (c.metrics.technicalDebtHours || 0) - (c.metrics.debtReductionHours || 0);
+          authorMetrics.techDebt += netDebt;
           authorMetrics.count++;
         }
       });
@@ -732,6 +756,21 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
         .btn-sm { font-size: 0.85rem; padding: 6px 12px; }
         .author-filter { display: inline-block; margin: 5px; }
         .filter-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+        /* Table column sizing for better readability */
+        #commitsTable th:nth-child(1) { min-width: 100px; } /* Hash */
+        #commitsTable th:nth-child(2) { min-width: 110px; } /* Author */
+        #commitsTable th:nth-child(3) { min-width: 280px; } /* Message */
+        #commitsTable th:nth-child(4) { min-width: 110px; } /* Date */
+        #commitsTable th:nth-child(5) { min-width: 110px; } /* Last Evaluated */
+        #commitsTable th:nth-child(6) { min-width: 85px; } /* Source */
+        #commitsTable th:nth-child(7) { min-width: 90px; } /* Quality */
+        #commitsTable th:nth-child(8) { min-width: 95px; } /* Complexity */
+        #commitsTable th:nth-child(9) { min-width: 80px; } /* Tests */
+        #commitsTable th:nth-child(10) { min-width: 85px; } /* Impact */
+        #commitsTable th:nth-child(11) { min-width: 80px; } /* Time */
+        #commitsTable th:nth-child(12) { min-width: 90px; } /* Tech Debt */
+        #commitsTable th:nth-child(13) { min-width: 75px; } /* Action */
+        #commitsTable td:nth-child(3) { max-width: 280px; word-wrap: break-word; overflow-wrap: break-word; } /* Message text wrapping */
     </style>
 </head>
 <body>
@@ -842,7 +881,9 @@ ${Array.from(byAuthor.entries())
         authorMetrics.testCoverage += c.metrics.testCoverage || 0;
         authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
         authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
-        authorMetrics.techDebt += c.metrics.technicalDebtHours || 0;
+        // Calculate NET debt (debt introduced - debt reduction)
+        const netDebt = (c.metrics.technicalDebtHours || 0) - (c.metrics.debtReductionHours || 0);
+        authorMetrics.techDebt += netDebt;
         authorMetrics.count++;
       }
     });
@@ -917,8 +958,8 @@ ${index
       metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
     const impactColor =
       metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
-    const debtColor =
-      metrics.technicalDebtHours > 0 ? 'bad' : metrics.technicalDebtHours < 0 ? 'good' : 'medium';
+    const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
+    const debtColor = netDebt > 0 ? 'bad' : netDebt < 0 ? 'good' : 'medium';
 
     return `
                         <tr data-source="${item.source || 'unknown'}" data-author="${item.commitAuthor || ''}" data-message="${(item.commitMessage || '').toLowerCase()}" data-hash="${item.commitHash}">
@@ -938,7 +979,7 @@ ${index
                             <td class="metric-cell ${item.metrics ? `metric-${testsColor}` : ''}">${item.metrics ? `${metrics.testCoverage}/10` : 'N/A'}</td>
                             <td class="metric-cell ${item.metrics ? `metric-${impactColor}` : ''}">${item.metrics ? `${metrics.functionalImpact}/10` : 'N/A'}</td>
                             <td class="metric-cell">${item.metrics ? `${metrics.actualTimeHours}h` : 'N/A'}</td>
-                            <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${metrics.technicalDebtHours > 0 ? '+' : ''}${metrics.technicalDebtHours}h` : 'N/A'}</td>
+                            <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${netDebt > 0 ? '+' : ''}${netDebt.toFixed(1)}h` : 'N/A'}</td>
                             <td><a href="${item.directory}/report-enhanced.html" class="btn btn-primary btn-sm">View</a></td>
                         </tr>`;
   })
@@ -1109,6 +1150,20 @@ async function generateAuthorPage(
         .metric-medium { color: #ffc107; }
         .metric-bad { color: #dc3545; }
         .btn-sm { font-size: 0.85rem; padding: 6px 12px; }
+        /* Table column sizing for author dashboard */
+        #authorCommitsTable th:nth-child(1) { min-width: 100px; } /* Hash */
+        #authorCommitsTable th:nth-child(2) { min-width: 280px; } /* Message */
+        #authorCommitsTable th:nth-child(3) { min-width: 110px; } /* Date */
+        #authorCommitsTable th:nth-child(4) { min-width: 110px; } /* Last Evaluated */
+        #authorCommitsTable th:nth-child(5) { min-width: 85px; } /* Source */
+        #authorCommitsTable th:nth-child(6) { min-width: 90px; } /* Quality */
+        #authorCommitsTable th:nth-child(7) { min-width: 95px; } /* Complexity */
+        #authorCommitsTable th:nth-child(8) { min-width: 80px; } /* Tests */
+        #authorCommitsTable th:nth-child(9) { min-width: 85px; } /* Impact */
+        #authorCommitsTable th:nth-child(10) { min-width: 80px; } /* Time */
+        #authorCommitsTable th:nth-child(11) { min-width: 90px; } /* Tech Debt */
+        #authorCommitsTable th:nth-child(12) { min-width: 75px; } /* Action */
+        #authorCommitsTable td:nth-child(2) { max-width: 280px; word-wrap: break-word; overflow-wrap: break-word; } /* Message text wrapping */
     </style>
 </head>
 <body>
@@ -1165,7 +1220,7 @@ async function generateAuthorPage(
         <div class="table-container">
             <h3 class="section-title">📝 Commits by ${author}</h3>
             <div style="overflow-x: auto;">
-                <table>
+                <table id="authorCommitsTable">
                     <thead>
                         <tr>
                             <th>Hash</th>

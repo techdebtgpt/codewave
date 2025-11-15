@@ -4,6 +4,7 @@ import { AgentResult } from '../agents/agent.interface';
 import { ConversationMessage, PillarScores } from '../types/agent.types';
 import { AppConfig } from '../config/config.interface';
 import { calculateCost, formatTokenUsage, formatCost } from '../utils/token-tracker';
+import { SEVEN_PILLARS } from '../constants/agent-weights.constants';
 
 /**
  * LangGraph State Definition for Commit Evaluation
@@ -15,6 +16,7 @@ export const CommitEvaluationState = Annotation.Root({
   filesChanged: Annotation<string[]>,
   developerOverview: Annotation<string | undefined>, // Developer's description of changes
   vectorStore: Annotation<any>, // RAG vector store for large diffs
+  documentationStore: Annotation<any>, // Documentation vector store
 
   // Commit metadata for logging
   commitHash: Annotation<string | undefined>,
@@ -26,25 +28,12 @@ export const CommitEvaluationState = Annotation.Root({
   maxRounds: Annotation<number>,
   minRounds: Annotation<number>, // Minimum rounds before allowing early convergence
 
-  // Agent results (accumulated)
+  // Agent results (accumulated) - keeps ALL results from ALL rounds for transcript generation
   agentResults: Annotation<AgentResult[]>({
     reducer: (state: AgentResult[], update: AgentResult[]) => {
-      // Merge agent results, replacing existing ones from same agent
-      const merged = [...state];
-      for (const newResult of update) {
-        const existingIdx = merged.findIndex(
-          (r) =>
-            r.summary &&
-            newResult.summary &&
-            r.summary.substring(0, 50) === newResult.summary.substring(0, 50)
-        );
-        if (existingIdx >= 0) {
-          merged[existingIdx] = newResult;
-        } else {
-          merged.push(newResult);
-        }
-      }
-      return merged;
+      // APPEND all new results to track conversation history
+      // Each result will have agentName and can be distinguished by round
+      return [...state, ...update];
     },
     default: () => [],
   }),
@@ -64,12 +53,39 @@ export const CommitEvaluationState = Annotation.Root({
     default: () => [],
   }),
 
+  // Team concerns from current round (to be addressed in next round)
+  teamConcerns: Annotation<Array<{ agentName: string; concern: string }>>({
+    reducer: (state: Array<{ agentName: string; concern: string }>, update: Array<{ agentName: string; concern: string }>) => {
+      return update; // Replace concerns each round (not accumulate)
+    },
+    default: () => [],
+  }),
+
+  // Agents that have opted out of further rounds
+  optedOutAgents: Annotation<Set<string>>({
+    reducer: (state: Set<string>, update: Set<string>) => {
+      return new Set([...state, ...update]); // Accumulate opted-out agents
+    },
+    default: () => new Set<string>(),
+  }),
+
   // Aggregated 7-pillar scores (NEW for metrics tracking)
   pillarScores: Annotation<Partial<PillarScores>>({
     reducer: (state: Partial<PillarScores>, update: Partial<PillarScores>) => {
       return { ...state, ...update };
     },
     default: () => ({}),
+  }),
+
+  // Agent progress tracking (for real-time UI updates)
+  currentAgent: Annotation<string | undefined>, // Name of currently executing agent
+  completedAgents: Annotation<number>({
+    reducer: (state: number, update: number) => update, // Replace with latest count
+    default: () => 0,
+  }),
+  totalAgents: Annotation<number>({
+    reducer: (state: number, update: number) => update || state, // Set once, keep
+    default: () => 0,
   }),
 
   // Metadata
@@ -90,6 +106,25 @@ export const CommitEvaluationState = Annotation.Root({
     default: () => 0,
   }),
 });
+
+/**
+ * Detect if an agent's metrics have remained stable (identical) compared to previous round
+ * If metrics are stable, agent has confirmed their assessment and should exit
+ */
+function detectStableMetrics(agentRole: string, currentResult: AgentResult, previousResult: AgentResult | null): boolean {
+  if (!previousResult) {
+    return false; // First round, no previous result to compare
+  }
+
+  // Check if all 7 pillars have identical values
+  const allMetricsMatch = SEVEN_PILLARS.every((metric) => {
+    const currentValue = (currentResult.metrics as any)?.[metric];
+    const previousValue = (previousResult.metrics as any)?.[metric];
+    return currentValue === previousValue;
+  });
+
+  return allMetricsMatch;
+}
 
 /**
  * Calculate similarity between two agent results
@@ -195,11 +230,7 @@ function checkConvergence(
 /**
  * Get the purpose/phase of the current discussion round
  */
-function getRoundPurpose(roundNumber: number): 'initial' | 'concerns' | 'validation' {
-  if (roundNumber === 0) return 'initial';
-  if (roundNumber === 1) return 'concerns';
-  return 'validation';
-}
+// Removed getRoundPurpose - now using currentRound and isFinalRound flags
 
 /**
  * Create LangGraph-based Commit Evaluation Workflow
@@ -207,14 +238,17 @@ function getRoundPurpose(roundNumber: number): 'initial' | 'concerns' | 'validat
  * Graph structure:
  *   START → generateDeveloperOverview → runAgents → shouldContinue? → [YES: runAgents | NO: END]
  *
- * 3-Round Discussion:
- *   Round 1: Initial analysis (all agents analyze independently)
- *   Round 2: Concerns (agents raise questions/concerns to responsible agents)
- *   Round 3: Validation (agents respond to concerns and finalize scores)
+ * Multi-Round Discussion (configurable via maxRounds):
+ *   Round 1: Initial analysis (agents analyze independently from developer overview)
+ *   Round 2+: Team discussion (agents review each other's scores, raise concerns, refine)
+ *   Final Round: Convergence (agents finalize scores with confidence)
+ *
+ * The number of rounds is configurable. Each round after the first allows agents to
+ * review team context and refine their assessments collaboratively.
  */
 export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config: AppConfig) {
   const agents = agentRegistry.getAgents();
-  const maxRounds = config.agents.retries || 3; // 3-round conversation: initial → concerns → validation
+  const maxRounds = config.agents.maxRounds || config.agents.retries || 3;
 
   // Node: Generate developer overview if not provided
   async function generateDeveloperOverview(state: typeof CommitEvaluationState.State) {
@@ -299,13 +333,13 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
 
   // Node: Run all agents in parallel (enabling conversation)
   async function runAgents(state: typeof CommitEvaluationState.State) {
-    const roundPurpose = getRoundPurpose(state.currentRound);
-    const roundLabel =
-      roundPurpose === 'initial'
-        ? 'Initial Analysis'
-        : roundPurpose === 'concerns'
-          ? 'Raising Concerns & Questions'
-          : 'Validation & Final Scores';
+    const isFirstRound = state.currentRound === 0;
+    const isFinalRound = state.currentRound === state.maxRounds - 1;
+    const roundLabel = isFirstRound
+      ? 'Initial Analysis'
+      : isFinalRound
+        ? 'Final Review'
+        : 'Team Discussion';
 
     // Build commit identifier for logging
     const commitId = state.commitHash ? state.commitHash.substring(0, 7) : 'unknown';
@@ -314,44 +348,49 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
         ? `[${state.commitIndex}/${state.totalCommits}]`
         : '';
 
-    console.log(
-      `\n${commitPrefix} 🔄 ${commitId} - Round ${state.currentRound + 1}/${state.maxRounds} (${roundLabel})`
-    );
-
     // Track agent execution for inline status updates
     const agentNames = agents
-      .filter((agent) =>
-        agent.canExecute({
+      .filter((agent) => {
+        const agentKey = agent.getMetadata().name;
+        // Filter out agents who have opted out
+        if (state.optedOutAgents.has(agentKey)) {
+          return false;
+        }
+        return agent.canExecute({
           commitDiff: state.commitDiff,
           filesChanged: state.filesChanged,
-        })
-      )
+        });
+      })
       .map((agent) => agent.getMetadata().name);
+
+    console.log(
+      `\n${commitPrefix}🔄 ${commitId} - Round ${state.currentRound + 1}/${state.maxRounds} (${roundLabel})`
+    );
+    console.log(`   🚀 Starting ${agentNames.length} agent${agentNames.length > 1 ? 's' : ''}...`);
 
     // Track completed agents for inline progress
     let completedCount = 0;
     const totalAgents = agentNames.length;
 
-    // Calculate overall progress percentage (rounds * agents)
-    const totalSteps = state.maxRounds * totalAgents;
-    const completedSteps = state.currentRound * totalAgents;
-
-    // Show initial progress with percentage
-    const initialProgress = Math.floor((completedSteps / totalSteps) * 100);
-    process.stdout.write(
-      `  ${commitPrefix} ⏳ ${initialProgress}% [${completedSteps}/${totalSteps}] Running agents...`
-    );
-
     const agentExecutionPromises = agents
-      .filter((agent) =>
-        agent.canExecute({
+      .filter((agent) => {
+        const agentKey = agent.getMetadata().name;
+        // Filter out agents who have opted out
+        if (state.optedOutAgents.has(agentKey)) {
+          return false;
+        }
+        return agent.canExecute({
           commitDiff: state.commitDiff,
           filesChanged: state.filesChanged,
-        })
-      )
+        });
+      })
       .map(async (agent) => {
-        const agentName = agent.getMetadata().name;
-        const agentRole = agent.getMetadata().description.split(' - ')[0] || agentName;
+        const agentName = agent.getMetadata().name; // Technical key (e.g., 'business-analyst')
+        const agentRole = agent.getMetadata().role; // Display name (e.g., 'Business Analyst')
+
+        if (state.currentRound > 0 && (agentName === 'business-analyst' || agentName === 'sdet')) {
+          console.log(`🔍 [Round ${state.currentRound + 1}] Executing ${agentRole}...`);
+        }
 
         try {
           // Pass previous agent results for conversation context
@@ -365,7 +404,10 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
               agentResults: state.agentResults, // Agents can reference each other's responses
               conversationHistory: state.conversationHistory, // Pass full conversation
               vectorStore: state.vectorStore, // RAG support for large diffs
-              roundPurpose, // Tell agent what phase we're in (initial/concerns/validation)
+              documentationStore: state.documentationStore, // Documentation vector store
+              currentRound: state.currentRound, // Current round number (0-indexed)
+              isFinalRound, // Flag indicating if this is the final round
+              teamConcerns: state.teamConcerns, // Concerns raised by team in previous round
 
               // Pass depth configuration for agent self-iteration
               depthMode: config.agents.depthMode || 'normal',
@@ -385,23 +427,13 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
             ),
           ])) as AgentResult;
 
-          // Update progress inline with \r (same line)
+          // Track agent completion
           completedCount++;
-          const currentSteps = completedSteps + completedCount;
-          const currentProgress = Math.floor((currentSteps / totalSteps) * 100);
-
-          const statusLine = `  ${commitPrefix} ✅ ${currentProgress}% [${currentSteps}/${totalSteps}] ${agentName}`;
-          const padding = ' '.repeat(Math.max(0, 100 - statusLine.length));
-          process.stdout.write(`\r${statusLine}${padding}`);
-
-          // If all agents done in this round, add newline
-          if (completedCount === totalAgents) {
-            process.stdout.write('\n');
-          }
 
           // Attach agent metadata to result for formatters
           result.agentName = agentRole; // Use role as display name
           result.agentRole = agentName; // Use name as technical identifier
+          result.round = state.currentRound; // Attach round number for context
 
           // Create conversation message for this agent's response
           const conversationMessage: ConversationMessage = {
@@ -426,6 +458,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
             metrics: {},
             agentName: agentRole,
             agentRole: agentName,
+            round: state.currentRound,
           };
 
           const conversationMessage: ConversationMessage = {
@@ -449,8 +482,12 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
 
       if (!isValid) {
         console.warn(
-          `  ⚠️  ${response.conversationMessage.agentName} returned invalid/empty result`
+          `  ⚠️  ${response.conversationMessage.agentName} returned invalid/empty result in Round ${state.currentRound + 1}`
         );
+        if (response.result) {
+          console.warn(`     Summary: "${response.result.summary}"`);
+          console.warn(`     Summary length: ${response.result.summary?.length || 0}`);
+        }
       }
 
       return isValid;
@@ -500,7 +537,10 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       | 'codeComplexity'
       | 'actualTimeHours'
       | 'technicalDebtHours';
-    const pillarScoresCollected: Record<PillarName, Array<{ agentName: string; score: number }>> = {
+    const pillarScoresCollected: Record<
+      PillarName,
+      Array<{ agentName: string; score: number | null }>
+    > = {
       functionalImpact: [],
       idealTimeHours: [],
       testCoverage: [],
@@ -510,10 +550,12 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       technicalDebtHours: [],
     };
 
-    // Collect scores from all agents
+    // Collect scores from all agents (including null values)
     for (const result of results) {
       const agentName = result.agentRole || result.agentName || 'unknown'; // Use agentRole (short key) for weight lookup
       if (result.metrics) {
+        // Always push scores, including null values
+        // undefined means agent didn't return the metric at all (shouldn't happen after prompt updates)
         if (result.metrics.functionalImpact !== undefined) {
           pillarScoresCollected.functionalImpact.push({
             agentName,
@@ -552,6 +594,25 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
             agentName,
             score: result.metrics.technicalDebtHours,
           });
+        }
+      }
+    }
+
+    // Validate: Warn if agents return null for their PRIMARY metrics (weight >= 0.4)
+    const { getAgentWeight } = require('../constants/agent-weights.constants');
+    for (const result of results) {
+      const agentName = result.agentRole || result.agentName || 'unknown';
+      if (result.metrics) {
+        for (const pillar of SEVEN_PILLARS) {
+          const value = result.metrics[pillar];
+          const weight = getAgentWeight(agentName, pillar);
+
+          // Warn if PRIMARY metric (weight >= 0.4) is null
+          if (value === null && weight >= 0.4) {
+            console.warn(
+              `  ⚠️  ${result.agentName || agentName} returned null for PRIMARY metric: ${pillar} (${(weight * 100).toFixed(1)}% weight)`
+            );
+          }
         }
       }
     }
@@ -628,6 +689,76 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       }
     }
 
+    // Collect concerns raised by agents in this round (to pass to next round)
+    // Each concern is attributed to the agent that raised it
+    const nextRoundConcerns: Array<{ agentName: string; concern: string }> = [];
+    for (const result of results) {
+      if (result.concerns && Array.isArray(result.concerns)) {
+        for (const concern of result.concerns) {
+          if (typeof concern === 'string' && concern.trim().length > 0) {
+            nextRoundConcerns.push({
+              agentName: result.agentName || 'Unknown Agent',
+              concern: concern.trim(),
+            });
+          }
+        }
+      }
+    }
+
+    // Print round summary with agent results
+    console.log(`\n📋 Round ${state.currentRound + 1}/${state.maxRounds} Summary:`);
+    console.log(`   ✅ Completed: ${results.length} agent${results.length > 1 ? 's' : ''}`);
+
+    // Show each agent's final clarity and metrics
+    results.forEach((result) => {
+      const clarityScore = result.clarityScore || 0;
+      const clarityEmoji = clarityScore >= 0.8 ? '✅' : '🔄';
+      // Check if clarity is already a percentage (>1) or a decimal (0-1)
+      const clarityPct = clarityScore > 1 ? clarityScore.toFixed(0) : (clarityScore * 100).toFixed(0);
+      const iterations = result.internalIterations || 1;
+      console.log(`   ${clarityEmoji} ${result.agentName}: ${clarityPct}% clarity (${iterations} iteration${iterations > 1 ? 's' : ''})`);
+    });
+
+    // Show token usage and cost for this round
+    console.log(`   💰 Tokens: ${roundInputTokens.toLocaleString()} in / ${roundOutputTokens.toLocaleString()} out | Cost: $${roundCost.toFixed(4)}`);
+
+    // Show convergence info
+    if (score !== undefined) {
+      const convergenceEmoji = converged ? '🎯' : '🔄';
+      console.log(`   ${convergenceEmoji} Team Convergence: ${(score * 100).toFixed(1)}%${converged ? ' (CONVERGED)' : ''}`);
+    }
+
+    // Show concerns raised
+    if (nextRoundConcerns.length > 0 && state.currentRound < state.maxRounds - 1) {
+      console.log(
+        `   💭 Team raised ${nextRoundConcerns.length} concern(s) for next round discussion`
+      );
+    }
+
+    // Track agents that opted out for next round
+    // An agent opts out if their metrics are stable (identical to previous round) = confirmed agreement
+    const newlyOptedOutAgents = new Set<string>();
+    for (const result of results) {
+      const agentKey = result.agentRole; // Technical identifier (e.g., 'business-analyst')
+
+      if (!agentKey) {
+        continue; // Skip if no agent key
+      }
+
+      // Find this agent's previous round result for comparison
+      const previousResult = state.previousRoundResults?.find(
+        (r) => r.agentRole === agentKey
+      );
+
+      // Check if metrics have stabilized (identical to previous round)
+      const metricsAreStable = detectStableMetrics(agentKey, result, previousResult || null);
+
+      if (metricsAreStable) {
+        newlyOptedOutAgents.add(agentKey);
+        console.log(`  ✅ ${result.agentName} confirmed assessment (stable metrics). Will not participate in next round.`);
+      }
+    }
+
     return {
       developerOverview: state.developerOverview, // Preserve developer overview through all rounds
       agentResults: results,
@@ -636,10 +767,16 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       convergenceScore: score,
       converged,
       conversationHistory: conversationMessages, // Add to conversation
+      teamConcerns: nextRoundConcerns, // Pass concerns to next round for validation
       pillarScores: newPillarScores, // Update aggregated scores
+      optedOutAgents: newlyOptedOutAgents, // Track agents that don't want to participate in next round
       totalInputTokens: roundInputTokens,
       totalOutputTokens: roundOutputTokens,
       totalCost: roundCost,
+      // Agent progress for UI updates
+      totalAgents,
+      completedAgents: totalAgents, // All agents completed this round
+      currentAgent: undefined, // Clear current agent after round completes
     };
   }
 
@@ -655,7 +792,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       console.log(
         `  ⏭️  Stopping at round ${state.currentRound + 1}/${state.maxRounds} due to convergence (teams agreed, minRounds=${state.minRounds})`
       );
-      return END;
+      return END; // End - agents will have generated their finalSynthesis
     }
 
     // Check if reached max rounds
@@ -663,7 +800,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       return 'runAgents'; // Continue discussion
     }
 
-    return END; // Finish evaluation
+    return END; // End - agents will have generated their finalSynthesis
   }
 
   // Build the graph with checkpointing support
@@ -672,10 +809,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
     .addNode('runAgents', runAgents)
     .addEdge(START, 'generateDeveloperOverview')
     .addEdge('generateDeveloperOverview', 'runAgents')
-    .addConditionalEdges('runAgents', shouldContinue, {
-      runAgents: 'runAgents',
-      [END]: END,
-    });
+    .addConditionalEdges('runAgents', shouldContinue);
 
   // Compile with checkpointing (enables state persistence and resume)
   const checkpointer = new MemorySaver();

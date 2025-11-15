@@ -18,6 +18,7 @@ import {
 } from '../utils/shared.utils';
 import { ProgressTracker } from '../utils/progress-tracker';
 import { CostEstimatorService } from '../../src/services/cost-estimator.service';
+import { parseCommitStats } from '../../src/common/utils/commit-utils';
 
 interface CommitInfo {
   hash: string;
@@ -39,6 +40,7 @@ interface CommitEvaluationResult {
     codeComplexity: number;
     actualTimeHours: number;
     technicalDebtHours: number;
+    debtReductionHours: number;
   };
 }
 
@@ -137,6 +139,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
   // Helper to check if a message is a diagnostic log (should be filtered)
   const isDiagnosticLog = (args: any[]): boolean => {
     const message = String(args[0] || '');
+
     // Filter out vector store diagnostic logs
     if (message.includes('Found file via diff')) return true;
     if (message.includes('Line ') && message.includes(':')) return true;
@@ -155,6 +158,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
     // Filter out orchestrator status messages
     if (message.includes('🚀 Starting commit evaluation')) return true;
     if (message.includes('Large diff detected')) return true;
+    if (message.includes('📦 Initializing RAG vector store')) return true; // NEW: Always-on RAG message
     if (message.includes('First 3 lines:')) return true;
     if (message.includes('files | +') && message.includes('-')) return true;
     if (message.includes('📝 Generating developer overview')) return true;
@@ -168,6 +172,27 @@ export async function runBatchEvaluateCommand(args: string[]) {
     if (/\[\d+\/\d+\]\s*🔄/.test(message)) return true;
     if (message.includes('Round ') && message.includes('Raising Concerns')) return true;
     if (message.includes('Round ') && message.includes('Validation & Final')) return true;
+    // Filter out agent metric warnings (too noisy in batch mode)
+    if (message.includes('Missing metric') && message.includes('setting to null')) return true;
+    if (message.includes('returned null for PRIMARY metric')) return true;
+    if (message.includes('All agents returned null for pillar')) return true;
+    if (message.includes('Total weight is 0 for pillar')) return true;
+    if (message.includes('Invalid type for') && message.includes('setting to null')) return true;
+    // Filter out ALL agent iteration logs (these are now ALWAYS filtered in batch mode)
+    if (message.includes('🚀 Starting') && message.includes('agents...')) return true;
+    if (message.includes('Starting initial analysis (iteration')) return true;
+    if (message.includes('Refining analysis (iteration')) return true;
+    if (message.includes('Clarity ') && message.includes('% (threshold:')) return true;
+    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Starting')) return true;
+    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Refining')) return true;
+    if (message.includes('📊') && message.includes('[Round ') && message.includes(']: Clarity')) return true;
+    if (message.includes('🔍 [Round ') && message.includes('] Executing ')) return true;
+    // Filter out round summary logs (these are verbose in batch mode)
+    if (message.includes('📋 Round') && message.includes('Summary:')) return true;
+    if (message.includes('✅ Completed:') && message.includes('agents')) return true;
+    if (message.includes('✅') && message.includes('clarity (') && message.includes('iteration')) return true;
+    if (message.includes('🔄 Team Convergence:')) return true;
+    if (message.includes('💭 Team raised') && message.includes('concern')) return true;
     return false;
   };
 
@@ -229,15 +254,24 @@ export async function runBatchEvaluateCommand(args: string[]) {
   const evaluationTasks = commits.map((commit, i) =>
     limit(async () => {
       try {
-        // Mark as started
+        // Get commit diff FIRST
+        const diff = await getCommitDiff(options.repository, commit.hash);
+
+        // Calculate diff size and stats for progress display
+        const diffSize = diff.length;
+        const diffSizeKB = (diffSize / 1024).toFixed(1);
+        const additions = (diff.match(/^\+[^+]/gm) || []).length;
+        const deletions = (diff.match(/^-[^-]/gm) || []).length;
+
+        // Mark as started with diff stats
         progressTracker.updateProgress(commit.hash, {
           status: 'analyzing',
           progress: 0,
           currentStep: 'Starting evaluation...',
+          diffSizeKB: `${diffSizeKB}KB`,
+          additions,
+          deletions,
         });
-
-        // Get commit diff
-        const diff = await getCommitDiff(options.repository, commit.hash);
 
         if (!diff || diff.trim().length === 0) {
           progressTracker.updateProgress(commit.hash, {
@@ -259,6 +293,8 @@ export async function runBatchEvaluateCommand(args: string[]) {
         let commitTokensOutput = 0;
         let commitCost = 0;
         let lastRoundReported = -1; // Track last round to avoid duplicate updates
+        let vectorChunks = 0; // Track chunks count from vectorization
+        let vectorFiles = filesChanged.length; // Track files count
 
         // Evaluate commit with metadata for better logging and progress tracking
         const evaluationResult = await orchestrator.evaluateCommit(
@@ -271,13 +307,17 @@ export async function runBatchEvaluateCommand(args: string[]) {
           },
           {
             streaming: options.streaming, // Use parsed streaming option (default true, disable with --no-stream)
+            disableTracing: true, // Disable LangSmith for batch runs to enable streaming and real-time progress
             onProgress: (state: any) => {
               // Track vector store indexing progress
               if (state.type === 'vectorizing') {
+                vectorChunks = state.total; // Save chunks count for later updates
                 progressTracker.updateProgress(commit.hash, {
                   status: 'vectorizing',
                   progress: state.progress,
-                  currentStep: `Indexing: ${state.current}/${state.total} chunks`,
+                  currentStep: `${diffSizeKB}KB | ${state.current}/${state.total} chunks | +${additions}/-${deletions}`,
+                  chunks: state.total, // Total chunks to be indexed
+                  files: vectorFiles, // Number of files
                 });
               }
               // Track agent execution progress (from LangGraph workflow)
@@ -285,30 +325,38 @@ export async function runBatchEvaluateCommand(args: string[]) {
                 const currentRound = state.currentRound || 0;
                 maxRounds = state.maxRounds || 3;
 
-                // Track tokens and cost from state (don't update progress bar yet)
+                // Track tokens and cost from state
                 if (state.totalInputTokens !== undefined)
                   commitTokensInput = state.totalInputTokens;
                 if (state.totalOutputTokens !== undefined)
                   commitTokensOutput = state.totalOutputTokens;
                 if (state.totalCost !== undefined) commitCost = state.totalCost;
 
-                // Only update progress bar when round changes
-                if (currentRound !== lastRoundReported) {
-                  lastRoundReported = currentRound;
+                // Get agent progress info
+                const totalAgents = state.totalAgents || 5; // Default 5 agents
+                const completedAgents = state.completedAgents || 0;
+                const currentAgent = state.currentAgent;
 
-                  // Calculate progress based on rounds completed (1-indexed for display, 0-indexed from state)
-                  const progress = Math.floor(((currentRound + 1) / maxRounds) * 100);
+                // Calculate granular progress: (completed rounds + agent progress in current round)
+                const roundProgress = currentRound / maxRounds;
+                const agentProgressInRound = (completedAgents / totalAgents) / maxRounds;
+                const totalProgress = Math.floor((roundProgress + agentProgressInRound) * 100);
 
-                  progressTracker.updateProgress(commit.hash, {
-                    status: 'analyzing',
-                    progress,
-                    inputTokens: commitTokensInput,
-                    outputTokens: commitTokensOutput,
-                    totalCost: commitCost,
-                    currentRound: currentRound,
-                    maxRounds: maxRounds,
-                  });
-                }
+                // Update progress bar (more frequent updates now)
+                progressTracker.updateProgress(commit.hash, {
+                  status: 'analyzing',
+                  progress: totalProgress,
+                  inputTokens: commitTokensInput,
+                  outputTokens: commitTokensOutput,
+                  totalCost: commitCost,
+                  currentRound: currentRound,
+                  maxRounds: maxRounds,
+                  currentAgent: currentAgent, // Show which agent is/was running
+                  chunks: vectorChunks, // Persist chunks count during analysis
+                  files: vectorFiles, // Persist files count during analysis
+                });
+
+                lastRoundReported = currentRound;
               }
             },
           }
@@ -321,6 +369,9 @@ export async function runBatchEvaluateCommand(args: string[]) {
         const shortHash = commit.hash.substring(0, 8);
         const commitOutputDir = await createEvaluationDirectory(shortHash);
 
+        // Calculate commit statistics from diff
+        const commitStats = parseCommitStats(diff);
+
         // Prepare metadata
         const metadata: EvaluationMetadata = {
           timestamp: new Date().toISOString(),
@@ -329,6 +380,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
           commitMessage: commit.message,
           commitDate: commit.date,
           source: 'batch',
+          commitStats,
         };
 
         // Save all reports using shared utility
@@ -372,6 +424,8 @@ export async function runBatchEvaluateCommand(args: string[]) {
           totalCost: commitCost,
           internalIterations: agentCount > 0 ? totalInternalIterations : undefined,
           clarityScore: agentCount > 0 ? avgClarityScore : undefined,
+          chunks: vectorChunks, // Persist chunks count in final state
+          files: vectorFiles, // Persist files count in final state
         });
 
         successCount++;
@@ -396,6 +450,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
           status: 'failed',
           progress: 0,
           currentStep: `Error: ${errorMsg.substring(0, 30)}`,
+          errorMessage: errorMsg, // Track error for end-of-run summary
         });
 
         failureCount++;
@@ -587,6 +642,7 @@ function calculateAggregateMetrics(agentResults: any[]): any {
     codeComplexity: 0,
     actualTimeHours: 0,
     technicalDebtHours: 0,
+    debtReductionHours: 0,
   };
 
   // Import weighted aggregation
@@ -687,7 +743,12 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
             <td class="text-center">${result.metrics.testCoverage.toFixed(1)}</td>
             <td class="text-center">${result.metrics.codeQuality.toFixed(1)}</td>
             <td class="text-center">${result.metrics.codeComplexity.toFixed(1)}</td>
-            <td class="text-center">${result.metrics.technicalDebtHours.toFixed(1)}h</td>
+            <td class="text-center">${(() => {
+              const netDebt = result.metrics.technicalDebtHours - result.metrics.debtReductionHours;
+              const color = netDebt > 0 ? '#dc3545' : (netDebt < 0 ? '#28a745' : '#6c757d');
+              const sign = netDebt > 0 ? '+' : '';
+              return `<span style="color: ${color}; font-weight: bold;">${sign}${netDebt.toFixed(1)}h</span>`;
+            })()}</td>
             <td><a href="${path.relative(path.dirname(result.outputDir), result.outputDir)}/report-enhanced.html" class="btn btn-sm btn-primary">View</a></td>
         </tr>
     `
@@ -704,6 +765,7 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
         codeComplexity:
           commits.reduce((sum, c) => sum + c.metrics.codeComplexity, 0) / commits.length,
         technicalDebtHours: commits.reduce((sum, c) => sum + c.metrics.technicalDebtHours, 0),
+        debtReductionHours: commits.reduce((sum, c) => sum + (c.metrics.debtReductionHours || 0), 0),
       };
 
       return `
@@ -714,7 +776,12 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
                 <td class="text-center">${avgMetrics.testCoverage.toFixed(1)}</td>
                 <td class="text-center">${avgMetrics.codeQuality.toFixed(1)}</td>
                 <td class="text-center">${avgMetrics.codeComplexity.toFixed(1)}</td>
-                <td class="text-center">${avgMetrics.technicalDebtHours.toFixed(1)}h</td>
+                <td class="text-center">${(() => {
+                  const netDebt = avgMetrics.technicalDebtHours - avgMetrics.debtReductionHours;
+                  const color = netDebt > 0 ? '#dc3545' : (netDebt < 0 ? '#28a745' : '#6c757d');
+                  const sign = netDebt > 0 ? '+' : '';
+                  return `<span style="color: ${color}; font-weight: bold;">${sign}${netDebt.toFixed(1)}h</span>`;
+                })()}</td>
             </tr>
         `;
     })
@@ -753,7 +820,7 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
                     <th class="text-center">Avg Test Coverage</th>
                     <th class="text-center">Avg Code Quality</th>
                     <th class="text-center">Avg Complexity</th>
-                    <th class="text-center">Total Tech Debt</th>
+                    <th class="text-center">Net Debt <span style="font-size: 0.85em;">(−=improve)</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -773,7 +840,7 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
                     <th class="text-center">Tests</th>
                     <th class="text-center">Quality</th>
                     <th class="text-center">Complexity</th>
-                    <th class="text-center">Tech Debt</th>
+                    <th class="text-center">Net Debt <span style="font-size: 0.85em;">(−=improve)</span></th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -864,6 +931,7 @@ function printBatchUsage() {
   console.log('  --until <date>         Evaluate commits until this date');
   console.log('  --count, -n <number>   Evaluate last N commits');
   console.log('  --branch, -b <name>    Branch to evaluate (default: HEAD)');
+  console.log('  --depth, -d <mode>     Analysis depth: fast, normal, deep (default: normal)');
   console.log('  --no-stream            Disable streaming output (silent mode)');
   console.log('\nExamples:');
   console.log(
@@ -874,4 +942,5 @@ function printBatchUsage() {
   );
   console.log('  codewave batch --since "2025-01-01"                # All commits since date');
   console.log('  codewave batch --since "2025-01-01" --until "2025-01-31"  # Date range');
+  console.log('  codewave batch --count 20 --depth deep             # Deep analysis for 20 commits');
 }

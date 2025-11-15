@@ -31,3 +31,42 @@ export function formatCommitMessage(commit: {
   const { type, scope, subject } = commit;
   return scope ? `${type}(${scope}): ${subject}` : `${type}: ${subject}`;
 }
+
+export interface CommitStats {
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+}
+
+/**
+ * Parse commit statistics from git diff
+ * Counts files changed, lines added, and lines removed
+ */
+export function parseCommitStats(diff: string): CommitStats {
+  let filesChanged = 0;
+  let insertions = 0;
+  let deletions = 0;
+
+  const lines = diff.split('\n');
+
+  for (const line of lines) {
+    // Count file changes (lines starting with "diff --git")
+    if (line.startsWith('diff --git')) {
+      filesChanged++;
+    }
+    // Count insertions (lines starting with +, excluding +++ headers)
+    else if (line.startsWith('+') && !line.startsWith('+++')) {
+      insertions++;
+    }
+    // Count deletions (lines starting with -, excluding --- headers)
+    else if (line.startsWith('-') && !line.startsWith('---')) {
+      deletions++;
+    }
+  }
+
+  return {
+    filesChanged,
+    insertions,
+    deletions,
+  };
+}
