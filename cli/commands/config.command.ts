@@ -11,12 +11,14 @@ const DEFAULT_CONFIG = {
     openai: '',
     google: '',
     xai: '',
+    ollama: '',
   },
   llm: {
     provider: 'anthropic',
     model: 'claude-haiku-4-5-20251001', // Cost-optimized for multi-agent discussion (6x cheaper than Sonnet)
     temperature: 0.2,
     maxTokens: 16000, // Increased to 16000 for all models - prevents truncation and JSON parsing errors
+    baseUrl: '', // optional for local models like Ollama
   },
   agents: {
     // Enabled agents: business-analyst, sdet, developer-author, senior-architect, developer-reviewer
@@ -147,6 +149,11 @@ async function initializeConfig(): Promise<void> {
           value: 'xai',
           short: 'xAI',
         },
+        {
+          name: 'Ollama (local, free) - Run models like Llama3 and Mistral on your machine',
+          value: 'ollama',
+          short: 'Ollama',
+        },
       ],
       default: defaultProvider,
     },
@@ -213,6 +220,25 @@ async function initializeConfig(): Promise<void> {
       keyFormat: 'xai-...',
       url: 'https://console.x.ai/',
     },
+    ollama: {
+      defaultModel: 'llama3',
+      models: [
+        {
+          name: 'llama3 (recommended) - Balanced reasoning and performance',
+          value: 'llama3',
+        },
+        {
+          name: 'mistral - Smaller, faster local model',
+          value: 'mistral',
+        },
+        {
+          name: 'gemma2 - Lightweight and efficient',
+          value: 'gemma2',
+        },
+      ],
+      keyFormat: '(no API key required)',
+      url: 'https://ollama.com/library',
+    }
   };
 
   const info = providerInfo[provider as keyof typeof providerInfo];
@@ -276,32 +302,33 @@ async function initializeConfig(): Promise<void> {
     }
   }
 
-  // Prompt for API key with validation
-  console.log(chalk.gray(`\nGet your API key at: ${info.url}\n`));
+  let apiKey = '';
+  if (provider !== 'ollama') {
+    console.log(chalk.gray(`\nGet your API key at: ${info.url}\n`));
 
-  const existingApiKey = config.apiKeys[provider];
-  const apiKeyPromptMessage = existingApiKey
-    ? `Enter ${provider} API key (${info.keyFormat}) [press Enter to keep existing]:`
-    : `Enter ${provider} API key (${info.keyFormat}):`;
+    const existingApiKey = config.apiKeys[provider];
+    const apiKeyPromptMessage = existingApiKey
+      ? `Enter ${provider} API key (${info.keyFormat}) [press Enter to keep existing]:`
+      : `Enter ${provider} API key (${info.keyFormat}):`;
 
-  const { apiKey } = await inquirer.prompt([
-    {
-      type: 'password',
-      name: 'apiKey',
-      message: apiKeyPromptMessage,
-      validate: (input: string) => {
-        // If user pressed Enter and there's an existing key, that's valid
-        if (!input || input.trim().length === 0) {
-          if (existingApiKey) {
-            return true;
-          }
-          return 'API key is required';
-        }
-        return true;
+    const response = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: apiKeyPromptMessage,
+        validate: (input: string) => {
+          if (!input && existingApiKey) return true;
+          if (!input && !existingApiKey) return 'API key is required';
+          return true;
+        },
+        mask: '*',
       },
-      mask: '*',
-    },
-  ]);
+    ]);
+
+    apiKey = response.apiKey;
+  } else {
+    console.log(chalk.gray('\n(Local Ollama models do not require an API key.)\n'));
+  }
 
   // Configure provider - use new key if provided, otherwise keep existing
   if (apiKey && apiKey.trim().length > 0) {

@@ -46,6 +46,7 @@ CodeWave is a sophisticated Node.js CLI tool that leverages multiple AI agents i
 - **📈 Batch Processing**: Evaluate multiple commits with real-time progress tracking
 - **🧠 RAG (Retrieval-Augmented Generation)**: Automatic handling of large diffs (>100KB) using vector storage and semantic search
 - **🔌 Multi-LLM Support**: Works with Anthropic Claude, OpenAI GPT, and Google Gemini
+- **🖥️ Local LLM Support (Ollama)**: Run free, local models like **Llama 3**, **Mistral**, or **Gemma 2** via Ollama — no API key or internet required
 - **⚡ Production-Ready**: LangGraph-based state machines with comprehensive error handling
 - **💾 JSON Output**: Structured results for programmatic access and CI/CD integration
 - **🎯 Zero Configuration**: Interactive setup wizard with sensible defaults
@@ -82,7 +83,7 @@ codewave config --init
 
 This launches an interactive wizard to configure:
 
-- **LLM Provider**: Choose Anthropic Claude, OpenAI, or Google Gemini
+- **LLM Provider**: Choose Anthropic Claude, OpenAI, Google Gemini, or Ollama (local free models)
 - **API Keys**: Set your LLM provider credentials
 - **Model Selection**: Pick your preferred model (defaults recommended)
 - **Default Settings**: Configure batch size, output directory, and reporting preferences
@@ -132,7 +133,7 @@ start .evaluated-commits\*\report.html                 # Windows
 - **Node.js**: 18.0.0 or later
 - **npm**: 9.0.0 or later
 - **Git**: 2.0.0 or later
-- **LLM API Key**: Claude, OpenAI, or Google Gemini
+- **LLM API Key**: Claude, OpenAI, or Google Gemini (not required for local models)
 
 ### Install from npm
 
@@ -803,6 +804,12 @@ Choose your LLM provider and model based on your needs and budget:
 - Specialized use cases
 - **Recommended**: grok-4-fast-non-reasoning
 - **Alternatives**: grok-4.2, grok-4-0709
+
+**Ollama (Local LLMs — Free)**
+- Run models entirely on your machine (no API key required)
+- Supports **Llama 3**, **Mistral**, **Gemma 2**, and more
+- Works offline once the model is pulled
+- Ideal for contributors or privacy-sensitive environments
 
 **Example**: Switch to OpenAI
 
