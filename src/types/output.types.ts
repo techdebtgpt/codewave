@@ -26,6 +26,7 @@ export interface MetricsSnapshot {
   codeComplexity: number;
   actualTimeHours: number;
   technicalDebtHours: number;
+  debtReductionHours: number;
 }
 
 /**

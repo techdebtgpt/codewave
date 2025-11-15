@@ -29,6 +29,7 @@ export class SeniorArchitectAgent extends BaseAgent {
     codeComplexity: 0.417, // PRIMARY (41.7%) - Complexity expert
     actualTimeHours: 0.182, // SECONDARY (18.2%) - Implementation effort insight
     technicalDebtHours: 0.435, // PRIMARY (43.5%) - Technical debt expert
+    debtReductionHours: 0.435, // PRIMARY (43.5%) - Debt reduction & refactoring expert
   };
 
   protected readonly systemInstructions = `You are a Senior Architect participating in a code review discussion.
@@ -169,24 +170,25 @@ ${contentSection}
 ${previousRoundContext}
 
 **Your Task:**
-Evaluate this commit from an ${this.metadata.roleDescription} and score ALL 7 metrics:
+Evaluate this commit from an ${this.metadata.roleDescription} and score ALL 8 metrics:
 
-1. **technicalDebtHours** - YOUR PRIMARY EXPERTISE
-2. **codeComplexity** - YOUR PRIMARY EXPERTISE
-3. **codeQuality** - YOUR SECONDARY EXPERTISE
-4. **idealTimeHours** - YOUR SECONDARY EXPERTISE
-5. **actualTimeHours** - YOUR SECONDARY EXPERTISE
-6. **testCoverage** - YOUR SECONDARY EXPERTISE
-7. **functionalImpact** - YOUR SECONDARY EXPERTISE
+1. **technicalDebtHours** - YOUR PRIMARY EXPERTISE (debt introduced)
+2. **debtReductionHours** - YOUR PRIMARY EXPERTISE (debt removed/fixed)
+3. **codeComplexity** - YOUR PRIMARY EXPERTISE
+4. **codeQuality** - YOUR SECONDARY EXPERTISE
+5. **idealTimeHours** - YOUR SECONDARY EXPERTISE
+6. **actualTimeHours** - YOUR SECONDARY EXPERTISE
+7. **testCoverage** - YOUR SECONDARY EXPERTISE
+8. **functionalImpact** - YOUR SECONDARY EXPERTISE
 
-Focus on your expertise (technicalDebtHours, codeComplexity) but provide scores for all pillars.
+Focus on your expertise (technicalDebtHours, debtReductionHours, codeComplexity) but provide scores for all pillars.
 
 **Response Format:**
 Return ONLY valid JSON with this structure:
 \`\`\`json
 {
   "summary": "High-level architectural assessment",
-  "details": "Detailed analysis of complexity, debt, and design",
+  "details": "Detailed analysis of complexity, debt reduction, and design",
   "metrics": {
     "functionalImpact": <score 0-10>,
     "idealTimeHours": <hours estimate>,
@@ -194,7 +196,8 @@ Return ONLY valid JSON with this structure:
     "codeQuality": <score 0-10>,
     "codeComplexity": <score 0-10>,
     "actualTimeHours": <hours estimate>,
-    "technicalDebtHours": <hours estimate>
+    "technicalDebtHours": <hours estimate>,
+    "debtReductionHours": <hours estimate, 0-40>
   },
   "concerns": ["List architectural concerns"],
   "confidenceLevel": <0-100, your confidence in this analysis>${context.isFinalRound ? `,

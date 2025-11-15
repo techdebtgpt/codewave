@@ -29,11 +29,12 @@ export class BusinessAnalystAgent extends BaseAgent {
     codeComplexity: 0.083, // TERTIARY (8.3%) - Limited complexity insight
     actualTimeHours: 0.136, // TERTIARY (13.6%) - Observes implementation time
     technicalDebtHours: 0.13, // TERTIARY (13%) - Limited debt assessment
+    debtReductionHours: 0.13, // TERTIARY (13%) - Limited debt reduction insight
   };
 
   protected readonly systemInstructions = `You are a Business Analyst participating in a code review discussion.
 
-Your role is to CRITICALLY evaluate commits across ALL 7 pillars with evidence-based business analysis, maintaining a balanced perspective.
+Your role is to CRITICALLY evaluate commits across ALL 8 pillars with evidence-based business analysis, maintaining a balanced perspective.
 
 ## Your Expertise
 - **Functional Impact** (PRIMARY): Assess how significantly changes affect end users and business operations
@@ -49,7 +50,7 @@ Your role is to CRITICALLY evaluate commits across ALL 7 pillars with evidence-b
 - **Balance technical constraints with business needs**: Acknowledge technical realities while advocating for users
 - Provide balanced scores based on objective business criteria, not bias toward efficiency or innovation
 
-Return your analysis as JSON with all 7 metrics, even if some are outside your primary expertise.`;
+Return your analysis as JSON with all 8 metrics, even if some are outside your primary expertise.`;
 
   // ============================================================================
   // PROMPT BUILDING
@@ -169,7 +170,7 @@ ${contentSection}
 ${previousRoundContext}
 
 **Your Task:**
-Analyze the commit from a ${this.metadata.roleDescription} and score ALL 7 metrics:
+Analyze the commit from a ${this.metadata.roleDescription} and score ALL 8 metrics:
 
 1. **functionalImpact** - YOUR PRIMARY EXPERTISE
 2. **idealTimeHours** - YOUR PRIMARY EXPERTISE
@@ -178,6 +179,7 @@ Analyze the commit from a ${this.metadata.roleDescription} and score ALL 7 metri
 5. **codeComplexity** - your tertiary opinion
 6. **actualTimeHours** - your tertiary opinion
 7. **technicalDebtHours** - your tertiary opinion
+8. **debtReductionHours** - your tertiary opinion
 
 Focus on your expertise (functionalImpact, idealTimeHours) but provide scores for all pillars.
 For metrics outside your expertise, provide reasonable estimates based on the code changes.
@@ -196,7 +198,8 @@ Return ONLY valid JSON with this structure:
     "codeQuality": <score 0-10>,
     "codeComplexity": <score 0-10>,
     "actualTimeHours": <hours estimate>,
-    "technicalDebtHours": <hours estimate>
+    "technicalDebtHours": <hours estimate>,
+    "debtReductionHours": <hours estimate, 0-40>
   },
   "concerns": ["List any concerns you have"],
   "confidenceLevel": <0-100, your confidence in this analysis>,
@@ -220,7 +223,8 @@ Return ONLY valid JSON with this structure:
     "codeQuality": <score 0-10>,
     "codeComplexity": <score 0-10>,
     "actualTimeHours": <hours estimate>,
-    "technicalDebtHours": <hours estimate>
+    "technicalDebtHours": <hours estimate>,
+    "debtReductionHours": <hours estimate, 0-40>
   },
   "concerns": ["List any concerns you have"],
   "confidenceLevel": <0-100, your confidence in this analysis>

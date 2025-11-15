@@ -29,17 +29,19 @@ export class DeveloperReviewerAgent extends BaseAgent {
     codeComplexity: 0.208, // SECONDARY (20.8%) - Complexity from review perspective
     actualTimeHours: 0.136, // TERTIARY (13.6%) - Limited time tracking
     technicalDebtHours: 0.174, // SECONDARY (17.4%) - Debt identification
+    debtReductionHours: 0.174, // SECONDARY (17.4%) - Debt reduction quality assessment
   };
 
   protected readonly systemInstructions = `You are a Developer Reviewer participating in a code review discussion.
 
-Your role is to CRITICALLY evaluate commits across ALL 7 pillars with evidence-based analysis, maintaining a balanced perspective.
+Your role is to CRITICALLY evaluate commits across ALL 8 pillars with evidence-based analysis, maintaining a balanced perspective.
 
 ## Your Expertise
 - **Code Quality** (PRIMARY): Expert in evaluating readability, maintainability, and adherence to best practices
 - **Code Complexity** (SECONDARY): Assess complexity from a reviewability perspective
 - **Test Coverage** (SECONDARY): Review test quality and coverage
 - **Technical Debt Hours** (SECONDARY): Identify debt and estimate remediation effort
+- **Debt Reduction Hours** (SECONDARY): Assess quality of debt reduction efforts
 - **Other Metrics**: Provide insights from code review perspective
 
 ## Your Approach - CRITICAL & BALANCED
@@ -52,7 +54,7 @@ Your role is to CRITICALLY evaluate commits across ALL 7 pillars with evidence-b
 - Assess code readability and maintainability with objective criteria
 - Consider both short-term functionality and long-term maintainability
 
-Return your analysis as JSON with all 7 metrics, even if some are outside your primary expertise.`;
+Return your analysis as JSON with all 8 metrics, even if some are outside your primary expertise.`;
 
   // ============================================================================
   // PROMPT BUILDING
@@ -167,17 +169,18 @@ ${contentSection}
 ${previousRoundContext}
 
 **Your Task:**
-Review this code from a ${this.metadata.roleDescription} and score ALL 7 metrics:
+Review this code from a ${this.metadata.roleDescription} and score ALL 8 metrics:
 
 1. **codeQuality** - YOUR PRIMARY EXPERTISE
 2. **codeComplexity** - YOUR SECONDARY EXPERTISE
 3. **testCoverage** - YOUR SECONDARY EXPERTISE
 4. **technicalDebtHours** - YOUR SECONDARY EXPERTISE
-5. **functionalImpact** - your tertiary opinion
-6. **idealTimeHours** - your tertiary opinion
-7. **actualTimeHours** - your tertiary opinion
+5. **debtReductionHours** - YOUR SECONDARY EXPERTISE
+6. **functionalImpact** - your tertiary opinion
+7. **idealTimeHours** - your tertiary opinion
+8. **actualTimeHours** - your tertiary opinion
 
-Focus on your expertise (codeQuality, codeComplexity, testCoverage, technicalDebtHours) but provide scores for all pillars.
+Focus on your expertise (codeQuality, codeComplexity, testCoverage, technicalDebtHours, debtReductionHours) but provide scores for all pillars.
 
 **Response Format:**
 Return ONLY valid JSON with this structure:
@@ -192,7 +195,8 @@ Return ONLY valid JSON with this structure:
     "codeQuality": <score 0-10>,
     "codeComplexity": <score 0-10>,
     "actualTimeHours": <hours estimate>,
-    "technicalDebtHours": <hours estimate>
+    "technicalDebtHours": <hours estimate>,
+    "debtReductionHours": <hours estimate, 0-40>
   },
   "concerns": ["List quality concerns"],
   "confidenceLevel": <0-100, your confidence in this analysis>${context.isFinalRound ? `,

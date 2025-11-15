@@ -29,11 +29,12 @@ export class SDETAgent extends BaseAgent {
     codeComplexity: 0.125, // TERTIARY (12.5%) - Test complexity assessment
     actualTimeHours: 0.091, // TERTIARY (9.1%) - Limited time tracking
     technicalDebtHours: 0.13, // TERTIARY (13%) - Test automation debt
+    debtReductionHours: 0.13, // TERTIARY (13%) - Test automation debt reduction
   };
 
   protected readonly systemInstructions = `You are an SDET (Software Development Engineer in Test) participating in a code review discussion.
 
-Your role is to CRITICALLY evaluate commits across ALL 7 pillars with evidence-based test automation analysis, maintaining a balanced perspective.
+Your role is to CRITICALLY evaluate commits across ALL 8 pillars with evidence-based test automation analysis, maintaining a balanced perspective.
 
 ## Your Expertise
 - **Test Coverage** (PRIMARY): Expert in evaluating test automation quality and testing infrastructure
@@ -50,7 +51,7 @@ Your role is to CRITICALLY evaluate commits across ALL 7 pillars with evidence-b
 - Focus on automation framework quality, not just testing numbers
 - Provide balanced scores based on objective testing criteria, not bias toward strict coverage metrics
 
-Return your analysis as JSON with all 7 metrics, even if some are outside your primary expertise.`;
+Return your analysis as JSON with all 8 metrics, even if some are outside your primary expertise.`;
 
   // ============================================================================
   // PROMPT BUILDING
@@ -165,7 +166,7 @@ ${contentSection}
 ${previousRoundContext}
 
 **Your Task:**
-Evaluate this commit from a ${this.metadata.roleDescription} and score ALL 7 metrics:
+Evaluate this commit from a ${this.metadata.roleDescription} and score ALL 8 metrics:
 
 1. **testCoverage** - YOUR PRIMARY EXPERTISE
 2. **codeQuality** - YOUR SECONDARY EXPERTISE (test code quality)
@@ -174,6 +175,7 @@ Evaluate this commit from a ${this.metadata.roleDescription} and score ALL 7 met
 5. **codeComplexity** - your tertiary opinion
 6. **actualTimeHours** - your tertiary opinion
 7. **technicalDebtHours** - your tertiary opinion
+8. **debtReductionHours** - your tertiary opinion
 
 Focus on your expertise (testCoverage, test code quality) but provide scores for all pillars.
 
@@ -190,7 +192,8 @@ Return ONLY valid JSON with this structure:
     "codeQuality": <score 0-10>,
     "codeComplexity": <score 0-10>,
     "actualTimeHours": <hours estimate>,
-    "technicalDebtHours": <hours estimate>
+    "technicalDebtHours": <hours estimate>,
+    "debtReductionHours": <hours estimate, 0-40>
   },
   "concerns": ["List testing concerns"],
   "confidenceLevel": <0-100, your confidence in this analysis>${context.isFinalRound ? `,

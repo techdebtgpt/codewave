@@ -12,7 +12,7 @@
  * The 7 immutable evaluation pillars
  * All agents MUST return scores for all 7 pillars and ONLY these pillars
  */
-export const SEVEN_PILLARS = [
+export const EIGHT_PILLARS = [
   'functionalImpact',
   'idealTimeHours',
   'testCoverage',
@@ -20,9 +20,13 @@ export const SEVEN_PILLARS = [
   'codeComplexity',
   'actualTimeHours',
   'technicalDebtHours',
+  'debtReductionHours',
 ] as const;
 
-export type PillarName = (typeof SEVEN_PILLARS)[number];
+// Backward compatibility alias
+export const SEVEN_PILLARS = EIGHT_PILLARS;
+
+export type PillarName = (typeof EIGHT_PILLARS)[number];
 
 export interface AgentWeights {
   functionalImpact: number;
@@ -32,6 +36,7 @@ export interface AgentWeights {
   codeComplexity: number;
   actualTimeHours: number;
   technicalDebtHours: number;
+  debtReductionHours: number;
 }
 
 export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
@@ -43,6 +48,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.083, // TERTIARY (8.3%) - Limited complexity insight
     actualTimeHours: 0.136, // TERTIARY (13.6%) - Observes implementation time
     technicalDebtHours: 0.13, // TERTIARY (13%) - Limited debt assessment
+    debtReductionHours: 0.13, // TERTIARY (13%) - Limited debt reduction insight
   },
   sdet: {
     functionalImpact: 0.13, // TERTIARY (13%) - Validates test automation strategy
@@ -52,6 +58,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.125, // TERTIARY (12.5%) - Understands test framework complexity
     actualTimeHours: 0.091, // TERTIARY (9.1%) - Limited implementation insight
     technicalDebtHours: 0.13, // TERTIARY (13%) - Identifies test automation debt
+    debtReductionHours: 0.13, // TERTIARY (13%) - Limited test debt reduction insight
   },
   'developer-author': {
     functionalImpact: 0.13, // TERTIARY (13%) - Implements features
@@ -61,6 +68,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.167, // SECONDARY (16.7%) - Implements complexity
     actualTimeHours: 0.455, // PRIMARY (45.5%) - Knows actual time spent
     technicalDebtHours: 0.13, // TERTIARY (13%) - May introduce debt
+    debtReductionHours: 0.13, // TERTIARY (13%) - Limited debt reduction perspective
   },
   'senior-architect': {
     functionalImpact: 0.174, // SECONDARY (17.4%) - Designs architecture
@@ -70,6 +78,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.417, // PRIMARY (41.7%) - Complexity expert
     actualTimeHours: 0.182, // SECONDARY (18.2%) - Tracks team velocity
     technicalDebtHours: 0.435, // PRIMARY (43.5%) - Technical debt expert
+    debtReductionHours: 0.435, // PRIMARY (43.5%) - Debt reduction & refactoring expert
   },
   'developer-reviewer': {
     functionalImpact: 0.13, // TERTIARY (13%) - Reviews functionality
@@ -79,6 +88,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.208, // SECONDARY (20.8%) - Reviews complexity
     actualTimeHours: 0.136, // TERTIARY (13.6%) - Observes PR scope
     technicalDebtHours: 0.174, // SECONDARY (17.4%) - Identifies code debt
+    debtReductionHours: 0.174, // SECONDARY (17.4%) - Identifies debt reduction quality
   },
 };
 
@@ -93,6 +103,7 @@ export function validateWeights(): { valid: boolean; errors: string[] } {
     'codeComplexity',
     'actualTimeHours',
     'technicalDebtHours',
+    'debtReductionHours',
   ];
 
   for (const pillar of pillars) {

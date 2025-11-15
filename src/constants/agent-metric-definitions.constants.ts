@@ -128,6 +128,21 @@ export const AGENT_METRIC_DEFINITIONS: Record<string, MetricGuidelinesSet> = {
     canBeNull: true,
     nullGuidance: 'Return null if you cannot determine whether shortcuts were taken or debt was addressed',
   },
+
+  debtReductionHours: {
+    name: 'Debt Reduction Hours',
+    description: 'How much existing technical debt this commit REMOVES or FIXES through refactoring, cleanup, or improvements',
+    scale: 'Hours (0-40, higher = more debt removed)',
+    guidelines: {
+      '20-40h': 'Major debt removal - significant refactoring, eliminates multiple legacy patterns, major cleanup, substantially improved maintainability',
+      '10-20h': 'Substantial debt removal - notable refactoring effort, removes multiple technical issues, meaningful improvement',
+      '5-10h': 'Moderate debt removal - some refactoring, addresses specific technical issues, incremental improvement',
+      '1-5h': 'Minor debt removal - small cleanup or improvement, fixes specific issues, limited scope',
+      '0h': 'No debt reduction - commit focuses on new features or fixes, does not address existing technical debt',
+    },
+    canBeNull: true,
+    nullGuidance: 'Return null if unclear whether commit is a refactoring or debt-reduction-focused effort',
+  },
 };
 
 /**

@@ -40,6 +40,7 @@ interface CommitEvaluationResult {
     codeComplexity: number;
     actualTimeHours: number;
     technicalDebtHours: number;
+    debtReductionHours: number;
   };
 }
 
@@ -641,6 +642,7 @@ function calculateAggregateMetrics(agentResults: any[]): any {
     codeComplexity: 0,
     actualTimeHours: 0,
     technicalDebtHours: 0,
+    debtReductionHours: 0,
   };
 
   // Import weighted aggregation
@@ -741,7 +743,12 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
             <td class="text-center">${result.metrics.testCoverage.toFixed(1)}</td>
             <td class="text-center">${result.metrics.codeQuality.toFixed(1)}</td>
             <td class="text-center">${result.metrics.codeComplexity.toFixed(1)}</td>
-            <td class="text-center">${result.metrics.technicalDebtHours.toFixed(1)}h</td>
+            <td class="text-center">${(() => {
+              const netDebt = result.metrics.technicalDebtHours - result.metrics.debtReductionHours;
+              const color = netDebt > 0 ? '#dc3545' : (netDebt < 0 ? '#28a745' : '#6c757d');
+              const sign = netDebt > 0 ? '+' : '';
+              return `<span style="color: ${color}; font-weight: bold;">${sign}${netDebt.toFixed(1)}h</span>`;
+            })()}</td>
             <td><a href="${path.relative(path.dirname(result.outputDir), result.outputDir)}/report-enhanced.html" class="btn btn-sm btn-primary">View</a></td>
         </tr>
     `
@@ -758,6 +765,7 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
         codeComplexity:
           commits.reduce((sum, c) => sum + c.metrics.codeComplexity, 0) / commits.length,
         technicalDebtHours: commits.reduce((sum, c) => sum + c.metrics.technicalDebtHours, 0),
+        debtReductionHours: commits.reduce((sum, c) => sum + (c.metrics.debtReductionHours || 0), 0),
       };
 
       return `
@@ -768,7 +776,12 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
                 <td class="text-center">${avgMetrics.testCoverage.toFixed(1)}</td>
                 <td class="text-center">${avgMetrics.codeQuality.toFixed(1)}</td>
                 <td class="text-center">${avgMetrics.codeComplexity.toFixed(1)}</td>
-                <td class="text-center">${avgMetrics.technicalDebtHours.toFixed(1)}h</td>
+                <td class="text-center">${(() => {
+                  const netDebt = avgMetrics.technicalDebtHours - avgMetrics.debtReductionHours;
+                  const color = netDebt > 0 ? '#dc3545' : (netDebt < 0 ? '#28a745' : '#6c757d');
+                  const sign = netDebt > 0 ? '+' : '';
+                  return `<span style="color: ${color}; font-weight: bold;">${sign}${netDebt.toFixed(1)}h</span>`;
+                })()}</td>
             </tr>
         `;
     })
@@ -807,7 +820,7 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
                     <th class="text-center">Avg Test Coverage</th>
                     <th class="text-center">Avg Code Quality</th>
                     <th class="text-center">Avg Complexity</th>
-                    <th class="text-center">Total Tech Debt</th>
+                    <th class="text-center">Net Debt <span style="font-size: 0.85em;">(−=improve)</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -827,7 +840,7 @@ function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: an
                     <th class="text-center">Tests</th>
                     <th class="text-center">Quality</th>
                     <th class="text-center">Complexity</th>
-                    <th class="text-center">Tech Debt</th>
+                    <th class="text-center">Net Debt <span style="font-size: 0.85em;">(−=improve)</span></th>
                     <th>Actions</th>
                 </tr>
             </thead>

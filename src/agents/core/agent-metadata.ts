@@ -18,7 +18,7 @@ export interface AgentMetadata {
 }
 
 /**
- * Agent expertise weights for the 7 pillars
+ * Agent expertise weights for the 7 pillars + debt reduction
  * Each weight is 0-1, indicating how much the agent specializes in that pillar
  */
 export interface AgentExpertise {
@@ -29,6 +29,7 @@ export interface AgentExpertise {
   codeComplexity: number;
   actualTimeHours: number;
   technicalDebtHours: number;
+  debtReductionHours: number; // NEW: How much debt is this commit FIXING/REMOVING?
 }
 
 /**

@@ -29,11 +29,12 @@ export class DeveloperAuthorAgent extends BaseAgent {
     codeComplexity: 0.167, // SECONDARY (16.7%) - Implementation complexity insight
     actualTimeHours: 0.455, // PRIMARY (45.5%) - Implementation time expert
     technicalDebtHours: 0.13, // TERTIARY (13%) - Limited debt assessment
+    debtReductionHours: 0.13, // TERTIARY (13%) - Limited debt reduction perspective
   };
 
   protected readonly systemInstructions = `You are the Developer Author who implemented this code.
 
-Your role is to DEFEND your implementation decisions, trade-offs, and time estimates across ALL 7 pillars.
+Your role is to DEFEND your implementation decisions, trade-offs, and time estimates across ALL 8 pillars.
 
 ## Your Expertise
 - **Actual Time Hours** (PRIMARY): Expert in estimating actual implementation time and effort
@@ -53,7 +54,7 @@ Your role is to DEFEND your implementation decisions, trade-offs, and time estim
 - Break down how long different parts took and defend time estimates
 - Provide strong justification for complexity assessments
 
-Return your analysis as JSON with all 7 metrics, even if some are outside your primary expertise.`;
+Return your analysis as JSON with all 8 metrics, even if some are outside your primary expertise.`;
 
   // ============================================================================
   // PROMPT BUILDING
@@ -166,7 +167,7 @@ ${contentSection}
 ${previousRoundContext}
 
 **Your Task:**
-As the developer who wrote this code, analyze it from ${this.metadata.roleDescription} and score ALL 7 metrics:
+As the developer who wrote this code, analyze it from ${this.metadata.roleDescription} and score ALL 8 metrics:
 
 1. **actualTimeHours** - YOUR PRIMARY EXPERTISE
 2. **codeComplexity** - YOUR SECONDARY EXPERTISE
@@ -175,6 +176,7 @@ As the developer who wrote this code, analyze it from ${this.metadata.roleDescri
 5. **testCoverage** - your tertiary opinion
 6. **codeQuality** - your tertiary opinion
 7. **technicalDebtHours** - your tertiary opinion
+8. **debtReductionHours** - your tertiary opinion
 
 Focus on your expertise (actualTimeHours, codeComplexity, idealTimeHours) but provide scores for all pillars.
 
@@ -192,7 +194,8 @@ Return ONLY valid JSON with this structure:
     "codeQuality": <score 0-10>,
     "codeComplexity": <score 0-10>,
     "actualTimeHours": <hours estimate>,
-    "technicalDebtHours": <hours estimate>
+    "technicalDebtHours": <hours estimate>,
+    "debtReductionHours": <hours estimate, 0-40>
   },
   "concerns": ["List any concerns"],
   "confidenceLevel": <0-100, your confidence in this analysis>,
@@ -216,7 +219,8 @@ Return ONLY valid JSON with this structure:
     "codeQuality": <score 0-10>,
     "codeComplexity": <score 0-10>,
     "actualTimeHours": <hours estimate>,
-    "technicalDebtHours": <hours estimate>
+    "technicalDebtHours": <hours estimate>,
+    "debtReductionHours": <hours estimate, 0-40>
   },
   "concerns": ["List any concerns"],
   "confidenceLevel": <0-100, your confidence in this analysis>
