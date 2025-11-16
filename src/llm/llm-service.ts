@@ -1,12 +1,13 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { ChatOllama } from '@langchain/ollama';
 import { AppConfig } from '../config/config.interface';
 
 export class LLMService {
   /**
    * Returns a chat model instance based on AppConfig
-   * Extracts provider, model, API key from config object
+   * Extracts provider, model, API key (if needed) from config object
    * @param config Full AppConfig object
    * @param maxTokensOverride Optional override for maxTokens (e.g., from depth mode tokenBudgetPerAgent)
    */
@@ -21,16 +22,11 @@ export class LLMService {
       : configMaxTokens;
 
     // Get API key for selected provider
-    const apiKey = config.apiKeys[provider];
-
-    if (!apiKey) {
-      throw new Error(
-        `Missing API key for provider: ${provider}. Run: codewave config --set apiKeys.${provider}=<your-key>`
-      );
-    }
+    const apiKey = config.apiKeys?.[provider];
 
     switch (provider) {
       case 'anthropic':
+        if (!apiKey) throw new Error('Missing Anthropic API key');
         return new ChatAnthropic({
           anthropicApiKey: apiKey,
           temperature,
@@ -39,6 +35,7 @@ export class LLMService {
         });
 
       case 'openai':
+        if (!apiKey) throw new Error('Missing OpenAI API key');
         return new ChatOpenAI({
           openAIApiKey: apiKey,
           temperature,
@@ -47,6 +44,7 @@ export class LLMService {
         });
 
       case 'google':
+        if (!apiKey) throw new Error('Missing Google API key');
         return new ChatGoogleGenerativeAI({
           apiKey,
           temperature,
@@ -55,7 +53,7 @@ export class LLMService {
         });
 
       case 'xai':
-        // xAI Grok uses OpenAI-compatible API
+        if (!apiKey) throw new Error('Missing xAI API key');
         return new ChatOpenAI({
           openAIApiKey: apiKey,
           temperature,
@@ -64,6 +62,14 @@ export class LLMService {
           configuration: {
             baseURL: 'https://api.x.ai/v1',
           },
+        });
+
+      case 'ollama':
+        // ✅ Local Llama (or any Ollama model)
+        return new ChatOllama({
+          baseUrl: config.llm.baseUrl || 'http://localhost:11434',
+          model: model || 'llama3',
+          temperature,
         });
 
       default:

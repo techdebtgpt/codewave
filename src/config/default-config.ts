@@ -9,6 +9,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     openai: '',
     google: '',
     xai: '',
+    ollama: '',
   },
   llm: {
     provider: 'anthropic',
