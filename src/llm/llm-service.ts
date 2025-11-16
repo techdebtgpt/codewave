@@ -7,13 +7,9 @@ import { AppConfig } from '../config/config.interface';
 export class LLMService {
   /**
    * Returns a chat model instance based on AppConfig
-<<<<<<< HEAD
    * Extracts provider, model, API key (if needed) from config object
-=======
-   * Extracts provider, model, API key from config object
    * @param config Full AppConfig object
    * @param maxTokensOverride Optional override for maxTokens (e.g., from depth mode tokenBudgetPerAgent)
->>>>>>> upstream/main
    */
   static getChatModel(config: AppConfig, maxTokensOverride?: number) {
     const provider = config.llm.provider;
