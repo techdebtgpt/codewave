@@ -106,6 +106,7 @@ export class CommitEvaluationOrchestrator {
       streaming?: boolean;
       threadId?: string;
       onProgress?: (state: any) => void;
+      disableTracing?: boolean; // Disable LangSmith tracing (useful for batch runs to enable streaming)
     }
   ): Promise<{ agentResults: AgentResult[]; developerOverview?: string; [key: string]: any }> {
     console.log('\n🚀 Starting commit evaluation with LangGraph workflow...');
@@ -113,38 +114,33 @@ export class CommitEvaluationOrchestrator {
     const startTime = Date.now();
     const threadId = options?.threadId || `eval-${Date.now()}`;
 
-    // Initialize RAG vector store for large diffs (>100KB)
+    // Initialize RAG vector store for all diffs (always enabled)
     const diffSize = context.commitDiff?.length || 0;
-    const USE_RAG_THRESHOLD = 100_000; // 100KB
+    console.log(`📦 Initializing RAG vector store (${(diffSize / 1024).toFixed(1)}KB diff)...`);
 
-    if (diffSize > USE_RAG_THRESHOLD) {
-      console.log(
-        `📦 Large diff detected (${(diffSize / 1024).toFixed(1)}KB) - initializing RAG vector store...`
-      );
-      const { DiffVectorStoreService } = await import('../services/diff-vector-store.service.js');
-      const vectorStore = new DiffVectorStoreService(context.commitHash); // NEW: Pass commit hash for tagging
+    const { DiffVectorStoreService } = await import('../services/diff-vector-store.service.js');
+    const vectorStore = new DiffVectorStoreService(context.commitHash);
 
-      // Initialize with progress callback
-      await vectorStore.initialize(context.commitDiff, (progress, current, total) => {
-        if (options?.onProgress) {
-          options.onProgress({
-            type: 'vectorizing',
-            progress,
-            current,
-            total,
-            commitHash: context.commitHash,
-          });
-        }
-      });
+    // Initialize with progress callback
+    await vectorStore.initialize(context.commitDiff, (progress, current, total) => {
+      if (options?.onProgress) {
+        options.onProgress({
+          type: 'vectorizing',
+          progress,
+          current,
+          total,
+          commitHash: context.commitHash,
+        });
+      }
+    });
 
-      const stats = vectorStore.getStats();
-      console.log(
-        `   ✅ Indexed ${stats.documentCount} chunks from ${stats.filesChanged} files (+${stats.additions}/-${stats.deletions})`
-      );
+    const stats = vectorStore.getStats();
+    console.log(
+      `   ✅ Indexed ${stats.documentCount} chunks from ${stats.filesChanged} files (+${stats.additions}/-${stats.deletions})`
+    );
 
-      // Add vector store to context (agents can use it for RAG queries)
-      context.vectorStore = vectorStore;
-    }
+    // Add vector store to context (agents can use it for RAG queries)
+    context.vectorStore = vectorStore;
 
     // Add global documentation store to context (if initialized)
     if (this.documentationStore) {
@@ -173,10 +169,12 @@ export class CommitEvaluationOrchestrator {
     };
 
     // Configure for LangSmith tracing
+    const commitShortSha = context.commitHash ? context.commitHash.substring(0, 7) : 'unknown';
     const graphConfig = {
       configurable: { thread_id: threadId },
-      runName: 'CommitEvaluation',
+      runName: `CommitEvaluation-${commitShortSha}`,
       metadata: {
+        commitHash: context.commitHash,
         commitSize: context.commitDiff?.length || 0,
         filesChanged: context.filesChanged?.length || 0,
       },
@@ -184,34 +182,72 @@ export class CommitEvaluationOrchestrator {
 
     let finalState: any;
 
-    // Use streaming if enabled
-    if (options?.streaming) {
+    // Check if LangSmith tracing is enabled - if so, disable streaming due to known hanging issue with 1 agent
+    // However, if disableTracing is explicitly set, honor that to enable streaming for batch runs
+    const langsmithEnabled =
+      this.config.tracing.enabled && this.config.tracing.apiKey && !options?.disableTracing;
+    const shouldStream = options?.streaming && !langsmithEnabled;
+
+    // Use streaming if enabled AND LangSmith is not tracing (streaming + LangSmith can hang with single agent)
+    if (shouldStream) {
       console.log('📡 Streaming enabled - real-time updates');
 
-      // Stream with values mode to get full state snapshots
-      for await (const event of await this.graph.stream(initialState, {
-        ...graphConfig,
-        streamMode: 'values', // Get full state at each step
-      })) {
-        // In 'values' mode, event is the full state
-        finalState = event;
+      try {
+        // Stream with values mode to get full state snapshots
+        // Note: Adding timeout protection against hanging when only 1 agent is running with LangSmith
+        const streamTimeout = setTimeout(() => {
+          console.warn('⚠️  Stream timeout detected - falling back to standard invoke');
+          throw new Error('Stream iteration timeout');
+        }, 120000); // 2 minute timeout for entire stream
 
-        // Emit progress callback if provided
-        if (options.onProgress) {
-          options.onProgress(event);
+        for await (const event of await this.graph.stream(initialState, {
+          ...graphConfig,
+          streamMode: 'values', // Get full state at each step
+        })) {
+          clearTimeout(streamTimeout);
+
+          // In 'values' mode, event is the full state
+          finalState = event;
+
+          // Emit progress callback if provided
+          if (options.onProgress) {
+            options.onProgress(event);
+          }
+
+          // Log intermediate state updates
+          if (event?.currentRound !== undefined) {
+            const nodeName = event.currentRound === 0 ? 'START' : 'runAgents';
+            console.log(
+              `  📊 State update from ${nodeName}: Round ${event.currentRound}/${event.maxRounds}`
+            );
+          }
+
+          // Reset timeout for next iteration
+          streamTimeout.refresh();
         }
 
-        // Log intermediate state updates
-        if (event?.currentRound !== undefined) {
-          const nodeName = event.currentRound === 0 ? 'START' : 'runAgents';
-          console.log(
-            `  📊 State update from ${nodeName}: Round ${event.currentRound}/${event.maxRounds}`
-          );
-        }
+        clearTimeout(streamTimeout);
+      } catch (streamError) {
+        console.warn(
+          `⚠️  Streaming failed: ${streamError instanceof Error ? streamError.message : String(streamError)}`
+        );
+        console.log('📡 Streaming disabled - using standard invoke instead');
+        // Fall back to standard invoke on any stream error
+        finalState = await this.graph.invoke(initialState, graphConfig);
       }
     } else {
+      // Only log streaming message if user explicitly requested streaming (not just default)
+      // Silent for single evaluate mode where streaming is enabled by default
+      // if (langsmithEnabled && options?.streaming) {
+      //   console.log('📡 Streaming disabled due to LangSmith integration - using standard invoke');
+      // }
       // Standard invoke (non-streaming)
       finalState = await this.graph.invoke(initialState, graphConfig);
+
+      // Call onProgress with final state (since we're not streaming)
+      if (options?.onProgress && finalState) {
+        options.onProgress(finalState);
+      }
     }
 
     const duration = ((finalState?.endTime || Date.now()) - startTime) / 1000;

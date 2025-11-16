@@ -6,14 +6,17 @@ import {
   AgentWeights,
   AGENT_EXPERTISE_WEIGHTS,
 } from '../constants/agent-weights.constants';
+import { DEPTH_MODE_CONFIGS } from '../config/depth-modes.constants';
+import {
+  AGENT_METRIC_DEFINITIONS,
+  MetricGuidelinesSet,
+} from '../constants/agent-metric-definitions.constants';
 
 export interface AgentPromptConfig {
   role: string; // e.g., "Developer Author", "Senior Architect"
   description: string; // DETAILED role description explaining context, responsibilities, and expertise
   roleDetailedDescription?: string; // Optional detailed description (overrides default if provided)
-  agentKey: string; // Technical key (e.g., 'developer-author', 'senior-architect')
-  primaryMetrics: string[]; // Agent's primary expertise areas
-  secondaryMetrics: string[]; // Agent's secondary expertise areas
+  agentKey: string; // Technical key (e.g., 'developer-author', 'senior-architect') - used to derive metrics from AGENT_EXPERTISE_WEIGHTS
 }
 
 export interface MetricDefinition {
@@ -28,10 +31,14 @@ export interface MetricDefinition {
  * Centralized service for building consistent agent prompts
  * Ensures all agents follow the same rules and structure
  * Makes it easy to extend with new agents
+ *
+ * NOTE: Metric definitions now derive from the centralized AGENT_METRIC_DEFINITIONS
+ * which is the single source of truth. This service transforms them for display purposes.
  */
 export class PromptBuilderService {
   /**
    * Get the metric definitions for an agent based on their expertise
+   * Transforms centralized agent metrics into display format with weights
    */
   static getMetricDefinitions(agentKey: string): Record<string, MetricDefinition> {
     const weights = AGENT_EXPERTISE_WEIGHTS[agentKey];
@@ -39,72 +46,58 @@ export class PromptBuilderService {
       throw new Error(`Unknown agent: ${agentKey}`);
     }
 
-    const definitions: Record<string, MetricDefinition> = {
-      functionalImpact: {
-        name: 'functionalImpact',
-        displayName: 'Functional Impact',
-        definition: 'User-facing impact and business value of the implementation',
-        examples:
-          '9-10: Major feature affecting many users\n5-6: Moderate feature or improvement\n1-2: Internal change, minimal user impact',
-        weight: this.getWeightLabel(weights.functionalImpact, 'functionalImpact'),
-      },
-      idealTimeHours: {
-        name: 'idealTimeHours',
-        displayName: 'Ideal Time Hours',
-        definition: 'How long this SHOULD have taken ideally (in hours)',
-        examples: 'Compare against actual time spent - was it efficient?',
-        weight: this.getWeightLabel(weights.idealTimeHours, 'idealTimeHours'),
-      },
-      testCoverage: {
-        name: 'testCoverage',
-        displayName: 'Test Coverage',
-        definition: 'Quality and extent of test automation (1-10)',
-        examples:
-          '9-10: Comprehensive tests written\n5-6: Basic tests covered\n1-2: Minimal or no tests',
-        weight: this.getWeightLabel(weights.testCoverage, 'testCoverage'),
-      },
-      codeQuality: {
-        name: 'codeQuality',
-        displayName: 'Code Quality',
-        definition: 'Code cleanliness, best practices, maintainability (1-10)',
-        examples:
-          '9-10: Very clean, well-structured code\n5-6: Acceptable quality, some shortcuts\n1-2: Quick-and-dirty implementation',
-        weight: this.getWeightLabel(weights.codeQuality, 'codeQuality'),
-      },
-      codeComplexity: {
-        name: 'codeComplexity',
-        displayName: 'Code Complexity',
-        definition: 'Complexity of implementation (1-10, lower is better)',
-        examples:
-          '1-2: Simple, straightforward solution\n5-6: Moderate complexity needed\n9-10: Complex implementation required',
-        weight: this.getWeightLabel(weights.codeComplexity, 'codeComplexity'),
-      },
-      actualTimeHours: {
-        name: 'actualTimeHours',
-        displayName: 'Actual Time Hours',
-        definition: 'How much time was ACTUALLY spent implementing this change (in hours)',
-        examples:
-          '0.5-1h: Quick fixes, simple changes\n1-4h: Small features, straightforward implementations\n5-16h: Moderate features, some complexity\n17-40h: Significant features, substantial work\n40h+: Large-scale changes, major effort',
-        weight: this.getWeightLabel(weights.actualTimeHours, 'actualTimeHours'),
-      },
-      technicalDebtHours: {
-        name: 'technicalDebtHours',
-        displayName: 'Technical Debt Hours',
-        definition:
-          'Technical debt introduced (hours of future work, can be negative if debt paid down)',
-        examples:
-          'Negative: Cleaned up existing issues\n0: Neutral, no debt added\nPositive: Shortcuts taken, future work needed',
-        weight: this.getWeightLabel(weights.technicalDebtHours, 'technicalDebtHours'),
-      },
-    };
+    // Transform centralized agent metrics into display format
+    const definitions: Record<string, MetricDefinition> = {};
+
+    for (const pillar of SEVEN_PILLARS) {
+      const agentMetric = AGENT_METRIC_DEFINITIONS[pillar];
+      if (!agentMetric) {
+        throw new Error(`Metric definition not found for pillar: ${pillar}`);
+      }
+
+      definitions[pillar] = {
+        name: pillar,
+        displayName: agentMetric.name,
+        definition: agentMetric.description,
+        examples: this.extractExamples(agentMetric),
+        weight: this.getWeightLabel(weights[pillar as keyof AgentWeights] || 0),
+      };
+    }
 
     return definitions;
   }
 
   /**
+   * Extract simplified examples from detailed score-level guidelines
+   * Converts detailed guidelines into readable one-liner examples
+   */
+  private static extractExamples(metric: MetricGuidelinesSet): string {
+    const guidelines = metric.guidelines;
+    const examples: string[] = [];
+
+    // Extract high, medium, and low examples
+    const scores = Object.keys(guidelines).sort().reverse();
+    if (scores.length >= 3) {
+      // High score
+      examples.push(guidelines[scores[0]].split(':')[1]?.trim() || 'High quality');
+      // Medium score
+      examples.push(
+        guidelines[scores[Math.floor(scores.length / 2)]].split(':')[1]?.trim() || 'Moderate'
+      );
+      // Low score
+      examples.push(guidelines[scores[scores.length - 1]].split(':')[1]?.trim() || 'Low quality');
+    } else {
+      // Fallback: show first description line only
+      examples.push(metric.description);
+    }
+
+    return examples.filter(Boolean).join('\n');
+  }
+
+  /**
    * Get weight label for a metric (e.g., "PRIMARY (45.5%)")
    */
-  private static getWeightLabel(weight: number, metric: string): string {
+  private static getWeightLabel(weight: number): string {
     const percent = (weight * 100).toFixed(1);
     if (weight >= 0.4) {
       return `PRIMARY (${percent}%)`;
@@ -126,7 +119,7 @@ export class PromptBuilderService {
       '',
       roleDescription,
       '',
-      `Your task in this code review discussion is to evaluate the commit across ALL 7 pillars, with special focus on your PRIMARY expertise: ${this.formatList(config.primaryMetrics)}.`,
+      `Your task in this code review discussion is to evaluate the commit across ALL 7 pillars, with special focus on your PRIMARY expertise: ${this.getPrimaryMetricsText(config.agentKey)}.`,
       '',
     ].join('\n');
   }
@@ -134,17 +127,14 @@ export class PromptBuilderService {
   /**
    * Build round-specific instructions
    */
-  static buildRoundInstructions(roundPurpose: 'initial' | 'concerns' | 'validation'): string {
-    const instructions = {
-      initial:
-        '## Round 1: Initial Analysis\nProvide your independent assessment based on the code changes.',
-      concerns:
-        "## Round 2: Raise Concerns & Questions\nReview other agents' scores. Raise questions if there are inconsistencies or concerns.",
-      validation:
-        '## Round 3: Validation & Final Scores\nRespond to concerns and provide final refined scores.',
-    };
-
-    return instructions[roundPurpose];
+  static buildRoundInstructions(currentRound: number = 0, isFinalRound: boolean = false): string {
+    if (currentRound === 0) {
+      return '## Round 1: Initial Analysis\nProvide your independent assessment based on the code changes.';
+    } else if (isFinalRound) {
+      return `## Round ${currentRound + 1}: Final Review\nProvide your final refined scores with high confidence.`;
+    } else {
+      return `## Round ${currentRound + 1}: Team Discussion\nReview other agents' scores. Raise questions if there are inconsistencies or concerns.`;
+    }
   }
 
   /**
@@ -185,43 +175,57 @@ export class PromptBuilderService {
 
   /**
    * Build output requirements section
+   * @param depthMode Analysis depth mode (fast, normal, deep)
    */
-  static buildOutputRequirements(): string {
+  static buildOutputRequirements(depthMode: 'fast' | 'normal' | 'deep' = 'normal'): string {
+    const config = DEPTH_MODE_CONFIGS[depthMode];
+
     return [
-      '## Output Requirements (TOKEN-CONSTRAINED)',
+      `## Output Requirements (DEPTH MODE: ${depthMode.toUpperCase()})`,
       '',
-      '**You MUST return ONLY valid JSON** (max 1000 tokens output):',
+      '**You MUST return ONLY valid JSON**:',
       '',
       '{',
-      '  "summary": "A conversational 2-3 sentence overview (max 150 chars)",',
-      '  "details": "Brief explanation of your analysis (max 400 chars). Be concise. Truncate if needed.",',
+      `  "summary": "A conversational 2-3 sentence overview (max ${config.summaryLimit} chars)",`,
+      `  "details": "${config.tone} (max ${config.detailsLimit} chars)",`,
       '  "metrics": {',
       this.formatMetricsTemplate(),
       '  }',
       '}',
       '',
-      'TOKEN GUIDANCE: This output format should use ~200-400 tokens typically. Leave buffer if discussion is very complex.',
+      '**CRITICAL: You MUST provide ALL 7 metrics in your response.**',
+      '- If you cannot reasonably assess a metric, use `null` (the JSON value, not string)',
+      '- Example: `"testCoverage": null` means you cannot assess test coverage',
+      '- Do NOT guess or provide arbitrary values - use null if uncertain',
+      '- You should strive to assess all metrics, but null is acceptable when truly unable',
+      '',
+      `TOKEN GUIDANCE: Your token budget allows for ${config.tokenGuidance}. ${depthMode === 'deep' ? 'Use most of your available budget for comprehensive analysis.' : depthMode === 'normal' ? 'Use moderate detail appropriate for balanced analysis.' : 'Keep responses focused and minimal.'}`,
       '',
     ].join('\n');
   }
 
   /**
    * Build important notes section
+   * @param depthMode Analysis depth mode (fast, normal, deep)
    */
-  static buildImportantNotes(): string {
+  static buildImportantNotes(depthMode: 'fast' | 'normal' | 'deep' = 'normal'): string {
+    const config = DEPTH_MODE_CONFIGS[depthMode];
+
     return [
       '## Important Notes & Token Constraints',
       '- CRITICAL: Return ONLY the JSON object, no markdown, no extra text, no code fences',
       '- CRITICAL: Include ONLY these 7 metrics - no additional fields, no extra metrics',
-      '- ALL 7 metrics are required and MUST be the ONLY metrics in your response',
+      '- ALL 7 metrics are required and MUST be present in your response',
+      '- Metric values can be:',
+      '  - A number (1-10 for scales, hours for time metrics)',
+      '  - `null` if you genuinely cannot assess that metric',
       '- Output constraints:',
-      '  - Summary field: max 150 characters',
-      '  - Details field: max 400 characters',
-      '  - Total JSON response: keep under 1000 tokens (rough estimate: 3-4 chars per token)',
-      '- Be concise: prioritize metrics over lengthy explanations',
-      '- Keep all string values concise and avoid unnecessary newlines',
-      '- If your response is too long, truncate details field rather than omitting metrics',
-      "- Respond to other team members' concerns, but briefly",
+      `  - Summary field: max ${config.summaryLimit} characters`,
+      `  - Details field: max ${config.detailsLimit} characters`,
+      `- Analysis approach: ${config.approach}`,
+      '- Keep all string values clear and well-structured',
+      '- If your response exceeds limits, prioritize keeping all 7 metrics and truncate details field',
+      "- Respond to other team members' concerns appropriately for the depth mode",
       '',
     ].join('\n');
   }
@@ -263,20 +267,23 @@ export class PromptBuilderService {
 
   /**
    * Build complete system prompt
+   * @param depthMode Analysis depth mode (fast, normal, deep)
    */
   static buildCompleteSystemPrompt(
     config: AgentPromptConfig,
-    roundPurpose: 'initial' | 'concerns' | 'validation' = 'initial',
-    previousContext?: string
+    currentRound: number = 0,
+    isFinalRound: boolean = false,
+    previousContext?: string,
+    depthMode: 'fast' | 'normal' | 'deep' = 'normal'
   ): string {
     return [
       this.buildSystemPromptHeader(config),
-      this.buildRoundInstructions(roundPurpose),
+      this.buildRoundInstructions(currentRound, isFinalRound),
       '',
       this.buildScoringPhilosophy(config.agentKey),
       this.buildMetricsSection(config.agentKey),
-      this.buildOutputRequirements(),
-      this.buildImportantNotes(),
+      this.buildOutputRequirements(depthMode),
+      this.buildImportantNotes(depthMode),
       previousContext ? `## Team Discussion So Far\n\n${previousContext}` : '',
     ]
       .filter((s) => s && s.trim())

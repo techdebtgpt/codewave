@@ -17,7 +17,7 @@ const DEFAULT_CONFIG = {
     provider: 'anthropic',
     model: 'claude-haiku-4-5-20251001', // Cost-optimized for multi-agent discussion (6x cheaper than Sonnet)
     temperature: 0.2,
-    maxTokens: 16000, // Increased to 16000 for all models - prevents truncation and JSON parsing errors
+    maxTokens: 16000, // Safety ceiling for all depth modes - depth modes control actual usage (2000/4500/8000)
     baseUrl: '', // optional for local models like Ollama
   },
   agents: {

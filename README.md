@@ -27,6 +27,10 @@ CodeWave is a sophisticated Node.js CLI tool that leverages multiple AI agents i
 - [Multi-Round Conversation Framework](#multi-round-conversation-framework)
 - [Developer Overview](#developer-overview)
 - [Advanced Features](#advanced-features)
+  - [Analysis Depth Modes](#analysis-depth-modes)
+  - [RAG for Large Diffs](#retrieval-augmented-generation-rag-for-large-diffs)
+  - [Multi-LLM Support](#multi-llm-support)
+  - [Batch Processing](#batch-evaluation-with-progress-tracking)
 - [Examples](#examples)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
@@ -252,11 +256,11 @@ codewave config --reset            # Reset to defaults
 **Issue**: "API Key not found"
 
 ```bash
-# Solution: Run setup again or set environment variable
+# Solution: Run interactive setup to configure your API key
 codewave config --init
-# OR
-export CODEWAVE_API_KEY=sk-ant-...
-codewave evaluate --commit HEAD
+
+# Then verify configuration is correct
+codewave config --list
 ```
 
 **Issue**: "codewave: command not found" (after npm install -g)
@@ -267,12 +271,11 @@ codewave evaluate --commit HEAD
 codewave --version
 ```
 
-**Issue**: Evaluation times out
+**Issue**: Evaluation is slow for large commits
 
 ```bash
-# Solution: Enable RAG for large commits
-codewave config --init
-# Then when prompted, enable RAG for large diffs
+# Solution: RAG is always enabled and will automatically handle large diffs
+# For extremely large diffs (>1MB), consider splitting into smaller commits
 codewave evaluate --commit HEAD
 ```
 
@@ -350,17 +353,7 @@ codewave evaluate HEAD
 codewave batch --count 10
 ```
 
-#### 2. Environment Variable
-
-Set for current session or script:
-
-```bash
-export CODEWAVE_OUTPUT_DIR=./reports
-codewave evaluate --commit HEAD
-codewave batch --count 10
-```
-
-#### 3. Configuration File
+#### 2. Configuration File
 
 Set as default for all evaluations:
 
@@ -382,7 +375,7 @@ Set as default for all evaluations:
 }
 ```
 
-#### 4. Default
+#### 3. Default
 
 If not configured, defaults to `.evaluated-commits/` in current directory.
 
@@ -530,42 +523,22 @@ Applied only to a specific project, overrides user-level settings:
 - CI/CD pipeline customization
 - Integration with LangSmith tracing
 
-### Environment Variables
+### Configuration Priority
 
-Override any configuration setting using environment variables (highest priority):
-
-```bash
-# LLM Settings
-export CODEWAVE_LLM_PROVIDER=anthropic
-export CODEWAVE_API_KEY=sk-ant-...
-export CODEWAVE_MODEL=claude-haiku-4-5-20251001
-
-# Output Settings
-export CODEWAVE_OUTPUT_DIR=./reports
-export CODEWAVE_REPORT_FORMAT=json
-
-# Token & Cost Management
-export CODEWAVE_MAX_TOKENS=4000
-export CODEWAVE_BATCH_SIZE=10
-export CODEWAVE_PARALLEL=3
-
-# RAG Settings
-export CODEWAVE_ENABLE_RAG=true
-export CODEWAVE_RAG_CHUNK_SIZE=2000
-export CODEWAVE_RAG_THRESHOLD=102400
-
-# Logging
-export CODEWAVE_VERBOSE=true
-
-# Run evaluation
-codewave evaluate --commit HEAD
-```
-
-**Priority order** (environment variables override all):
+CodeWave uses a priority-based configuration system:
 
 ```
-Environment Variables > CLI Arguments > Project Config > User Config > Defaults
+CLI Arguments > Project Config > User Config > Defaults
 ```
+
+**How it works**:
+
+1. **Defaults** - Built-in sensible defaults
+2. **User Config** - Global settings from `~/.codewave/config.json` (or `%APPDATA%\codewave\config.json` on Windows)
+3. **Project Config** - Local settings from `.codewave.config.json` in project root
+4. **CLI Arguments** - Runtime flags like `--depth`, `--count`, `--parallel` (highest priority)
+
+**Note**: Environment variables are NOT currently supported for configuration. Use config files or CLI arguments instead.
 
 ---
 
@@ -757,21 +730,163 @@ For detailed information about Developer Overview generation, convergence detect
 
 ## Advanced Features
 
-### Retrieval-Augmented Generation (RAG) for Large Diffs
+### Analysis Depth Modes
 
-When commits exceed 100KB (configurable):
+CodeWave provides three configurable depth modes that control the thoroughness of agent analysis. Each mode balances speed, cost, and analysis quality differently:
+
+#### Fast Mode (`--depth fast`)
+
+**Best for**: CI/CD pipelines, quick code reviews, pre-commit checks
+
+- **Token Budget**: 1,500 tokens per agent response
+- **Internal Iterations**: 1 (single pass, no refinement)
+- **Clarity Threshold**: 65% (agent stops when fairly confident)
+- **Self-Questions**: 1 question max per iteration
+- **RAG**: Disabled (uses full diff)
+- **Self-Refinement**: Skipped for speed
+
+**Usage**:
+
+```bash
+# Single evaluation
+codewave evaluate HEAD --depth fast
+
+# Batch evaluation
+codewave batch --count 50 --depth fast
+```
+
+**Typical Evaluation Time**: 1-2 seconds per commit
+
+#### Normal Mode (`--depth normal`) - Default
+
+**Best for**: Standard commit analysis, balanced quality/cost ratio
+
+- **Token Budget**: 3,500 tokens per agent response
+- **Internal Iterations**: 3 (with self-refinement)
+- **Clarity Threshold**: 80% (good confidence level)
+- **Self-Questions**: 3 questions per iteration
+- **RAG**: Enabled for large diffs
+- **Self-Refinement**: Active (agents refine their analysis)
+
+**Usage**:
+
+```bash
+# Single evaluation (default)
+codewave evaluate HEAD
+codewave evaluate HEAD --depth normal
+
+# Batch evaluation
+codewave batch --count 20 --depth normal
+```
+
+**Typical Evaluation Time**: 2-4 seconds per commit
+
+#### Deep Mode (`--depth deep`)
+
+**Best for**: Architectural decisions, tech debt analysis, critical changes
+
+- **Token Budget**: 6,000 tokens per agent response
+- **Internal Iterations**: 8 (extensive self-refinement)
+- **Clarity Threshold**: 88% (high confidence required)
+- **Self-Questions**: 5 questions per iteration
+- **RAG**: Enabled with expanded context
+- **Self-Refinement**: Full multi-pass refinement
+
+**Usage**:
+
+```bash
+# Single evaluation
+codewave evaluate HEAD --depth deep
+
+# Batch evaluation (more expensive)
+codewave batch --count 10 --depth deep
+```
+
+**Typical Evaluation Time**: 4-8 seconds per commit
+
+#### How Depth Modes Work
+
+Each depth mode controls several internal parameters:
+
+1. **Token Budget**: Maximum tokens each agent can use in their response
+2. **Internal Iterations**: How many times agents refine their analysis
+3. **Clarity Threshold**: Minimum confidence score before stopping refinement
+4. **Self-Questions**: Questions agents ask themselves to improve analysis
+5. **RAG Settings**: Whether to use semantic search for large diffs
+
+**Self-Refinement Process**:
+
+In normal and deep modes, agents go through iterative refinement:
+
+```
+Initial Analysis → Self-Evaluation → Generate Questions →
+Refined Analysis → Check Clarity → Continue or Stop
+```
+
+This creates more thoughtful, comprehensive evaluations but takes longer.
+
+#### Choosing the Right Depth Mode
+
+| Scenario                | Recommended Mode | Reasoning                               |
+| ----------------------- | ---------------- | --------------------------------------- |
+| Pre-commit validation   | Fast             | Speed matters, basic quality checks     |
+| CI/CD pipeline          | Fast             | Quick feedback, cost-effective          |
+| Code review preparation | Normal           | Balanced analysis, good quality         |
+| Team retrospectives     | Normal           | Standard depth sufficient               |
+| Architecture review     | Deep             | Maximum insight needed                  |
+| Tech debt assessment    | Deep             | Comprehensive analysis required         |
+| Production incident     | Deep             | Critical decisions require thoroughness |
+| Large refactoring       | Deep             | Need to understand all implications     |
+
+#### Cost Comparison (using Claude 3.5 Sonnet)
+
+| Depth Mode | Tokens/Commit | Cost/Commit  | Cost/100 Commits |
+| ---------- | ------------- | ------------ | ---------------- |
+| Fast       | ~2,000-3,000  | $0.01-0.015  | $1.00-1.50       |
+| Normal     | ~3,000-5,000  | $0.015-0.025 | $1.50-2.50       |
+| Deep       | ~5,000-8,000  | $0.025-0.040 | $2.50-4.00       |
+
+#### Setting Default Depth Mode
+
+You can configure a default depth mode in your configuration:
+
+```bash
+# Via config command
+codewave config --init
+# Select your preferred default depth mode during setup
+```
+
+Or in your `.codewave.config.json`:
+
+```json
+{
+  "agents": {
+    "depthMode": "deep"
+  }
+}
+```
+
+### Retrieval-Augmented Generation (RAG) for All Commits
+
+CodeWave **always initializes RAG** for every commit, regardless of size:
 
 1. Diff is chunked into semantic segments
 2. Vector embeddings generated for each chunk
-3. Agents query most relevant chunks instead of processing entire diff
-4. Reduces tokens used and speeds up evaluation
+3. Agents can query most relevant chunks for context
+4. Improves evaluation quality and provides semantic search capabilities
 
-**Configuration**:
+**How It Works**:
+
+- RAG automatically initializes during evaluation
+- Progress shown in the "Chunks" column (e.g., `45/8` = 45 chunks from 8 files)
+- No configuration required - works out of the box
+- Especially beneficial for large commits (>100KB) where semantic search reduces token usage
+
+**Configuration** (optional):
 
 ```bash
-codewave config set enable-rag true
+# Customize chunk size (default: 2000 characters)
 codewave config set rag-chunk-size 2000
-codewave config set rag-threshold 102400
 ```
 
 ### Multi-LLM Support
@@ -831,20 +946,45 @@ See [CONFIGURATION.md](./docs/CONFIGURATION.md) for complete model comparison an
 
 ### Batch Evaluation with Progress Tracking
 
-Monitor evaluations in real-time:
+Monitor evaluations in real-time with a comprehensive progress table:
 
 ```bash
 codewave batch --count 100 --verbose
 ```
 
-**Progress Display**:
+**Progress Table Columns**:
+
+| Column       | Description                  | Example                         |
+| ------------ | ---------------------------- | ------------------------------- |
+| **Commit**   | Short SHA (7 chars)          | `e48066e`                       |
+| **User**     | Author username              | `john-doe`                      |
+| **Diff**     | Size and line changes        | `125.3KB +234/-89`              |
+| **Chunks**   | RAG indexing stats           | `45/8` (45 chunks from 8 files) |
+| **Analysis** | Progress bar + current agent | `████████░░░░ [architect...]`   |
+| **State**    | Current evaluation status    | `analyzing`, `done`, `failed`   |
+| **Tokens**   | Input/output token usage     | `85,011/10,500`                 |
+| **Cost**     | Estimated cost in USD        | `$0.0191`                       |
+| **Round**    | Current discussion round     | `3/3`                           |
+
+**Example Output**:
+
+```
+Commit   User        Diff               Chunks  Analysis           State      Tokens         Cost      Round
+e48066e  rqirici     125.3KB +234/-89   45/8    ████████████       done       85,011/10,500  $0.0191   3/3
+a1b2c3d  john-doe    45.2KB +120/-55    23/5    ██████░░░░░░       analyzing  42,300/8,200   $0.0098   2/3
+```
+
+**Additional Statistics**:
 
 - Overall completion percentage
-- Current commit being evaluated
 - Elapsed time and ETA
-- Tokens used and estimated cost
 - Success/error count
 - Average evaluation time per commit
+- Total token usage and cost
+
+**Clean Output**:
+
+Diagnostic logs (agent iterations, vectorization details, round summaries) are automatically filtered in batch mode for cleaner output. Only essential progress information and errors are displayed.
 
 ### Programmatic Access to Results
 
@@ -1028,44 +1168,66 @@ codewave/
 │   ├── index.ts                   # Main CLI entry point (Commander setup)
 │   ├── commands/
 │   │   ├── evaluate-command.ts    # Single commit evaluation
-│   │   ├── batch-evaluate-command.ts   # Multiple commits
+│   │   ├── batch-evaluate-command.ts   # Multiple commits with progress tracking
 │   │   └── config.command.ts      # Configuration management
 │   └── utils/
-│       ├── progress-tracker.ts    # Progress bar UI
+│       ├── progress-tracker.ts    # Multi-column progress bar with diff/chunks tracking
 │       └── shared.utils.ts        # CLI utilities
 ├── src/
-│   ├── agents/                    # AI agent implementations
-│   │   ├── base-agent-workflow.ts # Base agent class
-│   │   ├── business-analyst-agent.ts
-│   │   ├── developer-author-agent.ts
-│   │   ├── developer-reviewer-agent.ts
-│   │   ├── qa-engineer-agent.ts
-│   │   └── senior-architect-agent.ts
+│   ├── agents/                    # AI agent system (NEW: refactored architecture)
+│   │   ├── core/                  # Base classes and metadata
+│   │   │   ├── base-agent.ts      # Public base class for custom agents
+│   │   │   ├── agent-metadata.ts  # Agent identity and expertise definitions
+│   │   │   └── index.ts
+│   │   ├── implementations/       # Concrete agent implementations
+│   │   │   ├── business-analyst-agent.ts
+│   │   │   ├── developer-author-agent.ts
+│   │   │   ├── developer-reviewer-agent.ts
+│   │   │   ├── sdet-agent.ts
+│   │   │   ├── senior-architect-agent.ts
+│   │   │   └── index.ts
+│   │   ├── execution/             # Agent execution layer
+│   │   │   ├── agent-executor.ts  # Executes agent internal graph
+│   │   │   ├── agent-internal-graph.ts  # Multi-iteration refinement workflow
+│   │   │   └── clarity-evaluator.ts  # Evaluates analysis quality
+│   │   ├── prompts/               # Prompt building interfaces
+│   │   │   ├── prompt-builder.interface.ts
+│   │   │   └── index.ts
+│   │   ├── agent.interface.ts     # Agent contract
+│   │   └── index.ts
 │   ├── config/                    # Configuration management
-│   │   ├── config.loader.ts       # Interactive config loader
-│   │   └── types.ts               # Config type definitions
-│   ├── llm/                       # LLM provider integration
-│   │   ├── llm.service.ts         # Multi-provider service
-│   │   └── token-manager.ts       # Token tracking
+│   │   ├── config-loader.ts       # Config file loader
+│   │   ├── config.interface.ts    # Config type definitions
+│   │   └── default-config.ts      # Default configuration values
+│   ├── constants/                 # Constants and weights
+│   │   ├── agent-weights.constants.ts  # Agent expertise weights & consensus
+│   │   ├── agent-metric-definitions.constants.ts  # Metric guidelines per agent
+│   │   └── metric-definitions.constants.ts  # 7-pillar metric definitions
 │   ├── formatters/                # Output formatting
-│   │   ├── html-report-formatter-enhanced.ts
+│   │   ├── html-report-formatter-enhanced.ts  # Interactive HTML reports
+│   │   ├── conversation-transcript-formatter.ts  # Conversation formatting
 │   │   ├── json-formatter.ts
 │   │   └── markdown-formatter.ts
-│   ├── orchestrator/              # LangGraph workflow
-│   │   └── orchestrator.ts        # Multi-round conversation
-│   ├── services/                  # Business logic
-│   │   ├── commit.service.ts      # Git operations
-│   │   ├── vector-store.service.ts # RAG support
-│   │   └── evaluation.service.ts
+│   ├── orchestrator/              # LangGraph workflow orchestration
+│   │   ├── commit-evaluation-orchestrator.ts  # Main evaluation workflow
+│   │   └── commit-evaluation-graph.ts  # Multi-round discussion graph
+│   ├── services/                  # Business logic services
+│   │   ├── commit-service.ts      # Git operations
+│   │   ├── diff-vector-store.service.ts  # RAG vector store (always-on)
+│   │   ├── developer-overview-service.ts  # AI-generated commit summaries
+│   │   └── llm-service.ts         # Multi-provider LLM integration
 │   ├── types/                     # Type definitions
 │   │   ├── agent.types.ts
 │   │   ├── commit.types.ts
 │   │   └── output.types.ts
-│   ├── constants/                 # Constants and weights
-│   │   └── agent-weights.ts
 │   └── utils/                     # Shared utilities
+│       ├── gap-to-rag-query-mapper.ts  # Maps clarity gaps to RAG queries
 │       ├── token-utils.ts
 │       └── file-utils.ts
+├── docs/                          # Documentation
+│   ├── AGENT_EXTENSION_GUIDE.md   # Guide for creating custom agents
+│   ├── CONFIGURATION.md
+│   └── API.md
 ├── package.json                   # npm configuration
 ├── tsconfig.json                  # TypeScript config
 └── README.md                      # This file
@@ -1119,15 +1281,15 @@ We welcome contributions! Please follow these guidelines:
 
 ```
 A: Run 'codewave config --init' to set up your LLM provider credentials.
-   Alternatively, set CODEWAVE_API_KEY environment variable.
+   Configuration is stored in .codewave.config.json in your project root.
 ```
 
-**Q: Evaluation times out**
+**Q: Evaluation times out for very large commits**
 
 ```
-A: For large commits (>100KB), enable RAG:
-   codewave config set enable-rag true
-   RAG automatically handles large diffs by chunking and semantic search.
+A: RAG is always enabled to handle large diffs automatically.
+   For extremely large commits (>1MB), consider splitting into smaller commits.
+   You can also adjust chunk size in .codewave.config.json if needed.
 ```
 
 **Q: "Too many requests" error from LLM provider**
@@ -1150,6 +1312,18 @@ A: Archive old evaluations:
 ```
 A: Reduce batch size and parallel count:
    codewave batch --count 10 --parallel 1
+```
+
+**Q: How to find evaluations in LangSmith dashboard**
+
+```
+A: All evaluations are traced with descriptive run names:
+   Format: "CommitEvaluation-{shortSHA}" (e.g., "CommitEvaluation-e48066e")
+
+   This makes it easy to search for specific commits in LangSmith:
+   1. Open your LangSmith project dashboard
+   2. Search for "CommitEvaluation-" + your commit SHA
+   3. View detailed trace including all agent LLM calls
 ```
 
 See [TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) for more detailed solutions.

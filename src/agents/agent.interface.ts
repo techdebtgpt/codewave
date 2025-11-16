@@ -6,9 +6,10 @@ export interface Agent {
 }
 
 export interface AgentMetadata {
-  name: string;
-  description: string;
-  role: string;
+  name: string; // Technical key (e.g., 'business-analyst', 'developer-reviewer')
+  description: string; // Full description of what the agent evaluates
+  role: string; // Display name (e.g., 'Business Analyst', 'Developer Reviewer')
+  roleDescription: string; // Perspective description (e.g., 'business perspective', 'code quality perspective')
 }
 
 export interface AgentContext {
@@ -20,7 +21,10 @@ export interface AgentContext {
   conversationHistory?: import('../types/agent.types').ConversationMessage[]; // Full conversation log
   vectorStore?: import('../services/diff-vector-store.service').DiffVectorStoreService; // RAG support for large diffs
   documentationStore?: import('../services/documentation-vector-store.service').DocumentationVectorStoreService; // Global repository documentation RAG
-  roundPurpose?: 'initial' | 'concerns' | 'validation'; // Current discussion phase
+
+  // Multi-round conversation tracking
+  currentRound?: number; // Current round number (0-indexed)
+  isFinalRound?: boolean; // Flag indicating if this is the final round
 
   // Batch evaluation metadata (for progress logging)
   commitHash?: string;
@@ -45,6 +49,7 @@ export interface AgentResult {
   metrics?: Record<string, any>;
   agentName?: string; // Agent identifier (set by orchestrator)
   agentRole?: string; // Agent role/description (set by orchestrator)
+  round?: number; // Round number in which this result was produced (0-indexed)
   tokenUsage?: {
     inputTokens: number;
     outputTokens: number;
@@ -56,6 +61,30 @@ export interface AgentResult {
   clarityScore?: number; // Final self-evaluation clarity score (0-100)
   refinementNotes?: string[]; // Notes on improvements per iteration
   missingInformation?: string[]; // Information gaps identified (if any)
+
+  // LLM-generated concerns (replaces static gaps)
+  // Agents dynamically raise concerns about metrics that need validation
+  concerns?: string[]; // Concerns raised by agent in this round (e.g., "Need clarity on test coverage scope")
+  addressedConcerns?: {
+    // Tracks which previous concerns were addressed in this round
+    fromAgentName: string; // Which agent raised the concern
+    concern: string; // The original concern
+    addressed: boolean; // Whether agent addressed this concern
+    explanation?: string; // How the concern was addressed or why it wasn't
+  }[];
+
+  // Agent opt-out mechanism for subsequent rounds
+  shouldParticipateInNextRound?: boolean; // If false, agent will not participate in future rounds (default: true)
+  confidenceLevel?: number; // Agent's confidence in their current analysis (0-100, optional)
+
+  // Final synthesis (only present in last round)
+  finalSynthesis?: {
+    summary: string; // Consolidated summary across all rounds
+    details: string; // Full analysis incorporating insights from all rounds
+    metrics: Record<string, any>; // Final metric scores from last round
+    unresolvedConcerns: string[]; // Only concerns that remain unclear/unresolved for this agent
+    evolutionNotes: string; // How the agent's analysis evolved across rounds
+  };
 }
 
 /**

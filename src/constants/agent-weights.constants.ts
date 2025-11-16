@@ -12,7 +12,7 @@
  * The 7 immutable evaluation pillars
  * All agents MUST return scores for all 7 pillars and ONLY these pillars
  */
-export const SEVEN_PILLARS = [
+export const EIGHT_PILLARS = [
   'functionalImpact',
   'idealTimeHours',
   'testCoverage',
@@ -20,9 +20,13 @@ export const SEVEN_PILLARS = [
   'codeComplexity',
   'actualTimeHours',
   'technicalDebtHours',
+  'debtReductionHours',
 ] as const;
 
-export type PillarName = (typeof SEVEN_PILLARS)[number];
+// Backward compatibility alias
+export const SEVEN_PILLARS = EIGHT_PILLARS;
+
+export type PillarName = (typeof EIGHT_PILLARS)[number];
 
 export interface AgentWeights {
   functionalImpact: number;
@@ -32,6 +36,7 @@ export interface AgentWeights {
   codeComplexity: number;
   actualTimeHours: number;
   technicalDebtHours: number;
+  debtReductionHours: number;
 }
 
 export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
@@ -43,6 +48,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.083, // TERTIARY (8.3%) - Limited complexity insight
     actualTimeHours: 0.136, // TERTIARY (13.6%) - Observes implementation time
     technicalDebtHours: 0.13, // TERTIARY (13%) - Limited debt assessment
+    debtReductionHours: 0.13, // TERTIARY (13%) - Limited debt reduction insight
   },
   sdet: {
     functionalImpact: 0.13, // TERTIARY (13%) - Validates test automation strategy
@@ -52,6 +58,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.125, // TERTIARY (12.5%) - Understands test framework complexity
     actualTimeHours: 0.091, // TERTIARY (9.1%) - Limited implementation insight
     technicalDebtHours: 0.13, // TERTIARY (13%) - Identifies test automation debt
+    debtReductionHours: 0.13, // TERTIARY (13%) - Limited test debt reduction insight
   },
   'developer-author': {
     functionalImpact: 0.13, // TERTIARY (13%) - Implements features
@@ -61,6 +68,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.167, // SECONDARY (16.7%) - Implements complexity
     actualTimeHours: 0.455, // PRIMARY (45.5%) - Knows actual time spent
     technicalDebtHours: 0.13, // TERTIARY (13%) - May introduce debt
+    debtReductionHours: 0.13, // TERTIARY (13%) - Limited debt reduction perspective
   },
   'senior-architect': {
     functionalImpact: 0.174, // SECONDARY (17.4%) - Designs architecture
@@ -70,6 +78,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.417, // PRIMARY (41.7%) - Complexity expert
     actualTimeHours: 0.182, // SECONDARY (18.2%) - Tracks team velocity
     technicalDebtHours: 0.435, // PRIMARY (43.5%) - Technical debt expert
+    debtReductionHours: 0.435, // PRIMARY (43.5%) - Debt reduction & refactoring expert
   },
   'developer-reviewer': {
     functionalImpact: 0.13, // TERTIARY (13%) - Reviews functionality
@@ -79,6 +88,7 @@ export const AGENT_EXPERTISE_WEIGHTS: Record<string, AgentWeights> = {
     codeComplexity: 0.208, // SECONDARY (20.8%) - Reviews complexity
     actualTimeHours: 0.136, // TERTIARY (13.6%) - Observes PR scope
     technicalDebtHours: 0.174, // SECONDARY (17.4%) - Identifies code debt
+    debtReductionHours: 0.174, // SECONDARY (17.4%) - Identifies debt reduction quality
   },
 };
 
@@ -93,6 +103,7 @@ export function validateWeights(): { valid: boolean; errors: string[] } {
     'codeComplexity',
     'actualTimeHours',
     'technicalDebtHours',
+    'debtReductionHours',
   ];
 
   for (const pillar of pillars) {
@@ -112,11 +123,52 @@ export function validateWeights(): { valid: boolean; errors: string[] } {
   };
 }
 
+/**
+ * Map display names to technical role keys
+ * This handles variations in agent naming across the system
+ */
+export function normalizeAgentName(agentName: string): string {
+  const normalized = agentName.toLowerCase().trim();
+
+  // Map display names to technical keys
+  const nameMap: Record<string, string> = {
+    'business analyst': 'business-analyst',
+    sdet: 'sdet',
+    'sdet (test automation engineer)': 'sdet',
+    'test automation engineer': 'sdet',
+    'developer (author)': 'developer-author',
+    'developer author': 'developer-author',
+    'senior architect': 'senior-architect',
+    'developer reviewer': 'developer-reviewer',
+    'developer (reviewer)': 'developer-reviewer',
+  };
+
+  // Check if we have a mapping
+  if (nameMap[normalized]) {
+    return nameMap[normalized];
+  }
+
+  // Try to match technical keys directly
+  if (AGENT_EXPERTISE_WEIGHTS[normalized]) {
+    return normalized;
+  }
+
+  // If agentName is already a technical key, return as-is
+  if (AGENT_EXPERTISE_WEIGHTS[agentName]) {
+    return agentName;
+  }
+
+  return agentName; // Return original if no mapping found
+}
+
 // Helper: Get agent's weight for a specific pillar
 export function getAgentWeight(agentName: string, pillar: keyof AgentWeights): number {
-  const weights = AGENT_EXPERTISE_WEIGHTS[agentName];
+  // Normalize agent name before lookup
+  const normalizedName = normalizeAgentName(agentName);
+  const weights = AGENT_EXPERTISE_WEIGHTS[normalizedName];
+
   if (!weights) {
-    console.warn(`Unknown agent: ${agentName}, using equal weight`);
+    console.warn(`Unknown agent: ${agentName} (normalized: ${normalizedName}), using equal weight`);
     return 0.2; // Fallback: equal weight across 5 agents
   }
   return weights[pillar];
@@ -133,22 +185,35 @@ export function getPillarWeights(pillar: keyof AgentWeights): Record<string, num
 
 // Weighted average calculation
 export function calculateWeightedAverage(
-  scores: Array<{ agentName: string; score: number }>,
+  scores: Array<{ agentName: string; score: number | null }>,
   pillar: keyof AgentWeights
-): number {
+): number | null {
+  // Filter out null values before calculating average
+  const validScores = scores.filter(
+    (s): s is { agentName: string; score: number } => s.score !== null
+  );
+
+  // If all agents returned null, return null
+  if (validScores.length === 0) {
+    console.warn(`All agents returned null for pillar ${pillar}, cannot calculate average`);
+    return null;
+  }
+
   let weightedSum = 0;
   let totalWeight = 0;
 
-  for (const { agentName, score } of scores) {
-    const weight = getAgentWeight(agentName, pillar);
+  for (const { agentName, score } of validScores) {
+    // Normalize agent name before getting weight
+    const normalizedName = normalizeAgentName(agentName);
+    const weight = getAgentWeight(normalizedName, pillar);
     weightedSum += score * weight;
     totalWeight += weight;
   }
 
   // Avoid division by zero
   if (totalWeight === 0) {
-    console.warn(`Total weight is 0 for pillar ${pillar}, returning average`);
-    return scores.reduce((sum, s) => sum + s.score, 0) / scores.length;
+    console.warn(`Total weight is 0 for pillar ${pillar}, returning simple average`);
+    return validScores.reduce((sum, s) => sum + s.score, 0) / validScores.length;
   }
 
   return weightedSum / totalWeight;

@@ -38,12 +38,13 @@ export interface ConversationMessage {
 }
 
 // 7-Pillar metrics structure
+// Metrics can be null if an agent cannot assess them
 export interface PillarScores {
-  codeQuality: number; // 1-10 (Developer Reviewer)
-  codeComplexity: number; // 10-1 inverted (Senior Architect)
-  idealTimeHours: number; // Business Analyst
-  actualTimeHours: number; // Developer Author
-  technicalDebtHours: number; // +/- (Senior Architect)
-  functionalImpact: number; // 1-10 (Business Analyst)
-  testCoverage: number; // 1-10 (QA Engineer)
+  codeQuality: number | null; // 1-10 (Developer Reviewer)
+  codeComplexity: number | null; // 10-1 inverted (Senior Architect)
+  idealTimeHours: number | null; // Business Analyst
+  actualTimeHours: number | null; // Developer Author
+  technicalDebtHours: number | null; // +/- (Senior Architect)
+  functionalImpact: number | null; // 1-10 (Business Analyst)
+  testCoverage: number | null; // 1-10 (QA Engineer)
 }
