@@ -22,7 +22,8 @@
     "validate:publish": "npm run build && npm run lint && npm run prettier:check",
     "prepublishOnly": "npm run validate:publish",
     "prepack": "npm run build",
-    "postpack": "echo '✅ Package created successfully'"
+    "postpack": "echo '✅ Package created successfully'",
+    "batch": "node ./dist/cli/index.js batch --count 3"
   },
   "bin": {
     "codewave": "./dist/cli/index.js"

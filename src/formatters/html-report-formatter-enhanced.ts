@@ -463,7 +463,6 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
   const {
     getAgentWeight,
     calculateWeightedAverage,
-    AGENT_EXPERTISE_WEIGHTS,
     SEVEN_PILLARS,
   } = require('../constants/agent-weights.constants');
 
@@ -873,7 +872,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
             <tbody>
               ${history
                 .map(
-                  (h, idx) => `
+                  (h) => `
                 <tr>
                   <td><strong>Eval #${h.evaluationNumber}</strong> <small class="text-muted">${new Date(h.timestamp).toLocaleString()}</small></td>
                   <td class="text-center">${(h.tokens?.inputTokens || 0).toLocaleString()}</td>
@@ -1215,7 +1214,7 @@ export function generateEnhancedHtmlReport(
   ];
 
   let currentRound = -1;
-  allEvaluations.forEach((evaluation, idx) => {
+  allEvaluations.forEach((evaluation) => {
     if (evaluation.round !== currentRound) {
       currentRound = evaluation.round;
       const roundIndex = currentRound - 1; // Convert to 0-based for phase lookup

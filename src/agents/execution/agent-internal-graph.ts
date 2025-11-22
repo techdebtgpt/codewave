@@ -99,14 +99,8 @@ async function generateInitialAnalysis(
     { role: 'user', content: humanPrompt },
   ];
 
-  // Add timeout to LLM call (2 minutes)
-  const LLM_TIMEOUT = 120000;
-  const response = (await Promise.race([
-    model.invoke(messages as any),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('LLM call timeout after 120s')), LLM_TIMEOUT)
-    ),
-  ])) as any;
+  // Call model without timeout - let it complete naturally
+  const response = (await model.invoke(messages as any)) as any;
   const tokenUsage = extractTokenUsage(response);
 
   return {
@@ -179,14 +173,8 @@ async function refineAnalysis(
 
   const messages = [...state.messages, { role: 'user', content: refinementPrompt }] as any;
 
-  // Add timeout to LLM call (2 minutes)
-  const LLM_TIMEOUT = 120000;
-  const response = (await Promise.race([
-    model.invoke(messages),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('LLM call timeout after 120s')), LLM_TIMEOUT)
-    ),
-  ])) as any;
+  // Call model without timeout - let it complete naturally
+  const response = (await model.invoke(messages)) as any;
   const tokenUsage = extractTokenUsage(response);
 
   return {

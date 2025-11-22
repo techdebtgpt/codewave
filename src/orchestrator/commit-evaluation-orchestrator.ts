@@ -1,80 +1,60 @@
-import { AgentRegistry } from '../agents/agent-registry';
-import { AgentContext, AgentResult } from '../agents/agent.interface';
-import { AppConfig } from '../config/config.interface';
-import { createCommitEvaluationGraph } from './commit-evaluation-graph';
-import { formatTokenUsage, formatCost } from '../utils/token-tracker';
-import { DocumentationVectorStoreService } from '../services/documentation-vector-store.service';
+import { createCommitEvaluationGraph } from './commit-evaluation-graph'; // Assume this exists
+import { formatTokenUsage, formatCost } from '../utils/token-tracker'; // Assume these exist
+import { DiffVectorStoreService } from '../services/diff-vector-store.service.js'; // Assume this exists
+import { DocumentationVectorStoreService } from '../services/documentation-vector-store.service'; // Assume this exists
 
-/**
- * Commit Evaluation Orchestrator using LangGraph
- *
- * This orchestrator uses a state-based graph workflow to:
- * 1. Run multiple discussion rounds with agents
- * 2. Pass agent results between rounds for refinement
- * 3. Run metrics aggregation at the end
- * 4. Provide conditional logic for when to stop discussions
- */
 export class CommitEvaluationOrchestrator {
-  private config: AppConfig;
-  private graph: ReturnType<typeof createCommitEvaluationGraph>;
-  private lastDeveloperOverview?: string; // Store for external access
-  private documentationStore?: DocumentationVectorStoreService; // Global documentation store (shared across commits)
-
   constructor(
-    private readonly agentRegistry: AgentRegistry,
-    config: AppConfig
+    private readonly agentRegistry: any, // Assume AgentRegistry type
+    private config: any // Assume AppConfig type
   ) {
     this.config = config;
-
-    // Configure LangSmith tracing if enabled (same as architecture-doc-generator)
+    // Configure LangSmith tracing if enabled
     if (config.tracing.enabled && config.tracing.apiKey) {
       process.env.LANGCHAIN_TRACING_V2 = 'true';
       process.env.LANGCHAIN_API_KEY = config.tracing.apiKey;
       process.env.LANGCHAIN_PROJECT = config.tracing.project;
       process.env.LANGCHAIN_ENDPOINT = config.tracing.endpoint;
-
       console.log(`🔍 LangSmith tracing enabled: ${config.tracing.project}`);
     }
-
     // Compile the LangGraph workflow
-    this.graph = createCommitEvaluationGraph(agentRegistry, config);
-
+    this.graph = createCommitEvaluationGraph(this.agentRegistry, config);
     // Initialize global documentation vector store if enabled (fire and forget - happens in background)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initializeDocumentationStore();
   }
+
+  private graph: any;
+  private lastDeveloperOverview: any; // Store for external access
+  private documentationStore: any; // Global documentation store (shared across commits)
 
   /**
    * Initialize documentation vector store (called once at orchestrator startup)
    * Loads markdown files from repository and builds embeddings
    * This runs asynchronously in the background and is not awaited in constructor
    */
-  private async initializeDocumentationStore(): Promise<void> {
+  private async initializeDocumentationStore() {
     if (!this.config.documentation?.enabled) {
       return;
     }
-
     try {
       const docConfig = this.config.documentation;
       this.documentationStore = new DocumentationVectorStoreService();
-
       // Get repository path from process.cwd() or config
       const repoPath = process.cwd();
-
       // Initialize with default patterns if not specified
       const patterns = docConfig.patterns || ['README.md', 'docs/**/*.md'];
       const excludePatterns = docConfig.excludePatterns || ['node_modules/**', 'dist/**'];
       const chunkSize = docConfig.chunkSize || 1000;
-
       await this.documentationStore.initialize(
         repoPath,
         patterns,
         excludePatterns,
         chunkSize,
-        (progress, current, total) => {
+        (progress: number) => {
           // Silent progress - don't spam console during initialization
           if (progress === 100) {
-            const stats = this.documentationStore!.getStats();
+            const stats = this.documentationStore.getStats();
             console.log(
               `📚 Documentation indexed: ${stats.chunksCreated} chunks from ${stats.filesLoaded} files`
             );
@@ -90,41 +70,32 @@ export class CommitEvaluationOrchestrator {
   /**
    * Get the last generated developer overview
    */
-  getDeveloperOverview(): string | undefined {
+  getDeveloperOverview() {
     return this.lastDeveloperOverview;
   }
 
   /**
    * Evaluate a commit using LangGraph workflow with streaming support
    * @param context Input context with commitDiff and filesChanged
-   * @param options Optional configuration (streaming, thread_id)
+   * @param options Optional configuration (streaming, thread_id, onProgress, disableTracing)
    * @returns Object containing agent results and evaluation metadata
    */
-  async evaluateCommit(
-    context: AgentContext,
-    options?: {
-      streaming?: boolean;
-      threadId?: string;
-      onProgress?: (state: any) => void;
-      disableTracing?: boolean; // Disable LangSmith tracing (useful for batch runs to enable streaming)
-    }
-  ): Promise<{ agentResults: AgentResult[]; developerOverview?: string; [key: string]: any }> {
-    console.log('\n🚀 Starting commit evaluation with LangGraph workflow...');
+  async evaluateCommit(context: any, options: any = {}) {
+    const { streaming = true, threadId, onProgress, disableTracing = false } = options;
 
+    console.log('\n🚀 Starting commit evaluation with LangGraph workflow...');
     const startTime = Date.now();
-    const threadId = options?.threadId || `eval-${Date.now()}`;
+    const resolvedThreadId = threadId || `eval-${Date.now()}`;
 
     // Initialize RAG vector store for all diffs (always enabled)
     const diffSize = context.commitDiff?.length || 0;
     console.log(`📦 Initializing RAG vector store (${(diffSize / 1024).toFixed(1)}KB diff)...`);
 
-    const { DiffVectorStoreService } = await import('../services/diff-vector-store.service.js');
     const vectorStore = new DiffVectorStoreService(context.commitHash);
-
     // Initialize with progress callback
     await vectorStore.initialize(context.commitDiff, (progress, current, total) => {
-      if (options?.onProgress) {
-        options.onProgress({
+      if (onProgress) {
+        onProgress({
           type: 'vectorizing',
           progress,
           current,
@@ -141,7 +112,6 @@ export class CommitEvaluationOrchestrator {
 
     // Add vector store to context (agents can use it for RAG queries)
     context.vectorStore = vectorStore;
-
     // Add global documentation store to context (if initialized)
     if (this.documentationStore) {
       context.documentationStore = this.documentationStore;
@@ -171,7 +141,7 @@ export class CommitEvaluationOrchestrator {
     // Configure for LangSmith tracing
     const commitShortSha = context.commitHash ? context.commitHash.substring(0, 7) : 'unknown';
     const graphConfig = {
-      configurable: { thread_id: threadId },
+      configurable: { thread_id: resolvedThreadId },
       runName: `CommitEvaluation-${commitShortSha}`,
       metadata: {
         commitHash: context.commitHash,
@@ -180,40 +150,29 @@ export class CommitEvaluationOrchestrator {
       },
     };
 
-    let finalState: any;
-
+    let finalState;
     // Check if LangSmith tracing is enabled - if so, disable streaming due to known hanging issue with 1 agent
     // However, if disableTracing is explicitly set, honor that to enable streaming for batch runs
     const langsmithEnabled =
-      this.config.tracing.enabled && this.config.tracing.apiKey && !options?.disableTracing;
-    const shouldStream = options?.streaming && !langsmithEnabled;
+      this.config.tracing.enabled && this.config.tracing.apiKey && !disableTracing;
+    const shouldStream = streaming && !langsmithEnabled;
 
     // Use streaming if enabled AND LangSmith is not tracing (streaming + LangSmith can hang with single agent)
     if (shouldStream) {
       console.log('📡 Streaming enabled - real-time updates');
-
       try {
         // Stream with values mode to get full state snapshots
-        // Note: Adding timeout protection against hanging when only 1 agent is running with LangSmith
-        const streamTimeout = setTimeout(() => {
-          console.warn('⚠️  Stream timeout detected - falling back to standard invoke');
-          throw new Error('Stream iteration timeout');
-        }, 120000); // 2 minute timeout for entire stream
-
-        for await (const event of await this.graph.stream(initialState, {
+        const stream = await this.graph.stream(initialState, {
           ...graphConfig,
           streamMode: 'values', // Get full state at each step
-        })) {
-          clearTimeout(streamTimeout);
-
+        });
+        for await (const event of stream) {
           // In 'values' mode, event is the full state
           finalState = event;
-
           // Emit progress callback if provided
-          if (options.onProgress) {
-            options.onProgress(event);
+          if (onProgress) {
+            onProgress(event);
           }
-
           // Log intermediate state updates
           if (event?.currentRound !== undefined) {
             const nodeName = event.currentRound === 0 ? 'START' : 'runAgents';
@@ -221,32 +180,35 @@ export class CommitEvaluationOrchestrator {
               `  📊 State update from ${nodeName}: Round ${event.currentRound}/${event.maxRounds}`
             );
           }
-
-          // Reset timeout for next iteration
-          streamTimeout.refresh();
         }
-
-        clearTimeout(streamTimeout);
       } catch (streamError) {
         console.warn(
           `⚠️  Streaming failed: ${streamError instanceof Error ? streamError.message : String(streamError)}`
         );
         console.log('📡 Streaming disabled - using standard invoke instead');
-        // Fall back to standard invoke on any stream error
-        finalState = await this.graph.invoke(initialState, graphConfig);
+        try {
+          // Fall back to standard invoke on any stream error
+          finalState = await this.graph.invoke(initialState, graphConfig);
+        } catch (invokeError) {
+          console.error(
+            `❌ Fallback invoke also failed: ${invokeError instanceof Error ? invokeError.message : String(invokeError)}`
+          );
+          throw invokeError;
+        }
       }
     } else {
-      // Only log streaming message if user explicitly requested streaming (not just default)
-      // Silent for single evaluate mode where streaming is enabled by default
-      // if (langsmithEnabled && options?.streaming) {
-      //   console.log('📡 Streaming disabled due to LangSmith integration - using standard invoke');
-      // }
       // Standard invoke (non-streaming)
-      finalState = await this.graph.invoke(initialState, graphConfig);
-
-      // Call onProgress with final state (since we're not streaming)
-      if (options?.onProgress && finalState) {
-        options.onProgress(finalState);
+      try {
+        finalState = await this.graph.invoke(initialState, graphConfig);
+        // Call onProgress with final state (since we're not streaming)
+        if (onProgress && finalState) {
+          onProgress(finalState);
+        }
+      } catch (invokeError) {
+        console.error(
+          `❌ Graph invocation failed: ${invokeError instanceof Error ? invokeError.message : String(invokeError)}`
+        );
+        throw invokeError;
       }
     }
 
@@ -256,7 +218,6 @@ export class CommitEvaluationOrchestrator {
     console.log(
       `   Discussion rounds: ${finalState?.currentRound || 0}/${finalState?.maxRounds || 0}`
     );
-
     if (finalState?.converged) {
       console.log(
         `   🎯 Converged early with ${((finalState.convergenceScore || 0) * 100).toFixed(1)}% similarity`
@@ -285,8 +246,10 @@ export class CommitEvaluationOrchestrator {
     }
 
     // Return full state including agent results and developer overview
+    // NOTE: Use evaluationHistory (all rounds accumulated) instead of agentResults (current round only)
+    // agentResults is kept lean during execution to prevent token bloat, but we need the full history for reporting
     return {
-      agentResults: finalState?.agentResults || [],
+      agentResults: finalState?.evaluationHistory || [],
       developerOverview: finalState?.developerOverview,
       currentRound: finalState?.currentRound,
       maxRounds: finalState?.maxRounds,
@@ -304,20 +267,18 @@ export class CommitEvaluationOrchestrator {
    * @param threadId Thread ID of the checkpoint to resume
    * @returns Array of agent results
    */
-  async resumeEvaluation(threadId: string): Promise<AgentResult[]> {
+  async resumeEvaluation(threadId: string) {
     console.log(`\n🔄 Resuming evaluation from checkpoint: ${threadId}`);
-
     const graphConfig = {
       configurable: { thread_id: threadId },
       runName: 'CommitEvaluation-Resume',
     };
-
     // Resume from checkpoint (null state means resume from last checkpoint)
-    const finalState = await this.graph.invoke(null as any, graphConfig);
-
+    const finalState = await this.graph.invoke(null, graphConfig);
     console.log(`\n✅ Evaluation resumed and completed`);
-    console.log(`   Total agents: ${finalState.agentResults.length}`);
-
-    return finalState.agentResults;
+    // Use evaluationHistory to get all rounds, not just current round
+    const allResults = finalState.evaluationHistory || finalState.agentResults || [];
+    console.log(`   Total agents (all rounds): ${allResults.length}`);
+    return allResults;
   }
 }

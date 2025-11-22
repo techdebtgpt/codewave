@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { execSync, spawnSync } from 'child_process';
-import fs from 'fs/promises';
-import path from 'path';
+import { spawnSync } from 'child_process';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import pLimit from 'p-limit';
 import inquirer from 'inquirer';
 import { AppConfig } from '../../src/config/config.interface';
@@ -9,16 +9,17 @@ import { loadConfig } from '../../src/config/config-loader';
 import { CommitEvaluationOrchestrator } from '../../src/orchestrator/commit-evaluation-orchestrator';
 import {
   createAgentRegistry,
-  generateTimestamp,
   saveEvaluationReports,
   createEvaluationDirectory,
-  generateBatchIdentifier,
   EvaluationMetadata,
   printBatchCompletionMessage,
 } from '../utils/shared.utils';
 import { ProgressTracker } from '../utils/progress-tracker';
 import { CostEstimatorService } from '../../src/services/cost-estimator.service';
 import { parseCommitStats } from '../../src/common/utils/commit-utils';
+import { consoleManager } from '../../src/common/utils/console-manager';
+import { getCommitDiff, extractFilesFromDiff } from '../utils/git-utils';
+import { isDiagnosticLog } from '../utils/diagnostic-filter';
 
 interface CommitInfo {
   hash: string;
@@ -115,18 +116,12 @@ export async function runBatchEvaluateCommand(args: string[]) {
   // Configure concurrency limit (10 concurrent evaluations)
   const limit = pLimit(10);
 
-  // Save all original console and process methods before suppressing
-  const originalConsoleLog = console.log;
-  const originalConsoleWarn = console.warn;
-  const originalConsoleError = console.error;
-  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-
   // Buffer for storing suppressed output (warnings, errors)
   const suppressedOutput: Array<{ type: string; args: any[] }> = [];
-  let suppressOutput = false;
 
-  // Initialize progress tracker with original console.log for header printing
-  const progressTracker = new ProgressTracker(originalConsoleLog);
+  // Initialize progress tracker
+  // Note: ProgressTracker now uses consoleManager internally for headers
+  const progressTracker = new ProgressTracker();
   progressTracker.initialize(
     commits.map((c) => ({
       hash: c.hash,
@@ -136,342 +131,80 @@ export async function runBatchEvaluateCommand(args: string[]) {
     }))
   );
 
-  // Helper to check if a message is a diagnostic log (should be filtered)
-  const isDiagnosticLog = (args: any[]): boolean => {
-    const message = String(args[0] || '');
-
-    // Filter out vector store diagnostic logs
-    if (message.includes('Found file via diff')) return true;
-    if (message.includes('Line ') && message.includes(':')) return true;
-    if (message.includes('Confirmed file via')) return true;
-    if (message.includes('Building in-memory vector store')) return true;
-    if (message.includes('Vector store ready')) return true;
-    if (message.includes('Parsing ') && message.includes('lines')) return true;
-    if (message.includes('Detecting agent')) return true;
-    if (message.includes('Developer overview generated')) return true;
-    if (message.includes('State update from')) return true;
-    if (message.includes('Streaming enabled')) return true;
-    if (message.includes('Indexing:')) return true;
-    if (message.includes('Cleaning up vector store')) return true;
-    if (message.includes('Detected') && message.includes('unique agents')) return true;
-    if (message.includes('responses (rounds:')) return true;
-    // Filter out orchestrator status messages
-    if (message.includes('🚀 Starting commit evaluation')) return true;
-    if (message.includes('Large diff detected')) return true;
-    if (message.includes('📦 Initializing RAG vector store')) return true; // NEW: Always-on RAG message
-    if (message.includes('First 3 lines:')) return true;
-    if (message.includes('files | +') && message.includes('-')) return true;
-    if (message.includes('📝 Generating developer overview')) return true;
-    if (message.includes('Round ') && message.includes('Analysis')) return true;
-    if (message.includes('Evaluation complete in')) return true;
-    if (message.includes('Total agents:')) return true;
-    if (message.includes('Discussion rounds:')) return true;
-    if (message.includes('💰')) return true;
-    if (message.includes('Indexed') && message.includes('chunks')) return true;
-    // Filter out round information logs (e.g., "[3/4] 🔄 6b66968 - Round 2/3")
-    if (/\[\d+\/\d+\]\s*🔄/.test(message)) return true;
-    if (message.includes('Round ') && message.includes('Raising Concerns')) return true;
-    if (message.includes('Round ') && message.includes('Validation & Final')) return true;
-    // Filter out agent metric warnings (too noisy in batch mode)
-    if (message.includes('Missing metric') && message.includes('setting to null')) return true;
-    if (message.includes('returned null for PRIMARY metric')) return true;
-    if (message.includes('All agents returned null for pillar')) return true;
-    if (message.includes('Total weight is 0 for pillar')) return true;
-    if (message.includes('Invalid type for') && message.includes('setting to null')) return true;
-    // Filter out ALL agent iteration logs (these are now ALWAYS filtered in batch mode)
-    if (message.includes('🚀 Starting') && message.includes('agents...')) return true;
-    if (message.includes('Starting initial analysis (iteration')) return true;
-    if (message.includes('Refining analysis (iteration')) return true;
-    if (message.includes('Clarity ') && message.includes('% (threshold:')) return true;
-    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Starting'))
-      return true;
-    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: Refining'))
-      return true;
-    if (message.includes('📊') && message.includes('[Round ') && message.includes(']: Clarity'))
-      return true;
-    if (message.includes('🔍 [Round ') && message.includes('] Executing ')) return true;
-    // Filter out round summary logs (these are verbose in batch mode)
-    if (message.includes('📋 Round') && message.includes('Summary:')) return true;
-    if (message.includes('✅ Completed:') && message.includes('agents')) return true;
-    if (message.includes('✅') && message.includes('clarity (') && message.includes('iteration'))
-      return true;
-    if (message.includes('🔄 Team Convergence:')) return true;
-    if (message.includes('💭 Team raised') && message.includes('concern')) return true;
-    return false;
-  };
-
-  // Override console methods to suppress output during evaluation
-  // NOTE: We do NOT suppress process.stderr because cli-progress writes to stderr!
-  console.log = (...args: any[]) => {
-    if (!suppressOutput) {
-      originalConsoleLog(...args);
-    } else if (!isDiagnosticLog(args)) {
-      // Only buffer non-diagnostic logs (actual errors or important messages)
-      suppressedOutput.push({ type: 'log', args });
+  // Start suppressing output using ConsoleManager
+  consoleManager.startSuppressing((args, type) => {
+    // Check if it's a diagnostic log that should be completely ignored
+    if (isDiagnosticLog(args)) {
+      return true; // Suppress and ignore
     }
-  };
 
-  console.warn = (...args: any[]) => {
-    if (!suppressOutput) {
-      originalConsoleWarn(...args);
-    } else if (!isDiagnosticLog(args)) {
-      suppressedOutput.push({ type: 'warn', args });
-    }
-  };
+    // If it's NOT a diagnostic log, it's an important message/error
+    // Buffer it to show after progress bars complete
+    suppressedOutput.push({ type, args });
 
-  console.error = (...args: any[]) => {
-    if (!suppressOutput) {
-      originalConsoleError(...args);
-    } else if (!isDiagnosticLog(args)) {
-      suppressedOutput.push({ type: 'error', args });
-    }
-  };
+    return true; // Suppress printing NOW
+  });
 
   // Override process.stdout.write to suppress orchestrator progress lines
+  // Note: We keep this manual override as ConsoleManager doesn't handle process.stdout.write
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
   (process.stdout.write as any) = function (str: string, ...args: any[]): boolean {
-    if (suppressOutput) {
-      // Block orchestrator progress lines like "  [1/2] ✅ 33% [5/15] business-analyst"
-      if (/^\s+\[[\d]+\/[\d]+\]/.test(str)) {
-        return true; // Suppress
-      }
-      // Block explicit newlines from progress tracking
-      if (str === '\n' || str === '\r\n') {
-        return true; // Suppress
-      }
-      // Block carriage return progress updates
-      if (str.startsWith('\r')) {
-        return true; // Suppress
-      }
+    // Block orchestrator progress lines like "  [1/2] ✅ 33% [5/15] business-analyst"
+    if (/^\s+\[[\d]+\/[\d]+\]/.test(str)) {
+      return true; // Suppress
+    }
+    // Block explicit newlines from progress tracking
+    if (str === '\n' || str === '\r\n') {
+      return true; // Suppress
+    }
+    // Block carriage return progress updates
+    if (str.startsWith('\r')) {
+      return true; // Suppress
     }
     return originalStdoutWrite(str, ...args);
   };
 
-  // Start suppressing output AFTER initial render
-  suppressOutput = true;
-
   // Evaluate commits with concurrency control
   const results: CommitEvaluationResult[] = [];
-  let successCount = 0;
-  let failureCount = 0;
 
   // Create evaluation tasks
   const evaluationTasks = commits.map((commit, i) =>
-    limit(async () => {
-      try {
-        // Get commit diff FIRST
-        const diff = await getCommitDiff(options.repository, commit.hash);
-
-        // Calculate diff size and stats for progress display
-        const diffSize = diff.length;
-        const diffSizeKB = (diffSize / 1024).toFixed(1);
-        const additions = (diff.match(/^\+[^+]/gm) || []).length;
-        const deletions = (diff.match(/^-[^-]/gm) || []).length;
-
-        // Mark as started with diff stats
-        progressTracker.updateProgress(commit.hash, {
-          status: 'analyzing',
-          progress: 0,
-          currentStep: 'Starting evaluation...',
-          diffSizeKB: `${diffSizeKB}KB`,
-          additions,
-          deletions,
-        });
-
-        if (!diff || diff.trim().length === 0) {
-          progressTracker.updateProgress(commit.hash, {
-            status: 'failed',
-            progress: 0,
-            currentStep: 'Empty diff - skipped',
-          });
-          failureCount++;
-          return null;
-        }
-
-        // Extract files changed from diff
-        const filesChanged = extractFilesFromDiff(diff);
-
-        // Track agent progress
-        const totalSteps = 0;
-        let maxRounds = 3; // Default
-        let commitTokensInput = 0;
-        let commitTokensOutput = 0;
-        let commitCost = 0;
-        let lastRoundReported = -1; // Track last round to avoid duplicate updates
-        let vectorChunks = 0; // Track chunks count from vectorization
-        let vectorFiles = filesChanged.length; // Track files count
-
-        // Evaluate commit with metadata for better logging and progress tracking
-        const evaluationResult = await orchestrator.evaluateCommit(
-          {
-            commitDiff: diff,
-            filesChanged,
-            commitHash: commit.hash,
-            commitIndex: i + 1,
-            totalCommits: commits.length,
-          },
-          {
-            streaming: options.streaming, // Use parsed streaming option (default true, disable with --no-stream)
-            disableTracing: true, // Disable LangSmith for batch runs to enable streaming and real-time progress
-            onProgress: (state: any) => {
-              // Track vector store indexing progress
-              if (state.type === 'vectorizing') {
-                vectorChunks = state.total; // Save chunks count for later updates
-                progressTracker.updateProgress(commit.hash, {
-                  status: 'vectorizing',
-                  progress: state.progress,
-                  currentStep: `${diffSizeKB}KB | ${state.current}/${state.total} chunks | +${additions}/-${deletions}`,
-                  chunks: state.total, // Total chunks to be indexed
-                  files: vectorFiles, // Number of files
-                });
-              }
-              // Track agent execution progress (from LangGraph workflow)
-              else if (state.agentResults !== undefined) {
-                const currentRound = state.currentRound || 0;
-                maxRounds = state.maxRounds || 3;
-
-                // Track tokens and cost from state
-                if (state.totalInputTokens !== undefined)
-                  commitTokensInput = state.totalInputTokens;
-                if (state.totalOutputTokens !== undefined)
-                  commitTokensOutput = state.totalOutputTokens;
-                if (state.totalCost !== undefined) commitCost = state.totalCost;
-
-                // Get agent progress info
-                const totalAgents = state.totalAgents || 5; // Default 5 agents
-                const completedAgents = state.completedAgents || 0;
-                const currentAgent = state.currentAgent;
-
-                // Calculate granular progress: (completed rounds + agent progress in current round)
-                const roundProgress = currentRound / maxRounds;
-                const agentProgressInRound = completedAgents / totalAgents / maxRounds;
-                const totalProgress = Math.floor((roundProgress + agentProgressInRound) * 100);
-
-                // Update progress bar (more frequent updates now)
-                progressTracker.updateProgress(commit.hash, {
-                  status: 'analyzing',
-                  progress: totalProgress,
-                  inputTokens: commitTokensInput,
-                  outputTokens: commitTokensOutput,
-                  totalCost: commitCost,
-                  currentRound: currentRound,
-                  maxRounds: maxRounds,
-                  currentAgent: currentAgent, // Show which agent is/was running
-                  chunks: vectorChunks, // Persist chunks count during analysis
-                  files: vectorFiles, // Persist files count during analysis
-                });
-
-                lastRoundReported = currentRound;
-              }
-            },
-          }
-        );
-
-        // Extract agent results and metadata from evaluation result
-        const agentResults = evaluationResult.agentResults || [];
-
-        // Create evaluation directory using short commit hash (first 8 chars)
-        const shortHash = commit.hash.substring(0, 8);
-        const commitOutputDir = await createEvaluationDirectory(shortHash);
-
-        // Calculate commit statistics from diff
-        const commitStats = parseCommitStats(diff);
-
-        // Prepare metadata
-        const metadata: EvaluationMetadata = {
-          timestamp: new Date().toISOString(),
-          commitHash: commit.hash,
-          commitAuthor: commit.author,
-          commitMessage: commit.message,
-          commitDate: commit.date,
-          source: 'batch',
-          commitStats,
-        };
-
-        // Save all reports using shared utility
-        await saveEvaluationReports({
-          agentResults,
-          outputDir: commitOutputDir,
-          metadata,
-          diff,
-          developerOverview: evaluationResult.developerOverview, // Pass developer overview directly
-        });
-
-        // Calculate aggregate metrics
-        const metrics = calculateAggregateMetrics(agentResults);
-
-        // Extract internal iteration metrics from agent results
-        let totalInternalIterations = 0;
-        let avgClarityScore = 0;
-        let agentCount = 0;
-
-        agentResults.forEach((result: any) => {
-          if (result.internalIterations !== undefined) {
-            totalInternalIterations += result.internalIterations;
-            agentCount++;
-          }
-          if (result.clarityScore !== undefined) {
-            avgClarityScore += result.clarityScore;
-          }
-        });
-
-        if (agentCount > 0) {
-          avgClarityScore = Math.round(avgClarityScore / agentCount);
-        }
-
-        // Mark as complete with final token/cost info and internal iteration metrics
-        progressTracker.updateProgress(commit.hash, {
-          status: 'complete',
-          progress: 100,
-          currentStep: '✅ Complete',
-          inputTokens: commitTokensInput,
-          outputTokens: commitTokensOutput,
-          totalCost: commitCost,
-          internalIterations: agentCount > 0 ? totalInternalIterations : undefined,
-          clarityScore: agentCount > 0 ? avgClarityScore : undefined,
-          chunks: vectorChunks, // Persist chunks count in final state
-          files: vectorFiles, // Persist files count in final state
-        });
-
-        successCount++;
-
-        return {
-          commit,
-          agentResults,
-          outputDir: commitOutputDir,
-          metrics,
-        };
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        const errorStack = error instanceof Error ? error.stack : '';
-        // Log error to console even when suppressed
-        originalConsoleLog(`❌ Error evaluating ${commit.hash}: ${errorMsg}`);
-        if (errorStack) {
-          originalConsoleLog(`Stack: ${errorStack.substring(0, 300)}`);
-        }
-
-        // Mark as failed
-        progressTracker.updateProgress(commit.hash, {
-          status: 'failed',
-          progress: 0,
-          currentStep: `Error: ${errorMsg.substring(0, 30)}`,
-          errorMessage: errorMsg, // Track error for end-of-run summary
-        });
-
-        failureCount++;
-        return null;
-      }
-    })
+    limit(() => evaluateCommit(commit, i, options, config, orchestrator, progressTracker))
   );
 
   // Execute all tasks with concurrency limit
-  const evaluationResults = await Promise.all(evaluationTasks);
+  // Use Promise.allSettled to capture all results (fulfilled or rejected)
+  // This prevents race conditions and ensures we process all completed work
+  let evaluationResults: any[];
+  try {
+    // Use Promise.allSettled to:
+    // 1. Capture all results (fulfilled or rejected) without early termination
+    // 2. Process whatever completed, even if some failed
+    const settledResults = await Promise.allSettled(evaluationTasks);
+
+    // Filter to only include fulfilled results
+    evaluationResults = settledResults
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => (result as PromiseFulfilledResult<any>).value);
+  } catch (error) {
+    // Stop suppressing before printing error
+    consoleManager.stopSuppressing();
+    process.stdout.write = originalStdoutWrite as any;
+
+    console.log(
+      `\n❌ Batch evaluation error: ${error instanceof Error ? error.message : String(error)}`
+    );
+
+    progressTracker.finalize();
+    throw error;
+  }
 
   // Restore console methods and process stdout
-  suppressOutput = false;
-  console.log = originalConsoleLog;
-  console.warn = originalConsoleWarn;
-  console.error = originalConsoleError;
+  consoleManager.stopSuppressing();
   process.stdout.write = originalStdoutWrite as any;
+
+  // Wait a moment to ensure all progress updates are rendered before finalizing
+  await new Promise((resolve) => setTimeout(resolve, 100));
 
   // Finalize progress tracker
   progressTracker.finalize();
@@ -481,11 +214,11 @@ export async function runBatchEvaluateCommand(args: string[]) {
     console.log('\n📋 Notices from evaluation phase:');
     suppressedOutput.forEach((output) => {
       if (output.type === 'warn') {
-        originalConsoleWarn('  ⚠️ ', ...output.args);
+        consoleManager.warnImportant('  ⚠️ ', ...output.args);
       } else if (output.type === 'error') {
-        originalConsoleError('  ❌ ', ...output.args);
+        consoleManager.errorImportant('  ❌ ', ...output.args);
       } else if (output.type === 'log') {
-        originalConsoleLog('  ℹ️ ', ...output.args);
+        consoleManager.logImportant('  ℹ️ ', ...output.args);
       }
     });
     console.log();
@@ -502,6 +235,190 @@ export async function runBatchEvaluateCommand(args: string[]) {
 
   // Exit the process
   process.exit(0);
+}
+
+async function evaluateCommit(
+  commit: CommitInfo,
+  index: number,
+  options: any,
+  config: AppConfig,
+  orchestrator: CommitEvaluationOrchestrator,
+  progressTracker: ProgressTracker
+): Promise<CommitEvaluationResult | null> {
+  try {
+    // Get commit diff
+    const diff = await getCommitDiff(commit.hash, options.repository);
+
+    // Calculate diff size and stats for progress display
+    const diffSizeKB = (diff.length / 1024).toFixed(1);
+    const additions = (diff.match(/^\+[^+]/gm) || []).length;
+    const deletions = (diff.match(/^-[^-]/gm) || []).length;
+
+    // Mark as started with diff stats
+    progressTracker.updateProgress(commit.hash, {
+      status: 'analyzing',
+      progress: 0,
+      currentStep: 'Starting evaluation...',
+      diffSizeKB: `${diffSizeKB}KB`,
+      additions,
+      deletions,
+    });
+
+    if (!diff || diff.trim().length === 0) {
+      progressTracker.updateProgress(commit.hash, {
+        status: 'failed',
+        progress: 0,
+        currentStep: 'Empty diff - skipped',
+      });
+      return null;
+    }
+
+    // Extract files changed from diff
+    const filesChanged = extractFilesFromDiff(diff);
+
+    // Track agent progress
+    let maxRounds = config.agents.maxRounds || config.agents.retries || 3;
+    let commitTokensInput = 0;
+    let commitTokensOutput = 0;
+    let commitCost = 0;
+    let vectorChunks = 0;
+    let vectorFiles = filesChanged.length;
+
+    // Evaluate commit
+    const evaluationResult = await orchestrator.evaluateCommit(
+      {
+        commitDiff: diff,
+        filesChanged,
+        commitHash: commit.hash,
+        commitIndex: index + 1,
+        totalCommits: 1, // Not used in batch context
+      },
+      {
+        streaming: options.streaming,
+        disableTracing: true,
+        onProgress: (state: any) => {
+          if (state.type === 'vectorizing') {
+            vectorChunks = state.total;
+            progressTracker.updateProgress(commit.hash, {
+              status: 'vectorizing',
+              progress: state.progress,
+              currentStep: `${diffSizeKB}KB | ${state.current}/${state.total} chunks | +${additions}/-${deletions}`,
+              chunks: state.total,
+              files: vectorFiles,
+            });
+          } else if (state.agentResults !== undefined) {
+            const currentRound = state.currentRound || 0;
+            maxRounds = state.maxRounds || 3;
+
+            if (state.totalInputTokens !== undefined) commitTokensInput = state.totalInputTokens;
+            if (state.totalOutputTokens !== undefined) commitTokensOutput = state.totalOutputTokens;
+            if (state.totalCost !== undefined) commitCost = state.totalCost;
+
+            const totalAgents = state.totalAgents || 5;
+            const completedAgents = state.completedAgents || 0;
+            const roundProgress = currentRound / maxRounds;
+            const agentProgressInRound = completedAgents / totalAgents / maxRounds;
+            const totalProgress = Math.floor((roundProgress + agentProgressInRound) * 100);
+
+            progressTracker.updateProgress(commit.hash, {
+              status: 'analyzing',
+              progress: totalProgress,
+              inputTokens: commitTokensInput,
+              outputTokens: commitTokensOutput,
+              totalCost: commitCost,
+              currentRound,
+              maxRounds,
+              currentAgent: state.currentAgent,
+              chunks: vectorChunks,
+              files: vectorFiles,
+            });
+          }
+        },
+      }
+    );
+
+    const agentResults = evaluationResult.agentResults || [];
+    const shortHash = commit.hash.substring(0, 8);
+    const commitOutputDir = await createEvaluationDirectory(shortHash);
+    const commitStats = parseCommitStats(diff);
+
+    const metadata: EvaluationMetadata = {
+      timestamp: new Date().toISOString(),
+      commitHash: commit.hash,
+      commitAuthor: commit.author,
+      commitMessage: commit.message,
+      commitDate: commit.date,
+      source: 'batch',
+      commitStats,
+    };
+
+    await saveEvaluationReports({
+      agentResults,
+      outputDir: commitOutputDir,
+      metadata,
+      diff,
+      developerOverview: evaluationResult.developerOverview,
+    });
+
+    const metrics = calculateAggregateMetrics(agentResults);
+
+    // Extract internal iteration metrics
+    let totalInternalIterations = 0;
+    let avgClarityScore = 0;
+    let agentCount = 0;
+
+    agentResults.forEach((result: any) => {
+      if (result.internalIterations !== undefined) {
+        totalInternalIterations += result.internalIterations;
+        agentCount++;
+      }
+      if (result.clarityScore !== undefined) {
+        avgClarityScore += result.clarityScore;
+      }
+    });
+
+    if (agentCount > 0) {
+      avgClarityScore = Math.round(avgClarityScore / agentCount);
+    }
+
+    progressTracker.updateProgress(commit.hash, {
+      status: 'complete',
+      progress: 100,
+      currentStep: '✅ Complete',
+      inputTokens: commitTokensInput,
+      outputTokens: commitTokensOutput,
+      totalCost: commitCost,
+      internalIterations: agentCount > 0 ? totalInternalIterations : undefined,
+      clarityScore: agentCount > 0 ? avgClarityScore : undefined,
+      currentRound: maxRounds - 1,
+      maxRounds,
+      chunks: vectorChunks,
+      files: vectorFiles,
+    });
+
+    return {
+      commit,
+      agentResults,
+      outputDir: commitOutputDir,
+      metrics,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : '';
+    console.log(`❌ Error evaluating ${commit.hash}: ${errorMsg}`);
+    if (errorStack) {
+      console.log(`Stack: ${errorStack.substring(0, 300)}`);
+    }
+
+    progressTracker.updateProgress(commit.hash, {
+      status: 'failed',
+      progress: 0,
+      currentStep: `Error: ${errorMsg.substring(0, 30)}`,
+      errorMessage: errorMsg,
+    });
+
+    return null;
+  }
 }
 
 function parseArguments(args: string[]): any {
@@ -537,7 +454,7 @@ function parseArguments(args: string[]): any {
         options.branch = args[++i];
         break;
       case '--depth':
-      case '-d':
+      case '-d': {
         const depthValue = args[++i]?.toLowerCase();
         if (['fast', 'normal', 'deep'].includes(depthValue)) {
           options.depth = depthValue;
@@ -547,6 +464,7 @@ function parseArguments(args: string[]): any {
           );
         }
         break;
+      }
       case '--no-stream':
         options.streaming = false;
         break;
@@ -598,45 +516,6 @@ async function getCommitsToEvaluate(options: any): Promise<CommitInfo[]> {
   return commits;
 }
 
-async function getCommitDiff(repoPath: string, commitHash: string): Promise<string> {
-  try {
-    const result = spawnSync('git', ['show', commitHash], {
-      cwd: repoPath,
-      encoding: 'utf-8',
-      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-    });
-
-    if (result.error) {
-      throw result.error;
-    }
-    if (result.status !== 0) {
-      console.error(`Failed to get diff for commit ${commitHash}: ${result.stderr}`);
-      return '';
-    }
-
-    return result.stdout;
-  } catch (error) {
-    console.error(`Failed to get diff for commit ${commitHash}:`, error);
-    return '';
-  }
-}
-
-function extractFilesFromDiff(diff: string): string[] {
-  const files: string[] = [];
-  const lines = diff.split('\n');
-
-  for (const line of lines) {
-    if (line.startsWith('diff --git')) {
-      const match = line.match(/diff --git a\/(.+?) b\//);
-      if (match) {
-        files.push(match[1]);
-      }
-    }
-  }
-
-  return files;
-}
-
 function calculateAggregateMetrics(agentResults: any[]): any {
   const metrics: any = {
     functionalImpact: 0,
@@ -681,275 +560,9 @@ function calculateAggregateMetrics(agentResults: any[]): any {
   return metrics;
 }
 
-function generateCommitSummary(commit: CommitInfo, agentResults: any[]): string {
-  const metrics = calculateAggregateMetrics(agentResults);
-
-  let summary = `Commit Evaluation Summary\n`;
-  summary += `${'='.repeat(80)}\n\n`;
-  summary += `Commit: ${commit.hash}\n`;
-  summary += `Author: ${commit.author} <${commit.email}>\n`;
-  summary += `Date: ${commit.date}\n`;
-  summary += `Message: ${commit.message}\n\n`;
-  summary += `${'='.repeat(80)}\n\n`;
-  summary += `Aggregate Metrics (Weighted Average):\n`;
-  summary += `  - Functional Impact: ${metrics.functionalImpact.toFixed(2)}/10\n`;
-  summary += `  - Ideal Time: ${metrics.idealTimeHours.toFixed(2)} hours\n`;
-  summary += `  - Test Coverage: ${metrics.testCoverage.toFixed(2)}/10\n`;
-  summary += `  - Code Quality: ${metrics.codeQuality.toFixed(2)}/10\n`;
-  summary += `  - Code Complexity: ${metrics.codeComplexity.toFixed(2)}/10\n`;
-  summary += `  - Actual Time: ${metrics.actualTimeHours.toFixed(2)} hours\n`;
-  summary += `  - Technical Debt: ${metrics.technicalDebtHours.toFixed(2)} hours\n\n`;
-  summary += `${'='.repeat(80)}\n\n`;
-  summary += `Agent Responses: ${agentResults.length}\n`;
-
-  return summary;
-}
-
-async function generateBatchSummaryReport(
-  batchDir: string,
-  results: CommitEvaluationResult[],
-  options: any
-) {
-  // Generate HTML summary
-  const htmlSummary = generateBatchHtmlSummary(results, options);
-  await fs.writeFile(path.join(batchDir, 'batch-summary.html'), htmlSummary);
-
-  // Generate Markdown summary
-  const mdSummary = generateBatchMarkdownSummary(results, options);
-  await fs.writeFile(path.join(batchDir, 'batch-summary.md'), mdSummary);
-
-  // Save JSON results
-  await fs.writeFile(path.join(batchDir, 'batch-results.json'), JSON.stringify(results, null, 2));
-}
-
-function generateBatchHtmlSummary(results: CommitEvaluationResult[], options: any): string {
-  const now = new Date().toLocaleString();
-
-  // Group by author
-  const byAuthor = new Map<string, CommitEvaluationResult[]>();
-  results.forEach((result) => {
-    const author = result.commit.author;
-    if (!byAuthor.has(author)) {
-      byAuthor.set(author, []);
-    }
-    byAuthor.get(author)!.push(result);
-  });
-
-  const tableRows = results
-    .map(
-      (result) => `
-        <tr>
-            <td><code>${result.commit.hash.substring(0, 8)}</code></td>
-            <td>${result.commit.author}</td>
-            <td>${new Date(result.commit.date).toLocaleDateString()}</td>
-            <td>${escapeHtml(result.commit.message.split('\n')[0].substring(0, 60))}...</td>
-            <td class="text-center">${result.metrics.functionalImpact.toFixed(1)}</td>
-            <td class="text-center">${result.metrics.testCoverage.toFixed(1)}</td>
-            <td class="text-center">${result.metrics.codeQuality.toFixed(1)}</td>
-            <td class="text-center">${result.metrics.codeComplexity.toFixed(1)}</td>
-            <td class="text-center">${(() => {
-              const netDebt = result.metrics.technicalDebtHours - result.metrics.debtReductionHours;
-              const color = netDebt > 0 ? '#dc3545' : netDebt < 0 ? '#28a745' : '#6c757d';
-              const sign = netDebt > 0 ? '+' : '';
-              return `<span style="color: ${color}; font-weight: bold;">${sign}${netDebt.toFixed(1)}h</span>`;
-            })()}</td>
-            <td><a href="${path.relative(path.dirname(result.outputDir), result.outputDir)}/report-enhanced.html" class="btn btn-sm btn-primary">View</a></td>
-        </tr>
-    `
-    )
-    .join('');
-
-  const authorSummaries = Array.from(byAuthor.entries())
-    .map(([author, commits]) => {
-      const avgMetrics = {
-        functionalImpact:
-          commits.reduce((sum, c) => sum + c.metrics.functionalImpact, 0) / commits.length,
-        testCoverage: commits.reduce((sum, c) => sum + c.metrics.testCoverage, 0) / commits.length,
-        codeQuality: commits.reduce((sum, c) => sum + c.metrics.codeQuality, 0) / commits.length,
-        codeComplexity:
-          commits.reduce((sum, c) => sum + c.metrics.codeComplexity, 0) / commits.length,
-        technicalDebtHours: commits.reduce((sum, c) => sum + c.metrics.technicalDebtHours, 0),
-        debtReductionHours: commits.reduce(
-          (sum, c) => sum + (c.metrics.debtReductionHours || 0),
-          0
-        ),
-      };
-
-      return `
-            <tr>
-                <td><strong>${author}</strong></td>
-                <td class="text-center">${commits.length}</td>
-                <td class="text-center">${avgMetrics.functionalImpact.toFixed(1)}</td>
-                <td class="text-center">${avgMetrics.testCoverage.toFixed(1)}</td>
-                <td class="text-center">${avgMetrics.codeQuality.toFixed(1)}</td>
-                <td class="text-center">${avgMetrics.codeComplexity.toFixed(1)}</td>
-                <td class="text-center">${(() => {
-                  const netDebt = avgMetrics.technicalDebtHours - avgMetrics.debtReductionHours;
-                  const color = netDebt > 0 ? '#dc3545' : netDebt < 0 ? '#28a745' : '#6c757d';
-                  const sign = netDebt > 0 ? '+' : '';
-                  return `<span style="color: ${color}; font-weight: bold;">${sign}${netDebt.toFixed(1)}h</span>`;
-                })()}</td>
-            </tr>
-        `;
-    })
-    .join('');
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CodeWave - Batch Analysis Summary</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { padding: 20px; }
-        .metric-card { margin-bottom: 20px; }
-        table { font-size: 0.9rem; }
-    </style>
-</head>
-<body>
-    <div class="container-fluid">
-        <h1 class="mb-4">🌊 CodeWave Batch Analysis</h1>
-        
-        <div class="alert alert-info">
-            <strong>Generated:</strong> ${now}<br>
-            <strong>Repository:</strong> ${options.repository}<br>
-            <strong>Total Commits:</strong> ${results.length}
-        </div>
-
-        <h2 class="mt-5 mb-3">👥 Summary by Author</h2>
-        <table class="table table-striped table-hover">
-            <thead class="table-dark">
-                <tr>
-                    <th>Author</th>
-                    <th class="text-center">Commits</th>
-                    <th class="text-center">Avg Functional Impact</th>
-                    <th class="text-center">Avg Test Coverage</th>
-                    <th class="text-center">Avg Code Quality</th>
-                    <th class="text-center">Avg Complexity</th>
-                    <th class="text-center">Net Debt <span style="font-size: 0.85em;">(−=improve)</span></th>
-                </tr>
-            </thead>
-            <tbody>
-                ${authorSummaries}
-            </tbody>
-        </table>
-
-        <h2 class="mt-5 mb-3">📋 All Commits</h2>
-        <table class="table table-striped table-hover">
-            <thead class="table-dark">
-                <tr>
-                    <th>Commit</th>
-                    <th>Author</th>
-                    <th>Date</th>
-                    <th>Message</th>
-                    <th class="text-center">Impact</th>
-                    <th class="text-center">Tests</th>
-                    <th class="text-center">Quality</th>
-                    <th class="text-center">Complexity</th>
-                    <th class="text-center">Net Debt <span style="font-size: 0.85em;">(−=improve)</span></th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${tableRows}
-            </tbody>
-        </table>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>`;
-}
-
-function generateBatchMarkdownSummary(results: CommitEvaluationResult[], options: any): string {
-  const now = new Date().toLocaleString();
-
-  // Group by author
-  const byAuthor = new Map<string, CommitEvaluationResult[]>();
-  results.forEach((result) => {
-    const author = result.commit.author;
-    if (!byAuthor.has(author)) {
-      byAuthor.set(author, []);
-    }
-    byAuthor.get(author)!.push(result);
-  });
-
-  let md = `# CodeWave Batch Analysis Summary\n\n`;
-  md += `**Generated**: ${now}  \n`;
-  md += `**Repository**: ${options.repository}  \n`;
-  md += `**Total Commits**: ${results.length}\n\n`;
-  md += `---\n\n`;
-
-  md += `## 👥 Summary by Author\n\n`;
-  md += `| Author | Commits | Avg Impact | Avg Tests | Avg Quality | Avg Complexity | Total Debt |\n`;
-  md += `|--------|---------|------------|-----------|-------------|----------------|------------|\n`;
-
-  byAuthor.forEach((commits, author) => {
-    const avgMetrics = {
-      functionalImpact:
-        commits.reduce((sum, c) => sum + c.metrics.functionalImpact, 0) / commits.length,
-      testCoverage: commits.reduce((sum, c) => sum + c.metrics.testCoverage, 0) / commits.length,
-      codeQuality: commits.reduce((sum, c) => sum + c.metrics.codeQuality, 0) / commits.length,
-      codeComplexity:
-        commits.reduce((sum, c) => sum + c.metrics.codeComplexity, 0) / commits.length,
-      technicalDebtHours: commits.reduce((sum, c) => sum + c.metrics.technicalDebtHours, 0),
-    };
-
-    md += `| ${author} | ${commits.length} | ${avgMetrics.functionalImpact.toFixed(1)} | ${avgMetrics.testCoverage.toFixed(1)} | ${avgMetrics.codeQuality.toFixed(1)} | ${avgMetrics.codeComplexity.toFixed(1)} | ${avgMetrics.technicalDebtHours.toFixed(1)}h |\n`;
-  });
-
-  md += `\n---\n\n`;
-  md += `## 📋 All Commits\n\n`;
-  md += `| Commit | Author | Date | Message | Impact | Tests | Quality | Complexity | Debt |\n`;
-  md += `|--------|--------|------|---------|--------|-------|---------|------------|------|\n`;
-
-  results.forEach((result) => {
-    const shortHash = result.commit.hash.substring(0, 8);
-    const date = new Date(result.commit.date).toLocaleDateString();
-    const message = result.commit.message.split('\n')[0].substring(0, 40);
-    md += `| \`${shortHash}\` | ${result.commit.author} | ${date} | ${message}... | ${result.metrics.functionalImpact.toFixed(1)} | ${result.metrics.testCoverage.toFixed(1)} | ${result.metrics.codeQuality.toFixed(1)} | ${result.metrics.codeComplexity.toFixed(1)} | ${result.metrics.technicalDebtHours.toFixed(1)}h |\n`;
-  });
-
-  return md;
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 function validateConfig(config: AppConfig) {
-  if (!config.apiKeys.anthropic && !config.apiKeys.openai && !config.apiKeys.google) {
-    console.error('❌ Error: No API keys configured. Run `codewave config --init` first.');
+  if (!config.apiKeys || Object.keys(config.apiKeys).length === 0) {
+    console.error('❌ No API keys configured. Run `npm run config` to set up.');
     process.exit(1);
   }
-}
-
-function printBatchUsage() {
-  console.log('Usage: codewave batch [options]');
-  console.log('\nOptions:');
-  console.log('  --repo, -r <path>      Path to git repository (default: current directory)');
-  console.log('  --since <date>         Evaluate commits since this date (e.g., "2025-01-01")');
-  console.log('  --until <date>         Evaluate commits until this date');
-  console.log('  --count, -n <number>   Evaluate last N commits');
-  console.log('  --branch, -b <name>    Branch to evaluate (default: HEAD)');
-  console.log('  --depth, -d <mode>     Analysis depth: fast, normal, deep (default: normal)');
-  console.log('  --no-stream            Disable streaming output (silent mode)');
-  console.log('\nExamples:');
-  console.log(
-    '  codewave batch --count 10                          # Last 10 commits in current repo'
-  );
-  console.log(
-    '  codewave batch --repo /path/to/repo --count 10     # Last 10 commits in specific repo'
-  );
-  console.log('  codewave batch --since "2025-01-01"                # All commits since date');
-  console.log('  codewave batch --since "2025-01-01" --until "2025-01-31"  # Date range');
-  console.log(
-    '  codewave batch --count 20 --depth deep             # Deep analysis for 20 commits'
-  );
 }

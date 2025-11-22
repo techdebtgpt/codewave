@@ -3,18 +3,6 @@
 import fs from 'fs';
 import { AgentResult } from '../agents/agent.interface';
 
-interface AgentEvaluation {
-  agentName: string;
-  icon: string;
-  color: string;
-  round: number;
-  summary: string;
-  details: string;
-  metrics?: Record<string, number>;
-  concernsRaised?: string[];
-  referencesTo?: string[];
-}
-
 /**
  * Generate comprehensive HTML report with Bootstrap showing full multi-round discussion
  */

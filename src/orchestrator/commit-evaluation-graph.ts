@@ -3,7 +3,7 @@ import { AgentRegistry } from '../agents/agent-registry';
 import { AgentResult } from '../agents/agent.interface';
 import { ConversationMessage, PillarScores } from '../types/agent.types';
 import { AppConfig } from '../config/config.interface';
-import { calculateCost, formatTokenUsage, formatCost } from '../utils/token-tracker';
+import { calculateCost } from '../utils/token-tracker';
 import { SEVEN_PILLARS } from '../constants/agent-weights.constants';
 
 /**
@@ -28,11 +28,22 @@ export const CommitEvaluationState = Annotation.Root({
   maxRounds: Annotation<number>,
   minRounds: Annotation<number>, // Minimum rounds before allowing early convergence
 
-  // Agent results (accumulated) - keeps ALL results from ALL rounds for transcript generation
+  // Agent results (current round only) - REPLACE each round to keep context lean
+  // This prevents token accumulation while allowing agents to see current round context
   agentResults: Annotation<AgentResult[]>({
     reducer: (state: AgentResult[], update: AgentResult[]) => {
-      // APPEND all new results to track conversation history
-      // Each result will have agentName and can be distinguished by round
+      // REPLACE, don't append - keeps only current round's results
+      // Previous rounds are tracked in evaluationHistory for transcript generation
+      return update;
+    },
+    default: () => [],
+  }),
+
+  // Full evaluation history (accumulated) - keeps ALL results from ALL rounds for transcript generation
+  // This is separate from agentResults to prevent agents from receiving bloated context
+  evaluationHistory: Annotation<AgentResult[]>({
+    reducer: (state: AgentResult[], update: AgentResult[]) => {
+      // APPEND to track full conversation history for transcripts and reporting
       return [...state, ...update];
     },
     default: () => [],
@@ -115,7 +126,6 @@ export const CommitEvaluationState = Annotation.Root({
  * If metrics are stable, agent has confirmed their assessment and should exit
  */
 function detectStableMetrics(
-  agentRole: string,
   currentResult: AgentResult,
   previousResult: AgentResult | null
 ): boolean {
@@ -255,7 +265,6 @@ function checkConvergence(
  */
 export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config: AppConfig) {
   const agents = agentRegistry.getAgents();
-  const maxRounds = config.agents.maxRounds || config.agents.retries || 3;
 
   // Node: Generate developer overview if not provided
   async function generateDeveloperOverview(state: typeof CommitEvaluationState.State) {
@@ -401,38 +410,28 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
 
         try {
           // Pass previous agent results for conversation context
-          const agentTimeout = config.agents.timeout || 300000; // Default: 5 minutes
+          const result = (await agent.execute({
+            commitDiff: state.commitDiff,
+            filesChanged: state.filesChanged,
+            developerOverview: state.developerOverview, // Developer's description of changes for context
+            agentResults: state.agentResults, // Agents can reference each other's responses
+            conversationHistory: state.conversationHistory, // Pass full conversation
+            vectorStore: state.vectorStore, // RAG support for large diffs
+            documentationStore: state.documentationStore, // Documentation vector store
+            currentRound: state.currentRound, // Current round number (0-indexed)
+            isFinalRound, // Flag indicating if this is the final round
+            teamConcerns: state.teamConcerns, // Concerns raised by team in previous round
 
-          const result = (await Promise.race([
-            agent.execute({
-              commitDiff: state.commitDiff,
-              filesChanged: state.filesChanged,
-              developerOverview: state.developerOverview, // Developer's description of changes for context
-              agentResults: state.agentResults, // Agents can reference each other's responses
-              conversationHistory: state.conversationHistory, // Pass full conversation
-              vectorStore: state.vectorStore, // RAG support for large diffs
-              documentationStore: state.documentationStore, // Documentation vector store
-              currentRound: state.currentRound, // Current round number (0-indexed)
-              isFinalRound, // Flag indicating if this is the final round
-              teamConcerns: state.teamConcerns, // Concerns raised by team in previous round
+            // Pass depth configuration for agent self-iteration
+            depthMode: config.agents.depthMode || 'normal',
+            maxInternalIterations: config.agents.maxInternalIterations,
+            internalClarityThreshold: config.agents.internalClarityThreshold,
 
-              // Pass depth configuration for agent self-iteration
-              depthMode: config.agents.depthMode || 'normal',
-              maxInternalIterations: config.agents.maxInternalIterations,
-              internalClarityThreshold: config.agents.internalClarityThreshold,
-
-              // Batch evaluation metadata
-              commitHash: state.commitHash,
-              commitIndex: state.commitIndex,
-              totalCommits: state.totalCommits,
-            }),
-            new Promise((_, reject) =>
-              setTimeout(() => {
-                const timeoutSeconds = Math.round(agentTimeout / 1000);
-                reject(new Error(`Agent timeout after ${timeoutSeconds}s`));
-              }, agentTimeout)
-            ),
-          ])) as AgentResult;
+            // Batch evaluation metadata
+            commitHash: state.commitHash,
+            commitIndex: state.commitIndex,
+            totalCommits: state.totalCommits,
+          })) as AgentResult;
 
           // Track agent completion
           completedCount++;
@@ -543,7 +542,8 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       | 'codeQuality'
       | 'codeComplexity'
       | 'actualTimeHours'
-      | 'technicalDebtHours';
+      | 'technicalDebtHours'
+      | 'debtReductionHours';
     const pillarScoresCollected: Record<
       PillarName,
       Array<{ agentName: string; score: number | null }>
@@ -555,6 +555,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       codeComplexity: [],
       actualTimeHours: [],
       technicalDebtHours: [],
+      debtReductionHours: [],
     };
 
     // Collect scores from all agents (including null values)
@@ -600,6 +601,12 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
           pillarScoresCollected.technicalDebtHours.push({
             agentName,
             score: result.metrics.technicalDebtHours,
+          });
+        }
+        if (result.metrics.debtReductionHours !== undefined) {
+          pillarScoresCollected.debtReductionHours.push({
+            agentName,
+            score: result.metrics.debtReductionHours,
           });
         }
       }
@@ -666,6 +673,12 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       newPillarScores.technicalDebtHours = calculateWeightedAverage(
         pillarScoresCollected.technicalDebtHours,
         'technicalDebtHours'
+      );
+    }
+    if (pillarScoresCollected.debtReductionHours.length > 0) {
+      newPillarScores.debtReductionHours = calculateWeightedAverage(
+        pillarScoresCollected.debtReductionHours,
+        'debtReductionHours'
       );
     }
 
@@ -763,7 +776,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       const previousResult = state.previousRoundResults?.find((r) => r.agentRole === agentKey);
 
       // Check if metrics have stabilized (identical to previous round)
-      const metricsAreStable = detectStableMetrics(agentKey, result, previousResult || null);
+      const metricsAreStable = detectStableMetrics(result, previousResult || null);
 
       if (metricsAreStable) {
         newlyOptedOutAgents.add(agentKey);
@@ -775,7 +788,10 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
 
     return {
       developerOverview: state.developerOverview, // Preserve developer overview through all rounds
-      agentResults: results,
+      agentResults: results, // Current round only - keeps context lean for agents
+      // IMPORTANT: Don't pre-accumulate here! The reducer will handle it.
+      // Just return current round's results - the reducer will append to evaluationHistory
+      evaluationHistory: results, // Reducer will do: [...state.evaluationHistory, ...results]
       previousRoundResults: results,
       currentRound: state.currentRound + 1,
       convergenceScore: score,

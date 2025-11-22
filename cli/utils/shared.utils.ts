@@ -69,9 +69,8 @@ export function createAgentRegistry(config: AppConfig): AgentRegistry {
   };
 
   for (const agentId of enabledAgents) {
-    const agentFactory = agentMap[agentId];
-    if (agentFactory) {
-      agentRegistry.register(agentFactory());
+    if (agentMap[agentId]) {
+      agentRegistry.register(agentMap[agentId]());
     } else {
       console.warn(`⚠️  Unknown agent: ${agentId}. Skipping.`);
     }
@@ -436,20 +435,6 @@ export async function createEvaluationDirectory(
 }
 
 /**
- * Create batch evaluation directory
- * No longer needed - batches just process multiple commits into .evaluated-commits/{hash}/
- * This function now just returns the evaluation root
- */
-export async function createBatchDirectory(
-  identifier: string,
-  baseDir: string = '.'
-): Promise<string> {
-  const evaluationsRoot = getEvaluationRoot(baseDir);
-  await fs.mkdir(evaluationsRoot, { recursive: true });
-  return evaluationsRoot;
-}
-
-/**
  * Calculate averaged metrics from agent results using weighted averaging (matching report calculations)
  */
 async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
@@ -466,10 +451,7 @@ async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
     const finalAgents = results.agents.slice(-5);
 
     // Import weight functions for weighted averaging
-    const {
-      getAgentWeight,
-      calculateWeightedAverage,
-    } = require('../../src/constants/agent-weights.constants');
+    const { calculateWeightedAverage } = require('../../src/constants/agent-weights.constants');
 
     // Metric names for weighted calculation
     const metrics = [
@@ -643,83 +625,6 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     );
     overallMetrics.totalTechDebt = Number(overallMetrics.totalTechDebt.toFixed(2));
   }
-
-  // Generate author stats section with metrics
-  const authorStatsHtml = Array.from(byAuthor.entries())
-    .sort((a, b) => b[1].length - a[1].length) // Sort by commit count
-    .map(([author, commits]) => {
-      // Calculate author's average metrics
-      const authorMetrics = {
-        quality: 0,
-        complexity: 0,
-        testCoverage: 0,
-        functionalImpact: 0,
-        actualTime: 0,
-        techDebt: 0,
-        count: 0,
-      };
-      commits.forEach((c) => {
-        if (c.metrics) {
-          authorMetrics.quality += c.metrics.codeQuality || 0;
-          authorMetrics.complexity += c.metrics.codeComplexity || 0;
-          authorMetrics.testCoverage += c.metrics.testCoverage || 0;
-          authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
-          authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
-          // Calculate NET debt (debt introduced - debt reduction)
-          const netDebt = (c.metrics.technicalDebtHours || 0) - (c.metrics.debtReductionHours || 0);
-          authorMetrics.techDebt += netDebt;
-          authorMetrics.count++;
-        }
-      });
-
-      const avgQuality =
-        authorMetrics.count > 0 ? (authorMetrics.quality / authorMetrics.count).toFixed(1) : 'N/A';
-      const avgComplexity =
-        authorMetrics.count > 0
-          ? (authorMetrics.complexity / authorMetrics.count).toFixed(1)
-          : 'N/A';
-      const avgTestCoverage =
-        authorMetrics.count > 0
-          ? (authorMetrics.testCoverage / authorMetrics.count).toFixed(1)
-          : 'N/A';
-      const avgFunctionalImpact =
-        authorMetrics.count > 0
-          ? (authorMetrics.functionalImpact / authorMetrics.count).toFixed(1)
-          : 'N/A';
-      const avgActualTime =
-        authorMetrics.count > 0
-          ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2)
-          : 'N/A';
-      const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
-
-      return `
-            <div class="author-card">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <h6 class="mb-1">👤 ${author}</h6>
-                        <div class="text-muted small mb-2">${commits.length} commit${commits.length > 1 ? 's' : ''}</div>
-                        ${
-                          authorMetrics.count > 0
-                            ? `
-                        <div class="metrics-mini">
-                            <span class="badge bg-primary">Quality: ${avgQuality}/10</span>
-                            <span class="badge bg-info">Complexity: ${avgComplexity}/10</span>
-                            <span class="badge bg-success">Tests: ${avgTestCoverage}/10</span>
-                        </div>
-                        `
-                            : ''
-                        }
-                    </div>
-                    <div>
-                        <button class="btn btn-sm btn-outline-primary" onclick="filterByAuthor('${author.replace(/'/g, "\\'")}')">
-                            View
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    })
-    .join('');
 
   const html = `<!DOCTYPE html>
 <html lang="en">

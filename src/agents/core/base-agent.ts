@@ -111,15 +111,6 @@ export abstract class BaseAgent implements Agent {
   }
 
   /**
-   * Estimate tokens for this agent's execution
-   * Default: 2500 tokens
-   * Override if agent needs custom estimation logic
-   */
-  async estimateTokens(context: AgentContext): Promise<number> {
-    return 2500;
-  }
-
-  /**
    * Execute the agent - runs the internal iteration graph
    * This delegates to AgentExecutor for actual execution
    */
@@ -127,13 +118,7 @@ export abstract class BaseAgent implements Agent {
     // Lazy-load the executor to avoid circular dependencies
     const { AgentExecutor } = await import('../execution/agent-executor.js');
 
-    const executor = new AgentExecutor(
-      this.config,
-      this.metadata,
-      this.expertise,
-      this.systemInstructions,
-      this.metricDefinitions
-    );
+    const executor = new AgentExecutor(this.config, this.metadata, this.systemInstructions);
 
     // Build prompt context with categorized expertise
     const { primary, secondary, tertiary } = categorizeExpertise(this.expertise);
@@ -151,8 +136,7 @@ export abstract class BaseAgent implements Agent {
     return executor.execute(
       promptContext,
       (ctx) => this.buildInitialPrompt(ctx),
-      (ctx, prev, questions, clarity) => this.buildRefinementPrompt(ctx, prev, questions, clarity),
-      options
+      (ctx, prev, questions, clarity) => this.buildRefinementPrompt(ctx, prev, questions, clarity)
     );
   }
 

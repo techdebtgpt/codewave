@@ -164,6 +164,8 @@ Entry point for user interactions. Handles command routing and user-facing logic
 - `cli/commands/batch-evaluate-command.ts` - Multiple commits
 - `cli/commands/config.command.ts` - Configuration management
 - `cli/utils/progress-tracker.ts` - Progress UI
+- `cli/utils/git-utils.ts` - Git operations (commit diffs, file extraction)
+- `cli/utils/diagnostic-filter.ts` - Log filtering for progress display
 - `cli/utils/shared.utils.ts` - CLI utilities
 
 #### Responsibilities:
