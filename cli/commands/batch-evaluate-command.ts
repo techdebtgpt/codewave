@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-import { spawnSync } from 'child_process';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import pLimit from 'p-limit';
 import inquirer from 'inquirer';
 import { AppConfig } from '../../src/config/config.interface';
@@ -20,6 +17,7 @@ import { parseCommitStats } from '../../src/common/utils/commit-utils';
 import { consoleManager } from '../../src/common/utils/console-manager';
 import { getCommitDiff, extractFilesFromDiff } from '../utils/git-utils';
 import { isDiagnosticLog } from '../utils/diagnostic-filter';
+import { spawnSync } from 'child_process';
 
 interface CommitInfo {
   hash: string;
