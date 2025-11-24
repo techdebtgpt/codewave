@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import pLimit from 'p-limit';
-import inquirer from 'inquirer';
+
 import { AppConfig } from '../../src/config/config.interface';
 import { loadConfig } from '../../src/config/config-loader';
 import { CommitEvaluationOrchestrator } from '../../src/orchestrator/commit-evaluation-orchestrator';
@@ -90,6 +89,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
   if (costEstimate !== null) {
     estimator.printEstimate(costEstimate, commits.length);
 
+    const { default: inquirer } = await import('inquirer');
     const { proceed } = await inquirer.prompt([
       {
         type: 'confirm',
@@ -112,6 +112,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
   const orchestrator = new CommitEvaluationOrchestrator(agentRegistry, config);
 
   // Configure concurrency limit (10 concurrent evaluations)
+  const { default: pLimit } = await import('p-limit');
   const limit = pLimit(10);
 
   // Buffer for storing suppressed output (warnings, errors)
@@ -230,9 +231,6 @@ export async function runBatchEvaluateCommand(args: string[]) {
 
   // Print final summary using shared output function
   printBatchCompletionMessage(summary);
-
-  // Exit the process
-  process.exit(0);
 }
 
 async function evaluateCommit(

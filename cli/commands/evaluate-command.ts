@@ -1,14 +1,11 @@
 import * as fs from 'fs';
-import * as chalk from 'chalk';
+import chalk from 'chalk';
 import { spawnSync } from 'child_process';
-import * as cliProgress from 'cli-progress';
 import { CommitEvaluationOrchestrator } from '../../src/orchestrator/commit-evaluation-orchestrator';
 import { loadConfig, configExists } from '../../src/config/config-loader';
-import { generateHtmlReport } from '../../src/formatters/html-report-formatter';
 import * as path from 'path';
 import {
   createAgentRegistry,
-  generateTimestamp,
   saveEvaluationReports,
   createEvaluationDirectory,
   EvaluationMetadata,
@@ -22,7 +19,6 @@ import {
   extractCommitHash,
   generateDiffHash,
 } from '../utils/git-utils';
-import { isDiagnosticLog } from '../utils/diagnostic-filter';
 
 export async function runEvaluateCommand(args: string[]) {
   // Parse arguments
@@ -385,6 +381,4 @@ export async function runEvaluateCommand(args: string[]) {
 
   // Print completion message using shared function
   printEvaluateCompletionMessage(outputDir);
-
-  process.exit(0);
 }
