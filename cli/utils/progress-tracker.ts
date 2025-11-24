@@ -437,7 +437,9 @@ export class ProgressTracker implements ProgressRenderer {
 
     // Print error summary if there were any failures
     if (this.failedCommits > 0 && this.commitErrors.size > 0) {
-      consoleManager.logImportant(`${colors.red}${colors.bright}❌ Failed Commits:${colors.reset}\n`);
+      consoleManager.logImportant(
+        `${colors.red}${colors.bright}❌ Failed Commits:${colors.reset}\n`
+      );
       for (const [commitHash, errorMessage] of this.commitErrors.entries()) {
         const commit = this.commits.get(commitHash);
         const shortHash = commit?.shortHash || commitHash.substring(0, 7);

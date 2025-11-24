@@ -38,7 +38,10 @@ export class DeveloperOverviewGenerator {
       );
 
       // Truncate the diff to reduce token count
-      const maxDiffTokens = Math.max(5000, maxAllowedTokens - estimateTokens(commitMessage || '') - 3000);
+      const maxDiffTokens = Math.max(
+        5000,
+        maxAllowedTokens - estimateTokens(commitMessage || '') - 3000
+      );
       const truncatedDiff = truncateToTokenLimit(commitDiff, maxDiffTokens);
       prompt = this.buildPrompt(truncatedDiff, filesChanged, commitMessage);
 
@@ -48,7 +51,10 @@ export class DeveloperOverviewGenerator {
           `⚠️  Truncated prompt still large (${newTokens} tokens). Reducing files list.`
         );
         // If still too large, reduce files list too
-        const truncatedFiles = filesChanged.slice(0, Math.max(1, Math.floor(filesChanged.length / 2)));
+        const truncatedFiles = filesChanged.slice(
+          0,
+          Math.max(1, Math.floor(filesChanged.length / 2))
+        );
         prompt = this.buildPrompt(truncatedDiff, truncatedFiles, commitMessage);
       }
     }

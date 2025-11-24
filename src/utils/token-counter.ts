@@ -55,7 +55,10 @@ export function truncateToTokenLimit(text: string, maxTokens: number): string {
 /**
  * Check if prompt will exceed token limit
  */
-export function willExceedTokenLimit(promptParts: string[], maxTokens: number = 128000): {
+export function willExceedTokenLimit(
+  promptParts: string[],
+  maxTokens: number = 128000
+): {
   exceeds: boolean;
   estimatedTokens: number;
   buffer: number;

@@ -1,4 +1,3 @@
-
 export interface ProgressRenderer {
   /**
    * Initialize the renderer with a list of items to track
