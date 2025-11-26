@@ -59,7 +59,8 @@ export class OkrOrchestrator {
     evalRoot: string,
     options: AggregationOptions = {},
     concurrency: number = 2,
-    silent: boolean = false
+    silent: boolean = false,
+    onProgress?: (author: string, progress: OkrProgress) => void
   ): Promise<Map<string, any>> {
     const pLimit = (await import('p-limit')).default;
     const limit = pLimit(concurrency);
@@ -74,7 +75,7 @@ export class OkrOrchestrator {
 
     // Create tasks for parallel execution
     const tasks = authors.map((author) =>
-      limit(async () => this.generateSingleAuthorOkr(author, evalRoot, options, silent))
+      limit(async () => this.generateSingleAuthorOkr(author, evalRoot, options, silent, onProgress))
     );
 
     // Execute all tasks
@@ -104,12 +105,16 @@ export class OkrOrchestrator {
     author: string,
     evalRoot: string,
     options: AggregationOptions,
-    silent: boolean = false
+
+    silent: boolean = false,
+    onProgress?: (author: string, progress: OkrProgress) => void
   ): Promise<OkrGenerationResult | null> {
     try {
       // Update status to running (only if not silent)
       this.updateProgress(author, { status: 'running' });
-      if (!silent) {
+      if (onProgress) {
+        onProgress(author, this.progressMap.get(author)!);
+      } else if (!silent) {
         this.displayProgress();
       }
 
@@ -133,7 +138,8 @@ export class OkrOrchestrator {
         analysis.stats,
         analysis.strengths,
         analysis.weaknesses,
-        evaluations
+        evaluations,
+        evalRoot // Pass evalRoot for previous OKR loading
       );
 
       // Calculate cost (approximate based on token usage)
@@ -148,7 +154,9 @@ export class OkrOrchestrator {
         okrSummary: this.buildOkrSummary(okrData),
         cost,
       });
-      if (!silent) {
+      if (onProgress) {
+        onProgress(author, this.progressMap.get(author)!);
+      } else if (!silent) {
         this.displayProgress();
       }
 
@@ -158,7 +166,9 @@ export class OkrOrchestrator {
         status: 'failed',
         error: error instanceof Error ? error.message : String(error),
       });
-      if (!silent) {
+      if (onProgress) {
+        onProgress(author, this.progressMap.get(author)!);
+      } else if (!silent) {
         this.displayProgress();
       }
       return null;
@@ -185,11 +195,7 @@ export class OkrOrchestrator {
    * Save all OKR formats for a single author
    * Creates author-specific folder with JSON, MD, and HTML files
    */
-  private async saveAuthorOkrs(
-    okrsDir: string,
-    author: string,
-    okrData: any
-  ): Promise<void> {
+  private async saveAuthorOkrs(okrsDir: string, author: string, okrData: any): Promise<void> {
     const sanitizedAuthor = author.replace(/[^a-z0-9]/gi, '_').toLowerCase();
     const authorDir = path.join(okrsDir, sanitizedAuthor);
 
@@ -198,7 +204,10 @@ export class OkrOrchestrator {
       await fs.promises.mkdir(authorDir, { recursive: true });
     }
 
-    const timestamp = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const date = now.toISOString().split('T')[0];
+    const time = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+    const timestamp = `${date}_${time}`;
 
     // Save JSON (historical record)
     await this.saveAuthorJson(authorDir, author, okrData, timestamp);
@@ -360,9 +369,7 @@ export class OkrOrchestrator {
       if (currentProgress) {
         const statusIcon = this.getStatusIcon(currentProgress.status);
         console.log(
-          chalk.gray(
-            `  [${completed}/${total}] ${statusIcon} ${currentProgress.author.padEnd(20)}`
-          )
+          chalk.gray(`  [${completed}/${total}] ${statusIcon} ${currentProgress.author.padEnd(20)}`)
         );
       }
     }

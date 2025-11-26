@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { AppConfig } from '../../src/config/config.interface';
 import { OkrOrchestrator } from '../../src/services/okr-orchestrator.service';
 import { AggregationOptions } from '../../src/services/author-stats-aggregator.service';
+import { OkrProgressTracker } from './okr-progress-tracker';
 
 /**
  * Prompt user and generate OKRs for authors
@@ -11,7 +12,7 @@ export async function promptAndGenerateOkrs(
   config: AppConfig,
   authors: string[],
   evalRoot: string,
-  options: AggregationOptions & { silent?: boolean } = {}
+  options: AggregationOptions & { silent?: boolean; concurrency?: number } = {}
 ): Promise<void> {
   if (authors.length === 0) {
     return;
@@ -51,14 +52,38 @@ export async function promptAndGenerateOkrs(
   // Generate OKRs
   console.log(chalk.cyan('\n🎯 Starting OKR generation...\n'));
   const orchestrator = new OkrOrchestrator(config);
-  const { silent, ...aggregationOptions } = options;
+  const { silent: _silent, concurrency, ...aggregationOptions } = options;
+
+  // Initialize progress tracker
+  const tracker = new OkrProgressTracker();
+  tracker.initialize(authors);
+
+  // Suppress logs that interfere with progress bar
+  const { consoleManager } = await import('../../src/common/utils/console-manager.js');
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+
+  (process.stdout.write as any) = function (str: string, ...args: any[]): boolean {
+    // Block OKR generation progress lines
+    if (/^\s+[📝🧐✨]/u.test(str)) {
+      return true; // Suppress
+    }
+    return originalStdoutWrite(str, ...args);
+  };
+
   const okrMap = await orchestrator.generateOkrsWithProgress(
     authors,
     evalRoot,
     aggregationOptions,
-    2,
-    silent || false
+    concurrency || 2,
+    true, // silent=true because we use tracker
+    (author, progress) => tracker.update(author, progress)
   );
+
+  tracker.stop();
+
+  // Restore console methods and process stdout
+  consoleManager.stopSuppressing();
+  process.stdout.write = originalStdoutWrite as any;
 
   // Save OKRs
   await orchestrator.saveOkrs(evalRoot, okrMap);

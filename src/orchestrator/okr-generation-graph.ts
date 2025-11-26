@@ -14,11 +14,23 @@ export const OkrGenerationState = Annotation.Root({
   strengths: Annotation<string[]>,
   weaknesses: Annotation<string[]>,
   vectorStore: Annotation<CommentVectorStoreService | undefined>,
+  previousOkr: Annotation<any | undefined>, // Input: Previous OKR for progress tracking
 
   // Comprehensive OKR Output
   strongPoints: Annotation<string[]>,
   weakPoints: Annotation<string[]>,
   knowledgeGaps: Annotation<string[]>,
+  progressReport: Annotation<
+    | {
+        status: 'On Track' | 'At Risk' | 'Off Track' | 'Completed';
+        summary: string;
+        achieved: string[];
+        missed: string[];
+      }
+    | undefined
+  >,
+
+  // Cascading OKRs
 
   // Cascading OKRs
   okr3Month: Annotation<{
@@ -27,28 +39,28 @@ export const OkrGenerationState = Annotation.Root({
   }>,
   okr6Month: Annotation<
     | {
-      objective: string;
-      keyResults: Array<{ kr: string; why: string }>;
-    }
+        objective: string;
+        keyResults: Array<{ kr: string; why: string }>;
+      }
     | undefined
   >,
   okr12Month: Annotation<
     | {
-      objective: string;
-      keyResults: Array<{ kr: string; why: string }>;
-    }
+        objective: string;
+        keyResults: Array<{ kr: string; why: string }>;
+      }
     | undefined
   >,
 
   // Action Plan
   actionPlan: Annotation<
     | Array<{
-      area: string;
-      action: string;
-      timeline: string;
-      success: string;
-      support: string;
-    }>
+        area: string;
+        action: string;
+        timeline: string;
+        success: string;
+        support: string;
+      }>
     | undefined
   >,
 
@@ -90,6 +102,21 @@ export function createOkrGenerationGraph(config: AppConfig) {
       }
     }
 
+    // Previous OKR context for progress tracking
+    let previousOkrContext = '';
+    let progressReportPrompt = '';
+    if (state.previousOkr) {
+      console.log('   📊 Analyzing progress from previous OKR...');
+      previousOkrContext = `\n\nPREVIOUS OKR (Generated: ${state.previousOkr.generatedAt || 'Unknown'}):\n${JSON.stringify(state.previousOkr, null, 2)}`;
+      progressReportPrompt = `,
+  "progressReport": {
+    "status": "On Track | At Risk | Off Track | Completed",
+    "summary": "Brief assessment of progress on previous objectives",
+    "achieved": ["Key results that were achieved or on track"],
+    "missed": ["Key results that were not achieved or are at risk"]
+  }`;
+    }
+
     const prompt = `
 You are an Engineering Manager creating a developer growth profile. Based on the metrics below, generate a structured assessment.
 
@@ -98,7 +125,9 @@ ${formatStats(state.authorStats)}
 
 IDENTIFIED STRENGTHS: ${state.strengths.join(', ')}
 IDENTIFIED WEAKNESSES: ${state.weaknesses.join(', ')}
-${context}
+${context}${previousOkrContext}
+
+${state.previousOkr ? 'IMPORTANT: Compare current metrics with the Previous OKR. Assess if they achieved their objectives and key results. Generate a progress report.' : ''}
 
 Generate the following in JSON format:
 
@@ -114,7 +143,7 @@ Generate the following in JSON format:
   "knowledgeGaps": [
     "Specific skill or concept to develop (3-5 items)",
     "Example: 'Advanced performance profiling (React.memo, bundle analysis)'"
-  ],
+  ]${progressReportPrompt},
   "okr3Month": {
     "objective": "Tactical, achievable outcome this quarter",
     "keyResults": [
@@ -139,6 +168,7 @@ Focus on:
 - Weak points: Frame as opportunities ("Could grow by..." not "Fails to...")
 - Knowledge gaps: Skills that would unlock higher impact
 - 3-month OKRs: Directly address weak points and close knowledge gaps
+${state.previousOkr ? '- Progress report: Compare current metrics with previous OKR to assess achievement' : ''}
 `;
 
     const response = await llm.invoke([
@@ -159,6 +189,7 @@ Focus on:
         strongPoints: parsed.strongPoints || [],
         weakPoints: parsed.weakPoints || [],
         knowledgeGaps: parsed.knowledgeGaps || [],
+        progressReport: parsed.progressReport || undefined,
         okr3Month: parsed.okr3Month || { objective: '', keyResults: [] },
         currentOkrs: parsed.okr3Month?.keyResults?.map((kr: any) => kr.kr) || [],
         rounds: 0,

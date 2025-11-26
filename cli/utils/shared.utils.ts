@@ -189,7 +189,10 @@ function extractMetricsSnapshot(agentResults: AgentResult[]): MetricsSnapshot {
   const finalAgents = agentResults.slice(-5);
 
   // Import weight functions for weighted averaging
-  const { calculateWeightedAverage, SEVEN_PILLARS } = require('../../src/constants/agent-weights.constants');
+  const {
+    calculateWeightedAverage,
+    SEVEN_PILLARS,
+  } = require('../../src/constants/agent-weights.constants');
 
   const metrics = SEVEN_PILLARS;
 
@@ -318,23 +321,23 @@ async function trackEvaluationHistory(
     metrics: agentResults
       ? extractMetricsSnapshot(agentResults)
       : {
-        functionalImpact: 0,
-        idealTimeHours: 0,
-        testCoverage: 0,
-        codeQuality: 0,
-        codeComplexity: 0,
-        actualTimeHours: 0,
-        technicalDebtHours: 0,
-        debtReductionHours: 0,
-      },
+          functionalImpact: 0,
+          idealTimeHours: 0,
+          testCoverage: 0,
+          codeQuality: 0,
+          codeComplexity: 0,
+          actualTimeHours: 0,
+          technicalDebtHours: 0,
+          debtReductionHours: 0,
+        },
     tokens: agentResults
       ? extractTokenSnapshot(agentResults)
       : {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        totalCost: 0,
-      },
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          totalCost: 0,
+        },
     convergenceScore: agentResults ? calculateConvergenceScore(agentResults) : 0,
   };
 
@@ -430,7 +433,9 @@ export async function createEvaluationDirectory(
  * Calculate averaged metrics from agent results using weighted averaging (matching report calculations)
  */
 async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
-  const { MetricsCalculationService } = await import('../../src/services/metrics-calculation.service.js');
+  const { MetricsCalculationService } = await import(
+    '../../src/services/metrics-calculation.service.js'
+  );
   return MetricsCalculationService.loadMetricsFromDirectory(evaluationDir);
 }
 
@@ -646,8 +651,9 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                 <div class="stat-number">${byAuthor.size}</div>
                 <div class="stat-label">Authors</div>
             </div>
-            ${overallMetrics.count > 0
-      ? `
+            ${
+              overallMetrics.count > 0
+                ? `
             <div class="stat-card">
                 <div class="stat-number">${overallMetrics.avgQuality}</div>
                 <div class="stat-label">Avg Quality</div>
@@ -679,8 +685,8 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                 <div class="stat-mini">${overallMetrics.totalTechDebt > 0 ? 'added' : 'reduced'}</div>
             </div>
             `
-      : ''
-    }
+                : ''
+            }
         </div>
 
         <div class="search-filter-bar">
@@ -709,53 +715,53 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                 </thead>
                 <tbody>
 ${Array.from(byAuthor.entries())
-      .sort((a, b) => b[1].length - a[1].length)
-      .map(([author, commits]) => {
-        // Sort commits by commit date (newest first)
-        commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
-        const authorMetrics = {
-          quality: 0,
-          complexity: 0,
-          testCoverage: 0,
-          functionalImpact: 0,
-          actualTime: 0,
-          techDebt: 0,
-          count: 0,
-        };
-        commits.forEach((c) => {
-          if (c.metrics) {
-            authorMetrics.quality += c.metrics.codeQuality || 0;
-            authorMetrics.complexity += c.metrics.codeComplexity || 0;
-            authorMetrics.testCoverage += c.metrics.testCoverage || 0;
-            authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
-            authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
-            // Calculate NET debt (debt introduced - debt reduction)
-            const netDebt = (c.metrics.technicalDebtHours || 0) - (c.metrics.debtReductionHours || 0);
-            authorMetrics.techDebt += netDebt;
-            authorMetrics.count++;
-          }
-        });
+  .sort((a, b) => b[1].length - a[1].length)
+  .map(([author, commits]) => {
+    // Sort commits by commit date (newest first)
+    commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
+    const authorMetrics = {
+      quality: 0,
+      complexity: 0,
+      testCoverage: 0,
+      functionalImpact: 0,
+      actualTime: 0,
+      techDebt: 0,
+      count: 0,
+    };
+    commits.forEach((c) => {
+      if (c.metrics) {
+        authorMetrics.quality += c.metrics.codeQuality || 0;
+        authorMetrics.complexity += c.metrics.codeComplexity || 0;
+        authorMetrics.testCoverage += c.metrics.testCoverage || 0;
+        authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
+        authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
+        // Calculate NET debt (debt introduced - debt reduction)
+        const netDebt = (c.metrics.technicalDebtHours || 0) - (c.metrics.debtReductionHours || 0);
+        authorMetrics.techDebt += netDebt;
+        authorMetrics.count++;
+      }
+    });
 
-        const avgQuality =
-          authorMetrics.count > 0 ? (authorMetrics.quality / authorMetrics.count).toFixed(1) : 'N/A';
-        const avgComplexity =
-          authorMetrics.count > 0 ? (authorMetrics.complexity / authorMetrics.count).toFixed(1) : 'N/A';
-        const avgTestCoverage =
-          authorMetrics.count > 0
-            ? (authorMetrics.testCoverage / authorMetrics.count).toFixed(1)
-            : 'N/A';
-        const avgFunctionalImpact =
-          authorMetrics.count > 0
-            ? (authorMetrics.functionalImpact / authorMetrics.count).toFixed(1)
-            : 'N/A';
-        const avgActualTime =
-          authorMetrics.count > 0 ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2) : 'N/A';
-        const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
+    const avgQuality =
+      authorMetrics.count > 0 ? (authorMetrics.quality / authorMetrics.count).toFixed(1) : 'N/A';
+    const avgComplexity =
+      authorMetrics.count > 0 ? (authorMetrics.complexity / authorMetrics.count).toFixed(1) : 'N/A';
+    const avgTestCoverage =
+      authorMetrics.count > 0
+        ? (authorMetrics.testCoverage / authorMetrics.count).toFixed(1)
+        : 'N/A';
+    const avgFunctionalImpact =
+      authorMetrics.count > 0
+        ? (authorMetrics.functionalImpact / authorMetrics.count).toFixed(1)
+        : 'N/A';
+    const avgActualTime =
+      authorMetrics.count > 0 ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2) : 'N/A';
+    const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
 
-        const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
-        const authorPageUrl = `author-${authorSlug}.html`;
+    const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const authorPageUrl = `author-${authorSlug}.html`;
 
-        return `
+    return `
                     <tr>
                         <td>👤 ${author}</td>
                         <td class="metric-cell">${commits.length}</td>
@@ -767,8 +773,8 @@ ${Array.from(byAuthor.entries())
                         <td class="metric-cell">${totalTechDebt !== 'N/A' ? `<span class="metric-${parseFloat(totalTechDebt) > 0 ? 'bad' : parseFloat(totalTechDebt) < 0 ? 'good' : 'medium'}">${parseFloat(totalTechDebt) > 0 ? '+' : ''}${totalTechDebt}h</span>` : 'N/A'}</td>
                         <td><a href="${authorPageUrl}" class="btn btn-sm btn-outline-primary">View Dashboard</a></td>
                     </tr>`;
-      })
-      .join('')}
+  })
+  .join('')}
                 </tbody>
             </table>
         </div>
@@ -796,20 +802,20 @@ ${Array.from(byAuthor.entries())
                     </thead>
                     <tbody id="commitList">
 ${index
-      .map((item) => {
-        const metrics = item.metrics || {};
-        const qualityColor =
-          metrics.codeQuality >= 7 ? 'good' : metrics.codeQuality >= 4 ? 'medium' : 'bad';
-        const complexityColor =
-          metrics.codeComplexity <= 3 ? 'good' : metrics.codeComplexity <= 6 ? 'medium' : 'bad';
-        const testsColor =
-          metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
-        const impactColor =
-          metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
-        const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
-        const debtColor = netDebt > 0 ? 'bad' : netDebt < 0 ? 'good' : 'medium';
+  .map((item) => {
+    const metrics = item.metrics || {};
+    const qualityColor =
+      metrics.codeQuality >= 7 ? 'good' : metrics.codeQuality >= 4 ? 'medium' : 'bad';
+    const complexityColor =
+      metrics.codeComplexity <= 3 ? 'good' : metrics.codeComplexity <= 6 ? 'medium' : 'bad';
+    const testsColor =
+      metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
+    const impactColor =
+      metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
+    const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
+    const debtColor = netDebt > 0 ? 'bad' : netDebt < 0 ? 'good' : 'medium';
 
-        return `
+    return `
                         <tr data-source="${item.source || 'unknown'}" data-author="${item.commitAuthor || ''}" data-message="${(item.commitMessage || '').toLowerCase()}" data-hash="${item.commitHash}">
                             <td>
                                 <span class="commit-hash">${item.commitHash?.substring(0, 8) || item.directory}</span>
@@ -830,8 +836,8 @@ ${index
                             <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${netDebt > 0 ? '+' : ''}${netDebt.toFixed(1)}h` : 'N/A'}</td>
                             <td><a href="${item.directory}/report-enhanced.html" class="btn btn-primary btn-sm">View</a></td>
                         </tr>`;
-      })
-      .join('')}
+  })
+  .join('')}
                     </tbody>
                 </table>
             </div>
@@ -930,15 +936,18 @@ async function generateAuthorPage(
   commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
 
   // Use centralized metrics calculation service for consistency with OKR generation
-  const { AuthorStatsAggregatorService } = require('../../src/services/author-stats-aggregator.service');
+  const {
+    AuthorStatsAggregatorService,
+  } = require('../../src/services/author-stats-aggregator.service');
   const authorData = await AuthorStatsAggregatorService.aggregateAuthorStats(evaluationsRoot, {
     targetAuthor: author,
   });
 
   const evaluations = authorData.get(author);
-  const analysis = evaluations && evaluations.length > 0
-    ? AuthorStatsAggregatorService.analyzeAuthor(evaluations)
-    : null;
+  const analysis =
+    evaluations && evaluations.length > 0
+      ? AuthorStatsAggregatorService.analyzeAuthor(evaluations)
+      : null;
 
   // Use centralized stats or fallback to empty
   const avgQuality = analysis ? analysis.stats.quality.toFixed(1) : 'N/A';
@@ -967,166 +976,233 @@ async function generateAuthorPage(
         const okrData = JSON.parse(fsSync.readFileSync(latestJsonPath, 'utf-8'));
         const generatedDate = new Date(okrData.generatedAt).toLocaleDateString();
 
-        // Build collapsible OKR section with cards
+        // Build grid-based OKR section
         okrContentHtml = `
-          <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
-              <strong>✅ Latest OKR Profile</strong>
-              <span class="text-muted ms-2">(Generated: ${generatedDate})</span>
+              <h4 class="mb-0">✅ Latest OKR Profile</h4>
+              <span class="text-muted small">Generated: ${generatedDate}</span>
             </div>
-            <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#okrDetails">
-              <span class="collapsed-text">▼ Show Details</span>
-              <span class="expanded-text" style="display:none;">▲ Hide Details</span>
-            </button>
+            <a href=".okrs/${authorSlug}/${okrJsonFiles[0].replace('.json', '.html')}" 
+               class="btn btn-sm btn-outline-primary" 
+               target="_blank">
+              📄 View Full Report
+            </a>
           </div>
 
-          <div class="collapse" id="okrDetails">
-            <!-- Strong Points -->
-            <div class="card mb-3 border-success">
-              <div class="card-header bg-success text-white">
-                <strong>✅ Strong Points</strong>
-              </div>
-              <div class="card-body">
-                <ul class="mb-0">
-                  ${okrData.strongPoints.map((point: string) => `<li>${point}</li>`).join('')}
+          ${
+            okrData.progressReport
+              ? `
+          <!-- Progress Report -->
+          <div class="alert alert-${okrData.progressReport.status === 'On Track' ? 'success' : okrData.progressReport.status === 'Completed' ? 'info' : okrData.progressReport.status === 'At Risk' ? 'warning' : 'danger'} mb-4" role="alert">
+            <div class="d-flex align-items-center mb-2">
+              <h5 class="mb-0 me-3">📈 Progress Report</h5>
+              <span class="badge bg-${okrData.progressReport.status === 'On Track' ? 'success' : okrData.progressReport.status === 'Completed' ? 'info' : okrData.progressReport.status === 'At Risk' ? 'warning' : 'danger'}">${okrData.progressReport.status}</span>
+            </div>
+            <p class="mb-3">${okrData.progressReport.summary}</p>
+            <div class="row">
+              ${
+                okrData.progressReport.achieved && okrData.progressReport.achieved.length > 0
+                  ? `
+              <div class="col-md-6">
+                <strong class="text-success">✓ Achieved:</strong>
+                <ul class="mb-0 mt-2">
+                  ${okrData.progressReport.achieved.map((item: string) => `<li>${item}</li>`).join('')}
                 </ul>
+              </div>
+              `
+                  : ''
+              }
+              ${
+                okrData.progressReport.missed && okrData.progressReport.missed.length > 0
+                  ? `
+              <div class="col-md-6">
+                <strong class="text-danger">✗ Missed:</strong>
+                <ul class="mb-0 mt-2">
+                  ${okrData.progressReport.missed.map((item: string) => `<li>${item}</li>`).join('')}
+                </ul>
+              </div>
+              `
+                  : ''
+              }
+            </div>
+          </div>
+          `
+              : ''
+          }
+
+          <!-- Row 1: Assessment (3 cols) -->
+          <div class="row mb-4">
+            <!-- Strong Points -->
+            <div class="col-md-4 mb-3 mb-md-0">
+              <div class="card h-100 border-success shadow-sm">
+                <div class="card-header bg-success text-white py-2">
+                  <strong>💪 Strong Points</strong>
+                </div>
+                <div class="card-body">
+                  <ul class="mb-0 ps-3 small">
+                    ${okrData.strongPoints.map((point: string) => `<li class="mb-1">${point}</li>`).join('')}
+                  </ul>
+                </div>
               </div>
             </div>
 
             <!-- Weak Points -->
-            <div class="card mb-3 border-warning">
-              <div class="card-header bg-warning text-dark">
-                <strong>⚠️ Growth Areas</strong>
-              </div>
-              <div class="card-body">
-                <ul class="mb-0">
-                  ${okrData.weakPoints.map((point: string) => `<li>${point}</li>`).join('')}
-                </ul>
+            <div class="col-md-4 mb-3 mb-md-0">
+              <div class="card h-100 border-warning shadow-sm">
+                <div class="card-header bg-warning text-dark py-2">
+                  <strong>⚠️ Growth Areas</strong>
+                </div>
+                <div class="card-body">
+                  <ul class="mb-0 ps-3 small">
+                    ${okrData.weakPoints.map((point: string) => `<li class="mb-1">${point}</li>`).join('')}
+                  </ul>
+                </div>
               </div>
             </div>
 
             <!-- Knowledge Gaps -->
-            <div class="card mb-3 border-info">
-              <div class="card-header bg-info text-white">
-                <strong>🧩 Knowledge Gaps</strong>
-              </div>
-              <div class="card-body">
-                <ul class="mb-0">
-                  ${okrData.knowledgeGaps.map((gap: string) => `<li>${gap}</li>`).join('')}
-                </ul>
-              </div>
-            </div>
-
-            <!-- 3-Month OKR -->
-            <div class="card mb-3 border-primary">
-              <div class="card-header bg-primary text-white">
-                <strong>🎯 3-Month Objective</strong>
-              </div>
-              <div class="card-body">
-                <h6 class="text-primary">${okrData.okr3Month.objective}</h6>
-                <div class="mt-3">
-                  <strong>Key Results:</strong>
-                  ${okrData.okr3Month.keyResults.map((kr: any, i: number) => `
-                    <div class="mt-2 p-2 bg-light rounded">
-                      <div><strong>KR${i + 1}:</strong> ${kr.kr}</div>
-                      <div class="text-muted small mt-1"><em>Why:</em> ${kr.why}</div>
-                    </div>
-                  `).join('')}
+            <div class="col-md-4">
+              <div class="card h-100 border-info shadow-sm">
+                <div class="card-header bg-info text-white py-2">
+                  <strong>🧩 Knowledge Gaps</strong>
+                </div>
+                <div class="card-body">
+                  <ul class="mb-0 ps-3 small">
+                    ${okrData.knowledgeGaps.map((gap: string) => `<li class="mb-1">${gap}</li>`).join('')}
+                  </ul>
                 </div>
               </div>
-            </div>
-
-            ${okrData.okr6Month ? `
-            <!-- 6-Month OKR -->
-            <div class="card mb-3 border-primary">
-              <div class="card-header bg-primary text-white" style="opacity: 0.9;">
-                <strong>📆 6-Month Objective</strong>
-              </div>
-              <div class="card-body">
-                <h6 class="text-primary">${okrData.okr6Month.objective}</h6>
-                <div class="mt-3">
-                  <strong>Key Results:</strong>
-                  ${okrData.okr6Month.keyResults.map((kr: any, i: number) => `
-                    <div class="mt-2 p-2 bg-light rounded">
-                      <div><strong>KR${i + 1}:</strong> ${kr.kr}</div>
-                      <div class="text-muted small mt-1"><em>Why:</em> ${kr.why}</div>
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            </div>
-            ` : ''}
-
-            ${okrData.okr12Month ? `
-            <!-- 12-Month OKR -->
-            <div class="card mb-3 border-primary">
-              <div class="card-header bg-primary text-white" style="opacity: 0.8;">
-                <strong>📅 12-Month Objective</strong>
-              </div>
-              <div class="card-body">
-                <h6 class="text-primary">${okrData.okr12Month.objective}</h6>
-                <div class="mt-3">
-                  <strong>Key Results:</strong>
-                  ${okrData.okr12Month.keyResults.map((kr: any, i: number) => `
-                    <div class="mt-2 p-2 bg-light rounded">
-                      <div><strong>KR${i + 1}:</strong> ${kr.kr}</div>
-                      <div class="text-muted small mt-1"><em>Why:</em> ${kr.why}</div>
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            </div>
-            ` : ''}
-
-            ${okrData.actionPlan && okrData.actionPlan.length > 0 ? `
-            <!-- Action Plan -->
-            <div class="card mb-3 border-secondary">
-              <div class="card-header bg-secondary text-white">
-                <strong>🚀 Action Plan</strong>
-              </div>
-              <div class="card-body">
-                <div class="table-responsive">
-                  <table class="table table-sm mb-0">
-                    <thead>
-                      <tr>
-                        <th>Area</th>
-                        <th>Action</th>
-                        <th>Timeline</th>
-                        <th>Success Criteria</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${okrData.actionPlan.map((item: any) => `
-                        <tr>
-                          <td><strong>${item.area}</strong></td>
-                          <td>${item.action}</td>
-                          <td><span class="badge bg-secondary">${item.timeline}</span></td>
-                          <td>${item.success}</td>
-                        </tr>
-                      `).join('')}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            ` : ''}
-
-            <!-- View Full Report Link -->
-            <div class="text-center mt-3">
-              <a href=".okrs/${authorSlug}/${okrJsonFiles[0].replace('.json', '.html')}"
-                 class="btn btn-primary"
-                 target="_blank">
-                📄 View Full OKR Report
-              </a>
-              ${okrJsonFiles.length > 1 ? `
-                <div class="mt-2">
-                  <small class="text-muted">
-                    ${okrJsonFiles.length - 1} older profile${okrJsonFiles.length > 2 ? 's' : ''} available
-                  </small>
-                </div>
-              ` : ''}
             </div>
           </div>
+
+          <!-- Row 2: Objectives -->
+          <div class="card mb-4 border-primary shadow-sm">
+            <div class="card-header bg-primary text-white">
+              <strong>🎯 3-Month Objective</strong>
+            </div>
+            <div class="card-body">
+              <h5 class="text-primary mb-3">${okrData.okr3Month.objective}</h5>
+              <div class="row">
+                ${okrData.okr3Month.keyResults
+                  .map(
+                    (kr: any, i: number) => `
+                  <div class="col-md-4 mb-3">
+                    <div class="p-3 bg-light rounded h-100 border">
+                      <div class="fw-bold mb-2">KR ${i + 1}: ${kr.kr}</div>
+                      <div class="text-muted small border-top pt-2 mt-2"><em>Why:</em> ${kr.why}</div>
+                    </div>
+                  </div>
+                `
+                  )
+                  .join('')}
+              </div>
+            </div>
+          </div>
+
+          ${
+            okrData.okr6Month
+              ? `
+          <div class="accordion mb-4" id="longTermOkrs">
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse6Month">
+                  <strong>📆 6-Month Objective:</strong> &nbsp; ${okrData.okr6Month.objective}
+                </button>
+              </h2>
+              <div id="collapse6Month" class="accordion-collapse collapse" data-bs-parent="#longTermOkrs">
+                <div class="accordion-body bg-light">
+                  <div class="row">
+                    ${okrData.okr6Month.keyResults
+                      .map(
+                        (kr: any, i: number) => `
+                      <div class="col-md-6 mb-2">
+                        <div class="p-2 bg-white rounded border">
+                          <strong>KR ${i + 1}:</strong> ${kr.kr}
+                        </div>
+                      </div>
+                    `
+                      )
+                      .join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+            ${
+              okrData.okr12Month
+                ? `
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse12Month">
+                  <strong>📅 12-Month Objective:</strong> &nbsp; ${okrData.okr12Month.objective}
+                </button>
+              </h2>
+              <div id="collapse12Month" class="accordion-collapse collapse" data-bs-parent="#longTermOkrs">
+                <div class="accordion-body bg-light">
+                  <div class="row">
+                    ${okrData.okr12Month.keyResults
+                      .map(
+                        (kr: any, i: number) => `
+                      <div class="col-md-6 mb-2">
+                        <div class="p-2 bg-white rounded border">
+                          <strong>KR ${i + 1}:</strong> ${kr.kr}
+                        </div>
+                      </div>
+                    `
+                      )
+                      .join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+            `
+                : ''
+            }
+          </div>
+          `
+              : ''
+          }
+
+          ${
+            okrData.actionPlan && okrData.actionPlan.length > 0
+              ? `
+          <!-- Action Plan -->
+          <div class="card mb-3 border-secondary shadow-sm">
+            <div class="card-header bg-secondary text-white">
+              <strong>🚀 Action Plan</strong>
+            </div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-striped mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th class="ps-3">Area</th>
+                      <th>Action</th>
+                      <th>Timeline</th>
+                      <th class="pe-3">Success Criteria</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${okrData.actionPlan
+                      .map(
+                        (item: any) => `
+                      <tr>
+                        <td class="ps-3 fw-bold text-secondary">${item.area}</td>
+                        <td>${item.action}</td>
+                        <td><span class="badge bg-secondary">${item.timeline}</span></td>
+                        <td class="pe-3 small text-muted">${item.success}</td>
+                      </tr>
+                    `
+                      )
+                      .join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          `
+              : ''
+          }
         `;
       } catch (e) {
         okrContentHtml = `
@@ -1284,20 +1360,20 @@ async function generateAuthorPage(
                     </thead>
                     <tbody>
 ${commits
-      .map((item) => {
-        const metrics = item.metrics || {};
-        const qualityColor =
-          metrics.codeQuality >= 7 ? 'good' : metrics.codeQuality >= 4 ? 'medium' : 'bad';
-        const complexityColor =
-          metrics.codeComplexity <= 3 ? 'good' : metrics.codeComplexity <= 6 ? 'medium' : 'bad';
-        const testsColor =
-          metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
-        const impactColor =
-          metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
-        const debtColor =
-          metrics.technicalDebtHours > 0 ? 'bad' : metrics.technicalDebtHours < 0 ? 'good' : 'medium';
+  .map((item) => {
+    const metrics = item.metrics || {};
+    const qualityColor =
+      metrics.codeQuality >= 7 ? 'good' : metrics.codeQuality >= 4 ? 'medium' : 'bad';
+    const complexityColor =
+      metrics.codeComplexity <= 3 ? 'good' : metrics.codeComplexity <= 6 ? 'medium' : 'bad';
+    const testsColor =
+      metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
+    const impactColor =
+      metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
+    const debtColor =
+      metrics.technicalDebtHours > 0 ? 'bad' : metrics.technicalDebtHours < 0 ? 'good' : 'medium';
 
-        return `
+    return `
                         <tr>
                             <td>
                                 <span class="commit-hash">${item.commitHash?.substring(0, 8) || item.directory}</span>
@@ -1317,8 +1393,8 @@ ${commits
                             <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${metrics.technicalDebtHours > 0 ? '+' : ''}${metrics.technicalDebtHours}h` : 'N/A'}</td>
                             <td><a href="${item.directory}/report-enhanced.html" class="btn btn-primary btn-sm">View</a></td>
                         </tr>`;
-      })
-      .join('')}
+  })
+  .join('')}
                     </tbody>
                 </table>
             </div>

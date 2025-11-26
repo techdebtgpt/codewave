@@ -8,6 +8,7 @@ import {
   AggregationOptions,
 } from '../../src/services/author-stats-aggregator.service';
 import { OkrOrchestrator } from '../../src/services/okr-orchestrator.service';
+import { OkrProgressTracker } from '../utils/okr-progress-tracker';
 
 /**
  * CLI command for generating OKRs
@@ -52,7 +53,40 @@ export async function runGenerateOkrCommand(args: string[]) {
 
   // 5. Generate OKRs using Orchestrator (DRY - reusable service)
   const orchestrator = new OkrOrchestrator(config);
-  const okrMap = await orchestrator.generateOkrsWithProgress(authors, evalRoot, options, 2);
+
+  // Initialize progress tracker
+  const tracker = new OkrProgressTracker();
+  tracker.initialize(authors);
+
+  const concurrency = (options as any).concurrency || 2;
+  console.log(chalk.gray(`⚡ Using concurrency: ${concurrency}`));
+
+  // Suppress logs that interfere with progress bar
+  const { consoleManager } = await import('../../src/common/utils/console-manager.js');
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+
+  (process.stdout.write as any) = function (str: string, ...args: any[]): boolean {
+    // Block OKR generation progress lines
+    if (/^\s+[📝🧐✨]/u.test(str)) {
+      return true; // Suppress
+    }
+    return originalStdoutWrite(str, ...args);
+  };
+
+  const okrMap = await orchestrator.generateOkrsWithProgress(
+    authors,
+    evalRoot,
+    options,
+    concurrency,
+    true, // silent=true because we handle progress manually
+    (author, progress) => tracker.update(author, progress)
+  );
+
+  tracker.stop();
+
+  // Restore console methods and process stdout
+  consoleManager.stopSuppressing();
+  process.stdout.write = originalStdoutWrite as any;
 
   // 6. Save OKRs
   await orchestrator.saveOkrs(evalRoot, okrMap);
@@ -85,6 +119,12 @@ function parseCommandArgs(args: string[]): AggregationOptions {
   if (args.includes('--count')) {
     const idx = args.indexOf('--count');
     options.countLimit = parseInt(args[idx + 1], 10);
+  }
+
+  if (args.includes('--concurrency') || args.includes('-c')) {
+    const idx =
+      args.indexOf('--concurrency') !== -1 ? args.indexOf('--concurrency') : args.indexOf('-c');
+    (options as any).concurrency = parseInt(args[idx + 1], 10);
   }
 
   return options;
