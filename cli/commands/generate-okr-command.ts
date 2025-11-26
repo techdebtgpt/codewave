@@ -7,11 +7,11 @@ import {
   AuthorStatsAggregatorService,
   AggregationOptions,
 } from '../../src/services/author-stats-aggregator.service';
+import { OkrOrchestrator } from '../../src/services/okr-orchestrator.service';
 
 /**
  * CLI command for generating OKRs
- * Thin orchestrator that delegates to services
- * Follows pattern from evaluate-command.ts
+ * Refactored to use OkrOrchestrator service (DRY principle)
  */
 export async function runGenerateOkrCommand(args: string[]) {
   console.log(chalk.cyan('\n🎯 CodeWave: Generating OKRs & Action Points...\n'));
@@ -31,7 +31,7 @@ export async function runGenerateOkrCommand(args: string[]) {
   // 3. Get evaluation root
   const evalRoot = getEvaluationRoot();
 
-  // 4. Aggregate author stats
+  // 4. Aggregate author stats to find authors
   console.log(chalk.gray('📂 Scanning evaluation history...'));
 
   let authorData: Map<string, any[]>;
@@ -47,76 +47,20 @@ export async function runGenerateOkrCommand(args: string[]) {
     process.exit(0);
   }
 
-  // 5. Analyze each author
-  const authorAnalyses = new Map<
-    string,
-    { stats: any; strengths: string[]; weaknesses: string[] }
-  >();
+  const authors = Array.from(authorData.keys());
+  console.log(chalk.white(`\n👥 Found ${authors.length} author(s): ${authors.join(', ')}`));
 
-  for (const [author, evaluations] of authorData.entries()) {
-    console.log(
-      chalk.white(`\n👤 Analyzing ${evaluations.length} commits for ${chalk.bold(author)}...`)
-    );
+  // 5. Generate OKRs using Orchestrator (DRY - reusable service)
+  const orchestrator = new OkrOrchestrator(config);
+  const okrMap = await orchestrator.generateOkrsWithProgress(authors, evalRoot, options, 2);
 
-    try {
-      const analysis = AuthorStatsAggregatorService.analyzeAuthor(evaluations);
-      authorAnalyses.set(author, analysis);
-    } catch (error) {
-      console.log(
-        chalk.yellow(
-          `   Skipping ${author}: ${error instanceof Error ? error.message : String(error)}`
-        )
-      );
-    }
-  }
+  // 6. Save OKRs
+  await orchestrator.saveOkrs(evalRoot, okrMap);
 
-  // 6. Generate OKRs using Agentic Service
-  const { OkrAgentService } = await import('../../src/services/okr-agent.service.js');
-  const { formatOKRToMarkdown } = await import('../../src/formatters/okr-formatter.js');
-  const agentService = new OkrAgentService(config);
-  const allOkrs: Record<string, any> = {};
-
-  for (const [author, analysis] of authorAnalyses.entries()) {
-    try {
-      // Get original evaluations for this author to extract comments
-      const authorEvaluations = authorData.get(author) || [];
-
-      const okrData = await agentService.generateOkrsForAuthor(
-        author,
-        analysis.stats,
-        analysis.strengths,
-        analysis.weaknesses,
-        authorEvaluations
-      );
-
-      allOkrs[author] = okrData;
-
-      // Display summary
-      console.log(chalk.green(`   ✅ Generated comprehensive OKR profile`));
-      console.log(chalk.gray(`      Strong Points: ${okrData.strongPoints.length}`));
-      console.log(chalk.gray(`      Weak Points: ${okrData.weakPoints.length}`));
-      console.log(chalk.gray(`      Knowledge Gaps: ${okrData.knowledgeGaps.length}`));
-      if (okrData.okr12Month) console.log(chalk.gray(`      12-Month OKR: ✓`));
-      if (okrData.okr6Month) console.log(chalk.gray(`      6-Month OKR: ✓`));
-      console.log(chalk.gray(`      3-Month OKR: ✓`));
-      if (okrData.actionPlan)
-        console.log(chalk.gray(`      Action Items: ${okrData.actionPlan.length}`));
-    } catch (error) {
-      console.error(
-        chalk.red(
-          `   ❌ Failed to generate OKRs: ${error instanceof Error ? error.message : String(error)}`
-        )
-      );
-    }
-  }
-
-  // 7. Save OKRs (both JSON and Markdown)
-  await saveOkrs(evalRoot, allOkrs, formatOKRToMarkdown);
-
-  // 8. Regenerate HTML reports
+  // 7. Regenerate HTML reports
   await regenerateHtmlReports(evalRoot, authorData);
 
-  // 9. Print completion
+  // 8. Print completion
   console.log(chalk.green('\n✅ OKR Generation Complete!'));
   console.log(chalk.white('📁 OKR files saved to .evaluated-commits/.okrs/'));
   console.log(chalk.white('🌐 Open .evaluated-commits/index.html to view the updated dashboards.'));
@@ -144,51 +88,6 @@ function parseCommandArgs(args: string[]): AggregationOptions {
   }
 
   return options;
-}
-
-/**
- * Save OKRs to file (both JSON and Markdown)
- */
-async function saveOkrs(
-  evalRoot: string,
-  allOkrs: Record<string, any>,
-  formatOKRToMarkdown: (data: any) => string
-): Promise<void> {
-  // Create .okrs directory
-  const okrsDir = path.join(evalRoot, '.okrs');
-  if (!fs.existsSync(okrsDir)) {
-    await fs.promises.mkdir(okrsDir, { recursive: true });
-  }
-
-  // Save JSON (for programmatic access)
-  const jsonPath = path.join(okrsDir, 'author-okrs.json');
-  let existingOkrs = {};
-  if (fs.existsSync(jsonPath)) {
-    try {
-      existingOkrs = JSON.parse(await fs.promises.readFile(jsonPath, 'utf-8'));
-    } catch (e) {
-      // Ignore parse errors
-    }
-  }
-
-  const finalOkrs = { ...existingOkrs, ...allOkrs };
-  await fs.promises.writeFile(jsonPath, JSON.stringify(finalOkrs, null, 2));
-  console.log(chalk.cyan(`\n💾 Saved OKRs (JSON) to ${jsonPath}`));
-
-  // Save Markdown files (for human reading)
-  for (const [author, okrData] of Object.entries(allOkrs)) {
-    const sanitizedAuthor = author.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-    const timestamp = new Date().toISOString().split('T')[0];
-    const mdPath = path.join(okrsDir, `${sanitizedAuthor}_${timestamp}.md`);
-
-    const markdown = formatOKRToMarkdown({
-      authorName: author,
-      ...okrData,
-    });
-
-    await fs.promises.writeFile(mdPath, markdown);
-    console.log(chalk.cyan(`💾 Saved OKR profile (Markdown) to ${mdPath}`));
-  }
 }
 
 /**

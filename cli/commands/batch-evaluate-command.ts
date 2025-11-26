@@ -231,6 +231,27 @@ export async function runBatchEvaluateCommand(args: string[]) {
 
   // Print final summary using shared output function
   printBatchCompletionMessage(summary);
+
+  // Prompt for OKR generation (DRY - using shared helper)
+  if (summary.complete > 0) {
+    // Extract unique authors from successful evaluations
+    const uniqueAuthors = new Set<string>();
+    results.forEach((result) => {
+      if (result.commit.author) {
+        uniqueAuthors.add(result.commit.author);
+      }
+    });
+
+    const authors = Array.from(uniqueAuthors);
+    if (authors.length > 0) {
+      const { promptAndGenerateOkrs } = await import('../utils/okr-prompt.utils.js');
+      const { getEvaluationRoot } = await import('../utils/shared.utils.js');
+      const evalRoot = getEvaluationRoot();
+      await promptAndGenerateOkrs(config, authors, evalRoot, {
+        sinceDate: options.since ? new Date(options.since) : undefined,
+      });
+    }
+  }
 }
 
 async function evaluateCommit(

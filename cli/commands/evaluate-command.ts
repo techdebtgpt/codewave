@@ -10,6 +10,7 @@ import {
   createEvaluationDirectory,
   EvaluationMetadata,
   printEvaluateCompletionMessage,
+  getEvaluationRoot,
 } from '../utils/shared.utils';
 import { parseCommitStats } from '../../src/common/utils/commit-utils';
 import {
@@ -381,4 +382,10 @@ export async function runEvaluateCommand(args: string[]) {
 
   // Print completion message using shared function
   printEvaluateCompletionMessage(outputDir);
+
+  if (commitAuthor) {
+    const { promptAndGenerateOkrs } = await import('../utils/okr-prompt.utils.js');
+    const evalRoot = getEvaluationRoot();
+    await promptAndGenerateOkrs(config, [commitAuthor], evalRoot);
+  }
 }
