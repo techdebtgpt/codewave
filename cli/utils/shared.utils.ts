@@ -188,23 +188,14 @@ function extractMetricsSnapshot(agentResults: AgentResult[]): MetricsSnapshot {
   const finalAgents = agentResults.slice(-5);
 
   // Import weight functions for weighted averaging
-  const { calculateWeightedAverage } = require('../../src/constants/agent-weights.constants');
+  const { calculateWeightedAverage, SEVEN_PILLARS } = require('../../src/constants/agent-weights.constants');
 
-  const metrics = [
-    'functionalImpact',
-    'idealTimeHours',
-    'testCoverage',
-    'codeQuality',
-    'codeComplexity',
-    'actualTimeHours',
-    'technicalDebtHours',
-    'debtReductionHours',
-  ];
+  const metrics = SEVEN_PILLARS;
 
   const result: any = {};
 
   // Calculate weighted average for each metric
-  metrics.forEach((metricName) => {
+  metrics.forEach((metricName: string) => {
     const contributors: Array<{ agentName: string; score: number | null }> = [];
     finalAgents.forEach((agent) => {
       if (agent.metrics && metricName in agent.metrics) {
@@ -326,23 +317,23 @@ async function trackEvaluationHistory(
     metrics: agentResults
       ? extractMetricsSnapshot(agentResults)
       : {
-          functionalImpact: 0,
-          idealTimeHours: 0,
-          testCoverage: 0,
-          codeQuality: 0,
-          codeComplexity: 0,
-          actualTimeHours: 0,
-          technicalDebtHours: 0,
-          debtReductionHours: 0,
-        },
+        functionalImpact: 0,
+        idealTimeHours: 0,
+        testCoverage: 0,
+        codeQuality: 0,
+        codeComplexity: 0,
+        actualTimeHours: 0,
+        technicalDebtHours: 0,
+        debtReductionHours: 0,
+      },
     tokens: agentResults
       ? extractTokenSnapshot(agentResults)
       : {
-          inputTokens: 0,
-          outputTokens: 0,
-          totalTokens: 0,
-          totalCost: 0,
-        },
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        totalCost: 0,
+      },
     convergenceScore: agentResults ? calculateConvergenceScore(agentResults) : 0,
   };
 
@@ -438,62 +429,8 @@ export async function createEvaluationDirectory(
  * Calculate averaged metrics from agent results using weighted averaging (matching report calculations)
  */
 async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
-  try {
-    const resultsPath = path.join(evaluationDir, 'results.json');
-    const content = await fs.readFile(resultsPath, 'utf-8');
-    const results = JSON.parse(content);
-
-    if (!results.agents || results.agents.length === 0) {
-      return null;
-    }
-
-    // Get final round agents (last 5 entries) - should be 1 per agent role
-    const finalAgents = results.agents.slice(-5);
-
-    // Import weight functions for weighted averaging
-    const { calculateWeightedAverage } = require('../../src/constants/agent-weights.constants');
-
-    // Metric names for weighted calculation
-    const metrics = [
-      'functionalImpact',
-      'idealTimeHours',
-      'testCoverage',
-      'codeQuality',
-      'codeComplexity',
-      'actualTimeHours',
-      'technicalDebtHours',
-      'debtReductionHours',
-    ];
-
-    // Calculate weighted average for each metric
-    const averagedMetrics: any = {};
-    metrics.forEach((metricName) => {
-      const contributors: Array<{ agentName: string; score: number | null }> = [];
-      finalAgents.forEach((agent: any) => {
-        if (agent.metrics && metricName in agent.metrics) {
-          const score = agent.metrics[metricName];
-          contributors.push({
-            agentName: agent.agentRole || agent.agentName || 'Unknown',
-            score: score !== null && score !== undefined ? score : null,
-          });
-        }
-      });
-
-      if (contributors.length > 0) {
-        const weightedValue = calculateWeightedAverage(contributors, metricName);
-        // Determine decimal places based on metric
-        if (metricName.includes('Hours') || metricName.includes('Time')) {
-          averagedMetrics[metricName] = Number(weightedValue.toFixed(2));
-        } else {
-          averagedMetrics[metricName] = Number(weightedValue.toFixed(1));
-        }
-      }
-    });
-
-    return averagedMetrics;
-  } catch {
-    return null;
-  }
+  const { MetricsCalculationService } = await import('../../src/services/metrics-calculation.service.js');
+  return MetricsCalculationService.loadMetricsFromDirectory(evaluationDir);
 }
 
 /**
@@ -708,9 +645,8 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                 <div class="stat-number">${byAuthor.size}</div>
                 <div class="stat-label">Authors</div>
             </div>
-            ${
-              overallMetrics.count > 0
-                ? `
+            ${overallMetrics.count > 0
+      ? `
             <div class="stat-card">
                 <div class="stat-number">${overallMetrics.avgQuality}</div>
                 <div class="stat-label">Avg Quality</div>
@@ -742,8 +678,8 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                 <div class="stat-mini">${overallMetrics.totalTechDebt > 0 ? 'added' : 'reduced'}</div>
             </div>
             `
-                : ''
-            }
+      : ''
+    }
         </div>
 
         <div class="search-filter-bar">
@@ -772,53 +708,53 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                 </thead>
                 <tbody>
 ${Array.from(byAuthor.entries())
-  .sort((a, b) => b[1].length - a[1].length)
-  .map(([author, commits]) => {
-    // Sort commits by commit date (newest first)
-    commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
-    const authorMetrics = {
-      quality: 0,
-      complexity: 0,
-      testCoverage: 0,
-      functionalImpact: 0,
-      actualTime: 0,
-      techDebt: 0,
-      count: 0,
-    };
-    commits.forEach((c) => {
-      if (c.metrics) {
-        authorMetrics.quality += c.metrics.codeQuality || 0;
-        authorMetrics.complexity += c.metrics.codeComplexity || 0;
-        authorMetrics.testCoverage += c.metrics.testCoverage || 0;
-        authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
-        authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
-        // Calculate NET debt (debt introduced - debt reduction)
-        const netDebt = (c.metrics.technicalDebtHours || 0) - (c.metrics.debtReductionHours || 0);
-        authorMetrics.techDebt += netDebt;
-        authorMetrics.count++;
-      }
-    });
+      .sort((a, b) => b[1].length - a[1].length)
+      .map(([author, commits]) => {
+        // Sort commits by commit date (newest first)
+        commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
+        const authorMetrics = {
+          quality: 0,
+          complexity: 0,
+          testCoverage: 0,
+          functionalImpact: 0,
+          actualTime: 0,
+          techDebt: 0,
+          count: 0,
+        };
+        commits.forEach((c) => {
+          if (c.metrics) {
+            authorMetrics.quality += c.metrics.codeQuality || 0;
+            authorMetrics.complexity += c.metrics.codeComplexity || 0;
+            authorMetrics.testCoverage += c.metrics.testCoverage || 0;
+            authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
+            authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
+            // Calculate NET debt (debt introduced - debt reduction)
+            const netDebt = (c.metrics.technicalDebtHours || 0) - (c.metrics.debtReductionHours || 0);
+            authorMetrics.techDebt += netDebt;
+            authorMetrics.count++;
+          }
+        });
 
-    const avgQuality =
-      authorMetrics.count > 0 ? (authorMetrics.quality / authorMetrics.count).toFixed(1) : 'N/A';
-    const avgComplexity =
-      authorMetrics.count > 0 ? (authorMetrics.complexity / authorMetrics.count).toFixed(1) : 'N/A';
-    const avgTestCoverage =
-      authorMetrics.count > 0
-        ? (authorMetrics.testCoverage / authorMetrics.count).toFixed(1)
-        : 'N/A';
-    const avgFunctionalImpact =
-      authorMetrics.count > 0
-        ? (authorMetrics.functionalImpact / authorMetrics.count).toFixed(1)
-        : 'N/A';
-    const avgActualTime =
-      authorMetrics.count > 0 ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2) : 'N/A';
-    const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
+        const avgQuality =
+          authorMetrics.count > 0 ? (authorMetrics.quality / authorMetrics.count).toFixed(1) : 'N/A';
+        const avgComplexity =
+          authorMetrics.count > 0 ? (authorMetrics.complexity / authorMetrics.count).toFixed(1) : 'N/A';
+        const avgTestCoverage =
+          authorMetrics.count > 0
+            ? (authorMetrics.testCoverage / authorMetrics.count).toFixed(1)
+            : 'N/A';
+        const avgFunctionalImpact =
+          authorMetrics.count > 0
+            ? (authorMetrics.functionalImpact / authorMetrics.count).toFixed(1)
+            : 'N/A';
+        const avgActualTime =
+          authorMetrics.count > 0 ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2) : 'N/A';
+        const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
 
-    const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    const authorPageUrl = `author-${authorSlug}.html`;
+        const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const authorPageUrl = `author-${authorSlug}.html`;
 
-    return `
+        return `
                     <tr>
                         <td>👤 ${author}</td>
                         <td class="metric-cell">${commits.length}</td>
@@ -830,8 +766,8 @@ ${Array.from(byAuthor.entries())
                         <td class="metric-cell">${totalTechDebt !== 'N/A' ? `<span class="metric-${parseFloat(totalTechDebt) > 0 ? 'bad' : parseFloat(totalTechDebt) < 0 ? 'good' : 'medium'}">${parseFloat(totalTechDebt) > 0 ? '+' : ''}${totalTechDebt}h</span>` : 'N/A'}</td>
                         <td><a href="${authorPageUrl}" class="btn btn-sm btn-outline-primary">View Dashboard</a></td>
                     </tr>`;
-  })
-  .join('')}
+      })
+      .join('')}
                 </tbody>
             </table>
         </div>
@@ -859,20 +795,20 @@ ${Array.from(byAuthor.entries())
                     </thead>
                     <tbody id="commitList">
 ${index
-  .map((item) => {
-    const metrics = item.metrics || {};
-    const qualityColor =
-      metrics.codeQuality >= 7 ? 'good' : metrics.codeQuality >= 4 ? 'medium' : 'bad';
-    const complexityColor =
-      metrics.codeComplexity <= 3 ? 'good' : metrics.codeComplexity <= 6 ? 'medium' : 'bad';
-    const testsColor =
-      metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
-    const impactColor =
-      metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
-    const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
-    const debtColor = netDebt > 0 ? 'bad' : netDebt < 0 ? 'good' : 'medium';
+      .map((item) => {
+        const metrics = item.metrics || {};
+        const qualityColor =
+          metrics.codeQuality >= 7 ? 'good' : metrics.codeQuality >= 4 ? 'medium' : 'bad';
+        const complexityColor =
+          metrics.codeComplexity <= 3 ? 'good' : metrics.codeComplexity <= 6 ? 'medium' : 'bad';
+        const testsColor =
+          metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
+        const impactColor =
+          metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
+        const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
+        const debtColor = netDebt > 0 ? 'bad' : netDebt < 0 ? 'good' : 'medium';
 
-    return `
+        return `
                         <tr data-source="${item.source || 'unknown'}" data-author="${item.commitAuthor || ''}" data-message="${(item.commitMessage || '').toLowerCase()}" data-hash="${item.commitHash}">
                             <td>
                                 <span class="commit-hash">${item.commitHash?.substring(0, 8) || item.directory}</span>
@@ -893,8 +829,8 @@ ${index
                             <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${netDebt > 0 ? '+' : ''}${netDebt.toFixed(1)}h` : 'N/A'}</td>
                             <td><a href="${item.directory}/report-enhanced.html" class="btn btn-primary btn-sm">View</a></td>
                         </tr>`;
-  })
-  .join('')}
+      })
+      .join('')}
                     </tbody>
                 </table>
             </div>
@@ -1152,20 +1088,20 @@ async function generateAuthorPage(
                     </thead>
                     <tbody>
 ${commits
-  .map((item) => {
-    const metrics = item.metrics || {};
-    const qualityColor =
-      metrics.codeQuality >= 7 ? 'good' : metrics.codeQuality >= 4 ? 'medium' : 'bad';
-    const complexityColor =
-      metrics.codeComplexity <= 3 ? 'good' : metrics.codeComplexity <= 6 ? 'medium' : 'bad';
-    const testsColor =
-      metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
-    const impactColor =
-      metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
-    const debtColor =
-      metrics.technicalDebtHours > 0 ? 'bad' : metrics.technicalDebtHours < 0 ? 'good' : 'medium';
+      .map((item) => {
+        const metrics = item.metrics || {};
+        const qualityColor =
+          metrics.codeQuality >= 7 ? 'good' : metrics.codeQuality >= 4 ? 'medium' : 'bad';
+        const complexityColor =
+          metrics.codeComplexity <= 3 ? 'good' : metrics.codeComplexity <= 6 ? 'medium' : 'bad';
+        const testsColor =
+          metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
+        const impactColor =
+          metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
+        const debtColor =
+          metrics.technicalDebtHours > 0 ? 'bad' : metrics.technicalDebtHours < 0 ? 'good' : 'medium';
 
-    return `
+        return `
                         <tr>
                             <td>
                                 <span class="commit-hash">${item.commitHash?.substring(0, 8) || item.directory}</span>
@@ -1185,8 +1121,8 @@ ${commits
                             <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${metrics.technicalDebtHours > 0 ? '+' : ''}${metrics.technicalDebtHours}h` : 'N/A'}</td>
                             <td><a href="${item.directory}/report-enhanced.html" class="btn btn-primary btn-sm">View</a></td>
                         </tr>`;
-  })
-  .join('')}
+      })
+      .join('')}
                     </tbody>
                 </table>
             </div>

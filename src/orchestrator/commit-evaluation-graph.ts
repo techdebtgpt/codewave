@@ -4,7 +4,7 @@ import { AgentResult } from '../agents/agent.interface';
 import { ConversationMessage, PillarScores } from '../types/agent.types';
 import { AppConfig } from '../config/config.interface';
 import { calculateCost } from '../utils/token-tracker';
-import { SEVEN_PILLARS } from '../constants/agent-weights.constants';
+import { SEVEN_PILLARS, PillarName } from '../constants/agent-weights.constants';
 
 /**
  * LangGraph State Definition for Commit Evaluation
@@ -198,14 +198,8 @@ function checkConvergence(
   let metricStability = 1.0; // Default to stable if no metrics
   if (currentMetrics.length > 0 && previousMetrics.length > 0) {
     // Check if metrics have stabilized (small variance between rounds)
-    const metricKeys = [
-      'codeQuality',
-      'codeComplexity',
-      'idealTimeHours',
-      'actualTimeHours',
-      'functionalImpact',
-      'testCoverage',
-    ];
+    // Check if metrics have stabilized (small variance between rounds)
+    const metricKeys = SEVEN_PILLARS;
 
     let totalDifference = 0;
     let metricComparisons = 0;
@@ -535,28 +529,15 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
     const conversationMessages = validResponses.map((r) => r.conversationMessage);
 
     // Collect all agent scores for each pillar (for weighted averaging)
-    type PillarName =
-      | 'functionalImpact'
-      | 'idealTimeHours'
-      | 'testCoverage'
-      | 'codeQuality'
-      | 'codeComplexity'
-      | 'actualTimeHours'
-      | 'technicalDebtHours'
-      | 'debtReductionHours';
-    const pillarScoresCollected: Record<
+    const pillarScoresCollected = {} as Record<
       PillarName,
       Array<{ agentName: string; score: number | null }>
-    > = {
-      functionalImpact: [],
-      idealTimeHours: [],
-      testCoverage: [],
-      codeQuality: [],
-      codeComplexity: [],
-      actualTimeHours: [],
-      technicalDebtHours: [],
-      debtReductionHours: [],
-    };
+    >;
+
+    // Initialize arrays for each pillar
+    for (const pillar of SEVEN_PILLARS as unknown as PillarName[]) {
+      pillarScoresCollected[pillar] = [];
+    }
 
     // Collect scores from all agents (including null values)
     for (const result of results) {
@@ -564,50 +545,13 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       if (result.metrics) {
         // Always push scores, including null values
         // undefined means agent didn't return the metric at all (shouldn't happen after prompt updates)
-        if (result.metrics.functionalImpact !== undefined) {
-          pillarScoresCollected.functionalImpact.push({
-            agentName,
-            score: result.metrics.functionalImpact,
-          });
-        }
-        if (result.metrics.idealTimeHours !== undefined) {
-          pillarScoresCollected.idealTimeHours.push({
-            agentName,
-            score: result.metrics.idealTimeHours,
-          });
-        }
-        if (result.metrics.testCoverage !== undefined) {
-          pillarScoresCollected.testCoverage.push({
-            agentName,
-            score: result.metrics.testCoverage,
-          });
-        }
-        if (result.metrics.codeQuality !== undefined) {
-          pillarScoresCollected.codeQuality.push({ agentName, score: result.metrics.codeQuality });
-        }
-        if (result.metrics.codeComplexity !== undefined) {
-          pillarScoresCollected.codeComplexity.push({
-            agentName,
-            score: result.metrics.codeComplexity,
-          });
-        }
-        if (result.metrics.actualTimeHours !== undefined) {
-          pillarScoresCollected.actualTimeHours.push({
-            agentName,
-            score: result.metrics.actualTimeHours,
-          });
-        }
-        if (result.metrics.technicalDebtHours !== undefined) {
-          pillarScoresCollected.technicalDebtHours.push({
-            agentName,
-            score: result.metrics.technicalDebtHours,
-          });
-        }
-        if (result.metrics.debtReductionHours !== undefined) {
-          pillarScoresCollected.debtReductionHours.push({
-            agentName,
-            score: result.metrics.debtReductionHours,
-          });
+        for (const pillar of SEVEN_PILLARS as unknown as PillarName[]) {
+          if (result.metrics[pillar] !== undefined) {
+            pillarScoresCollected[pillar].push({
+              agentName,
+              score: result.metrics[pillar],
+            });
+          }
         }
       }
     }
@@ -617,7 +561,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
     for (const result of results) {
       const agentName = result.agentRole || result.agentName || 'unknown';
       if (result.metrics) {
-        for (const pillar of SEVEN_PILLARS) {
+        for (const pillar of SEVEN_PILLARS as unknown as PillarName[]) {
           const value = result.metrics[pillar];
           const weight = getAgentWeight(agentName, pillar);
 
@@ -633,53 +577,13 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
 
     // Calculate weighted averages for each pillar
     const newPillarScores: Partial<PillarScores> = {};
-    if (pillarScoresCollected.functionalImpact.length > 0) {
-      newPillarScores.functionalImpact = calculateWeightedAverage(
-        pillarScoresCollected.functionalImpact,
-        'functionalImpact'
-      );
-    }
-    if (pillarScoresCollected.idealTimeHours.length > 0) {
-      newPillarScores.idealTimeHours = calculateWeightedAverage(
-        pillarScoresCollected.idealTimeHours,
-        'idealTimeHours'
-      );
-    }
-    if (pillarScoresCollected.testCoverage.length > 0) {
-      newPillarScores.testCoverage = calculateWeightedAverage(
-        pillarScoresCollected.testCoverage,
-        'testCoverage'
-      );
-    }
-    if (pillarScoresCollected.codeQuality.length > 0) {
-      newPillarScores.codeQuality = calculateWeightedAverage(
-        pillarScoresCollected.codeQuality,
-        'codeQuality'
-      );
-    }
-    if (pillarScoresCollected.codeComplexity.length > 0) {
-      newPillarScores.codeComplexity = calculateWeightedAverage(
-        pillarScoresCollected.codeComplexity,
-        'codeComplexity'
-      );
-    }
-    if (pillarScoresCollected.actualTimeHours.length > 0) {
-      newPillarScores.actualTimeHours = calculateWeightedAverage(
-        pillarScoresCollected.actualTimeHours,
-        'actualTimeHours'
-      );
-    }
-    if (pillarScoresCollected.technicalDebtHours.length > 0) {
-      newPillarScores.technicalDebtHours = calculateWeightedAverage(
-        pillarScoresCollected.technicalDebtHours,
-        'technicalDebtHours'
-      );
-    }
-    if (pillarScoresCollected.debtReductionHours.length > 0) {
-      newPillarScores.debtReductionHours = calculateWeightedAverage(
-        pillarScoresCollected.debtReductionHours,
-        'debtReductionHours'
-      );
+    for (const pillar of SEVEN_PILLARS as unknown as PillarName[]) {
+      if (pillarScoresCollected[pillar].length > 0) {
+        newPillarScores[pillar] = calculateWeightedAverage(
+          pillarScoresCollected[pillar],
+          pillar
+        );
+      }
     }
 
     // Check for convergence if this isn't the first round

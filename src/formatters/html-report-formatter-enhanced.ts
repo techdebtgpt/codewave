@@ -550,52 +550,52 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
             <tr>
               <th>Metric / Pillar</th>
               ${Array.from(agentMetrics.keys())
-                .map((agent) => `<th class="text-center">${agent}</th>`)
-                .join('')}
+      .map((agent) => `<th class="text-center">${agent}</th>`)
+      .join('')}
               <th class="text-center bg-success text-white">Final Agreed</th>
             </tr>
           </thead>
           <tbody>
             ${Array.from(allMetrics)
-              .map((metric, idx) => {
-                const final = finalValues.get(metric);
-                return `
+      .map((metric, idx) => {
+        const final = finalValues.get(metric);
+        return `
                 <tr>
                   <td><strong>${metricLabels[idx]}</strong></td>
                   ${Array.from(agentMetrics.keys())
-                    .map((agent) => {
-                      const value = agentMetrics.get(agent)?.get(metric);
-                      // Use agentRole for weight lookup
-                      const agentKey = agentRoleMap.get(agent) || agent;
-                      const weight = getAgentWeight(agentKey, metric);
+            .map((agent) => {
+              const value = agentMetrics.get(agent)?.get(metric);
+              // Use agentRole for weight lookup
+              const agentKey = agentRoleMap.get(agent) || agent;
+              const weight = getAgentWeight(agentKey, metric);
 
-                      // Ensure weight is a number before calling toFixed
-                      if (typeof weight !== 'number') {
-                        return `<td class="text-center text-muted">-</td>`;
-                      }
+              // Ensure weight is a number before calling toFixed
+              if (typeof weight !== 'number') {
+                return `<td class="text-center text-muted">-</td>`;
+              }
 
-                      const weightPercent = (weight * 100).toFixed(1);
-                      const isPrimary = weight >= 0.4; // Primary expertise threshold
-                      const badgeClass = isPrimary
-                        ? 'badge bg-warning text-dark'
-                        : 'badge bg-secondary';
+              const weightPercent = (weight * 100).toFixed(1);
+              const isPrimary = weight >= 0.4; // Primary expertise threshold
+              const badgeClass = isPrimary
+                ? 'badge bg-warning text-dark'
+                : 'badge bg-secondary';
 
-                      // Ensure value is a valid number
-                      if (value !== undefined && typeof value === 'number' && isFinite(value)) {
-                        return `<td class="text-center">
+              // Ensure value is a valid number
+              if (value !== undefined && typeof value === 'number' && isFinite(value)) {
+                return `<td class="text-center">
                           <div>${(Number(value) || 0).toFixed(2)}</div>
                           <small class="${badgeClass}">${weightPercent}%</small>
                         </td>`;
-                      }
-                      return `<td class="text-center text-muted">-</td>`;
-                    })
-                    .join('')}
+              }
+              return `<td class="text-center text-muted">-</td>`;
+            })
+            .join('')}
                   <td class="text-center bg-success bg-opacity-10">
                     ${final && typeof final.value === 'number' && isFinite(final.value) ? `<strong>${(Number(final.value) || 0).toFixed(2)}</strong><br><small class="text-muted">(weighted avg from ${final.contributors.length} agent${final.contributors.length > 1 ? 's' : ''})</small>` : '<strong>-</strong><br><small class="text-muted">(no data)</small>'}
                 </tr>
                 `;
-              })
-              .join('')}
+      })
+      .join('')}
           </tbody>
         </table>
         <div class="mt-3">
@@ -705,16 +705,8 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
   }
 
   // Build comparison tables - Evaluations as ROWS, Metrics as COLUMNS
-  const allMetrics = [
-    'functionalImpact',
-    'idealTimeHours',
-    'testCoverage',
-    'codeQuality',
-    'codeComplexity',
-    'actualTimeHours',
-    'technicalDebtHours',
-    'debtReductionHours',
-  ];
+  const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+  const allMetrics = SEVEN_PILLARS;
   const stats = calculateHistoryStatistics(history, allMetrics);
 
   // Build evaluation rows (each row is one evaluation with all metrics as columns)
@@ -728,7 +720,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
           <td><strong>Evaluation #${h.evaluationNumber}</strong><br/><small class="text-muted">${timestamp}</small><br/><small>${sourceLabel}</small></td>
       `;
 
-      allMetrics.forEach((metric) => {
+      allMetrics.forEach((metric: string) => {
         // Backward compatibility: default to 0 for debtReductionHours if not present in old evaluations
         let val = (h.metrics as any)[metric];
         if (metric === 'debtReductionHours' && val === undefined) {
@@ -764,7 +756,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
   // Build metric statistics rows - show final consensus values and history statistics
   const latestEntry = history[history.length - 1];
   const statsRows = allMetrics
-    .map((metric) => {
+    .map((metric: string) => {
       const stat = stats[metric];
       if (!stat) return '';
 
@@ -775,9 +767,9 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
       return `
         <tr class="table-light">
           <td><strong>${metric
-            .replace(/([A-Z])/g, ' $1')
-            .replace(/^./, (s) => s.toUpperCase())
-            .trim()}</strong></td>
+          .replace(/([A-Z])/g, ' $1')
+          .replace(/^./, (s) => s.toUpperCase())
+          .trim()}</strong></td>
           <td class="text-center small"><span class="badge bg-success">final</span> ${finalValueStr}</td>
           <td class="text-center small"><span class="badge bg-info">avg</span> ${stat.avg}</td>
           <td class="text-center small"><span class="badge bg-secondary">med</span> ${stat.median}</td>
@@ -798,7 +790,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
   const convergenceTrend = convergenceScores[convergenceScores.length - 1] - convergenceScores[0];
 
   const metricHeaders = allMetrics
-    .map((m) => {
+    .map((m: string) => {
       const label = m
         .replace(/([A-Z])/g, ' $1')
         .replace(/^./, (s) => s.toUpperCase())
@@ -876,8 +868,8 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
             </thead>
             <tbody>
               ${history
-                .map(
-                  (h) => `
+      .map(
+        (h) => `
                 <tr>
                   <td><strong>Eval #${h.evaluationNumber}</strong> <small class="text-muted">${new Date(h.timestamp).toLocaleString()}</small></td>
                   <td class="text-center">${(h.tokens?.inputTokens || 0).toLocaleString()}</td>
@@ -886,8 +878,8 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
                   <td class="text-center"><strong>$${((h.tokens?.totalCost as any) || 0).toFixed(4)}</strong></td>
                 </tr>
               `
-                )
-                .join('')}
+      )
+      .join('')}
               <tr class="table-light fw-bold">
                 <td>Total</td>
                 <td class="text-center">${history.reduce((sum, h) => sum + (h.tokens?.inputTokens || 0), 0).toLocaleString()}</td>
@@ -938,12 +930,12 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
         <!-- Individual Scores -->
         <div class="row mt-3">
           ${history
-            .map((h) => {
-              const score = h.convergenceScore * 100;
-              const scoreClass =
-                score >= 85 ? 'bg-success' : score >= 70 ? 'bg-info' : 'bg-warning';
-              const scoreLabel = score >= 85 ? 'Excellent' : score >= 70 ? 'Good' : 'Fair';
-              return `
+      .map((h) => {
+        const score = h.convergenceScore * 100;
+        const scoreClass =
+          score >= 85 ? 'bg-success' : score >= 70 ? 'bg-info' : 'bg-warning';
+        const scoreLabel = score >= 85 ? 'Excellent' : score >= 70 ? 'Good' : 'Fair';
+        return `
             <div class="col-md-3 mb-2">
               <div class="p-2 ${scoreClass} text-white rounded text-center" style="font-size: 0.9rem;">
                 <small class="d-block opacity-75">Eval #${h.evaluationNumber}</small>
@@ -951,8 +943,8 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
               </div>
             </div>
           `;
-            })
-            .join('')}
+      })
+      .join('')}
         </div>
 
         <p class="small text-muted mt-3">
@@ -1058,63 +1050,63 @@ export function generateEnhancedHtmlReport(
       <div class="card-body">
         <div class="row">
           ${displayMetrics
-            .map(([metric, data]) => {
-              let label = metric;
-              if (metric === 'netDebt') {
-                label = 'Net Debt (−=improve)';
-              } else {
-                label = metric
-                  .replace(/([A-Z])/g, ' $1')
-                  .replace(/^./, (str) => str.toUpperCase())
-                  .trim();
-              }
-              let badgeColor = 'secondary';
-              let icon = '📊';
+      .map(([metric, data]) => {
+        let label = metric;
+        if (metric === 'netDebt') {
+          label = 'Net Debt (−=improve)';
+        } else {
+          label = metric
+            .replace(/([A-Z])/g, ' $1')
+            .replace(/^./, (str) => str.toUpperCase())
+            .trim();
+        }
+        let badgeColor = 'secondary';
+        let icon = '📊';
 
-              // Handle null values
-              if (data.value === null) {
-                badgeColor = 'secondary';
-                icon = '➖';
-              } else {
-                // Determine color and icon based on metric type
-                if (
-                  metric.includes('Quality') ||
-                  metric.includes('Coverage') ||
-                  metric.includes('Impact')
-                ) {
-                  badgeColor = data.value >= 7 ? 'success' : data.value >= 4 ? 'warning' : 'danger';
-                  icon = data.value >= 7 ? '✅' : data.value >= 4 ? '⚠️' : '❌';
-                } else if (metric.includes('Complexity')) {
-                  badgeColor = data.value <= 3 ? 'success' : data.value <= 6 ? 'warning' : 'danger';
-                  icon = data.value <= 3 ? '✅' : data.value <= 6 ? '⚠️' : '❌';
-                } else if (metric === 'netDebt' || metric.includes('Debt')) {
-                  // For NET debt: positive = added debt (bad), negative = debt removed (good)
-                  badgeColor = data.value > 0 ? 'danger' : data.value < 0 ? 'success' : 'secondary';
-                  icon = data.value > 0 ? '❌' : data.value < 0 ? '✅' : '➖';
-                }
-              }
+        // Handle null values
+        if (data.value === null) {
+          badgeColor = 'secondary';
+          icon = '➖';
+        } else {
+          // Determine color and icon based on metric type
+          if (
+            metric.includes('Quality') ||
+            metric.includes('Coverage') ||
+            metric.includes('Impact')
+          ) {
+            badgeColor = data.value >= 7 ? 'success' : data.value >= 4 ? 'warning' : 'danger';
+            icon = data.value >= 7 ? '✅' : data.value >= 4 ? '⚠️' : '❌';
+          } else if (metric.includes('Complexity')) {
+            badgeColor = data.value <= 3 ? 'success' : data.value <= 6 ? 'warning' : 'danger';
+            icon = data.value <= 3 ? '✅' : data.value <= 6 ? '⚠️' : '❌';
+          } else if (metric === 'netDebt' || metric.includes('Debt')) {
+            // For NET debt: positive = added debt (bad), negative = debt removed (good)
+            badgeColor = data.value > 0 ? 'danger' : data.value < 0 ? 'success' : 'secondary';
+            icon = data.value > 0 ? '❌' : data.value < 0 ? '✅' : '➖';
+          }
+        }
 
-              const metadata = METRIC_METADATA[metric as keyof typeof METRIC_METADATA];
-              let formattedValue: string;
-              if (data.value === null) {
-                formattedValue = '-';
-              } else if (metric === 'netDebt') {
-                formattedValue = `${data.value > 0 ? '+' : ''}${data.value.toFixed(1)}h`;
-              } else {
-                formattedValue = metadata ? metadata.format(data.value) : data.value.toFixed(1);
-              }
-              const scale = metadata
-                ? metadata.scale
-                : metric === 'netDebt'
-                  ? 'Positive = added debt, Negative = removed debt'
-                  : '';
-              const tooltip = metadata
-                ? metadata.tooltip
-                : metric === 'netDebt'
-                  ? 'Net technical debt: debt introduced minus debt removed'
-                  : '';
+        const metadata = METRIC_METADATA[metric as keyof typeof METRIC_METADATA];
+        let formattedValue: string;
+        if (data.value === null) {
+          formattedValue = '-';
+        } else if (metric === 'netDebt') {
+          formattedValue = `${data.value > 0 ? '+' : ''}${data.value.toFixed(1)}h`;
+        } else {
+          formattedValue = metadata ? metadata.format(data.value) : data.value.toFixed(1);
+        }
+        const scale = metadata
+          ? metadata.scale
+          : metric === 'netDebt'
+            ? 'Positive = added debt, Negative = removed debt'
+            : '';
+        const tooltip = metadata
+          ? metadata.tooltip
+          : metric === 'netDebt'
+            ? 'Net technical debt: debt introduced minus debt removed'
+            : '';
 
-              return `
+        return `
               <div class="col-md-6 mb-2">
                 <div class="d-flex justify-content-between align-items-center p-2 bg-light rounded" title="${tooltip}" style="gap: 1rem;">
                   <div style="font-size: 0.85rem; min-width: 0; flex: 1;">
@@ -1128,8 +1120,8 @@ export function generateEnhancedHtmlReport(
                 </div>
               </div>
             `;
-            })
-            .join('')}
+      })
+      .join('')}
         </div>
       </div>
     </div>
@@ -1145,54 +1137,52 @@ export function generateEnhancedHtmlReport(
     const agentDescription = AGENT_DESCRIPTIONS[agentName] || '';
 
     agentCardsHtml += `
-      <div class="col-md-6 mb-4">
-        <div class="card h-100 shadow-sm border-${latestEval.color}" data-agent="${agentName}">
-          <div class="card-header bg-${latestEval.color} text-white">
-            <h5 class="mb-0">
-              <span class="me-2" style="font-size: 1.5rem;">${latestEval.icon}</span>
+  < div class="col-md-6 mb-4" >
+    <div class="card h-100 shadow-sm border-${latestEval.color}" data - agent="${agentName}" >
+      <div class="card-header bg-${latestEval.color} text-white" >
+        <h5 class="mb-0" >
+          <span class="me-2" style = "font-size: 1.5rem;" > ${latestEval.icon} </span>
               ${agentName}
               ${hasMultipleRounds ? `<span class="badge bg-light text-dark ms-2">${numRounds} Rounds</span>` : ''}
-            </h5>
+</h5>
             ${agentDescription ? `<small class="text-white-50 d-block mt-1">${agentDescription}</small>` : ''}
-          </div>
-          <div class="card-body">
-            <h6 class="text-${latestEval.color} mb-2">📊 Metrics</h6>
-            <div class="mb-3">
-              ${
-                latestEval.metrics
-                  ? Object.entries(latestEval.metrics)
-                      .map(([key, value]) => {
-                        const label = key
-                          .replace(/([A-Z])/g, ' $1')
-                          .replace(/^./, (str) => str.toUpperCase())
-                          .trim();
-                        return `<span class="badge bg-${latestEval.color} me-2">${label}: ${value}</span>`;
-                      })
-                      .join('')
-                  : '<em class="text-muted">No metrics</em>'
-              }
-            </div>
+</div>
+  < div class="card-body" >
+    <h6 class="text-${latestEval.color} mb-2" >📊 Metrics </h6>
+      < div class="mb-3" >
+        ${latestEval.metrics
+        ? Object.entries(latestEval.metrics)
+          .map(([key, value]) => {
+            const label = key
+              .replace(/([A-Z])/g, ' $1')
+              .replace(/^./, (str) => str.toUpperCase())
+              .trim();
+            return `<span class="badge bg-${latestEval.color} me-2">${label}: ${value}</span>`;
+          })
+          .join('')
+        : '<em class="text-muted">No metrics</em>'
+      }
+</div>
+
+  < h6 class="text-${latestEval.color} mb-2" >💭 Final Assessment </h6>
+    < p class="small" > ${latestEval.summary.substring(0, 200)}${latestEval.summary.length > 200 ? '...' : ''} </p>
             
-            <h6 class="text-${latestEval.color} mb-2">💭 Final Assessment</h6>
-            <p class="small">${latestEval.summary.substring(0, 200)}${latestEval.summary.length > 200 ? '...' : ''}</p>
-            
-            ${
-              latestEval.concernsRaised.length > 0
-                ? `
+            ${latestEval.concernsRaised.length > 0
+        ? `
               <h6 class="text-danger mb-2">⚠️ Concerns (Round ${latestEval.round})</h6>
               <ul class="small">
                 ${latestEval.concernsRaised.map((concern) => `<li>${concern}</li>`).join('')}
               </ul>
             `
-                : ''
-            }
-            
-            <button class="btn btn-sm btn-outline-${latestEval.color}" onclick="showAgentDetails('${agentName}')">
-              View Full Analysis →
-            </button>
-          </div>
-        </div>
-      </div>
+        : ''
+      }
+
+<button class="btn btn-sm btn-outline-${latestEval.color}" onclick = "showAgentDetails('${agentName}')" >
+  View Full Analysis →
+</button>
+  </div>
+  </div>
+  </div>
     `;
   });
   agentCardsHtml += '</div>';
@@ -1224,58 +1214,58 @@ export function generateEnhancedHtmlReport(
       currentRound = evaluation.round;
       const roundIndex = currentRound - 1; // Convert to 0-based for phase lookup
       const phase = roundPhases[roundIndex] || {
-        title: `Round ${currentRound}`,
+        title: `Round ${currentRound} `,
         description: '',
         emoji: '🔄',
       };
       timelineHtml += `
-        <div style="margin: 2rem 0 1.5rem 0; padding-bottom: 1rem; border-bottom: 2px solid #e9ecef;">
-          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
-            <span style="font-size: 1.5rem;">${phase.emoji}</span>
-            <h4 style="margin: 0; font-size: 1.1rem; color: #333;">Round ${currentRound}: ${phase.title}</h4>
+  < div style = "margin: 2rem 0 1.5rem 0; padding-bottom: 1rem; border-bottom: 2px solid #e9ecef;" >
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;" >
+      <span style="font-size: 1.5rem;" > ${phase.emoji} </span>
+        < h4 style = "margin: 0; font-size: 1.1rem; color: #333;" > Round ${currentRound}: ${phase.title} </h4>
           </div>
-          <p style="margin: 0; font-size: 0.9rem; color: #666;">${phase.description}</p>
-        </div>
-      `;
+          < p style = "margin: 0; font-size: 0.9rem; color: #666;" > ${phase.description} </p>
+            </div>
+              `;
     }
 
     // Simplified card with only essential information
     const concernsHtml =
       evaluation.concernsRaised.length > 0
         ? `
-      <div style="margin-top: 0.75rem; padding: 0.75rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
-        <strong style="font-size: 0.85rem; color: #856404;">Concerns:</strong>
-        <ul style="margin: 0.5rem 0 0 1rem; padding: 0; font-size: 0.85rem; color: #856404;">
-          ${evaluation.concernsRaised.map((c) => `<li>${c}</li>`).join('')}
-        </ul>
-      </div>
+            < div style = "margin-top: 0.75rem; padding: 0.75rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;" >
+              <strong style="font-size: 0.85rem; color: #856404;" > Concerns: </strong>
+                < ul style = "margin: 0.5rem 0 0 1rem; padding: 0; font-size: 0.85rem; color: #856404;" >
+                  ${evaluation.concernsRaised.map((c) => `<li>${c}</li>`).join('')}
+</ul>
+  </div>
     `
         : '';
 
     const referencesHtml =
       evaluation.referencesTo.length > 0
         ? `
-      <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #0d6efd;">
-        💬 References: <strong>${evaluation.referencesTo.join(', ')}</strong>
-      </div>
+  < div style = "margin-top: 0.5rem; font-size: 0.85rem; color: #0d6efd;" >
+        💬 References: <strong>${evaluation.referencesTo.join(', ')} </strong>
+  </div>
     `
         : '';
 
     timelineHtml += `
-      <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #0d6efd;">
-        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
-          <span style="font-size: 1.3rem;">${evaluation.icon}</span>
-          <strong style="font-size: 0.95rem;">${evaluation.agentName}</strong>
-          <span style="font-size: 0.8rem; color: #999; margin-left: auto;">Round ${evaluation.round}</span>
-        </div>
-        <p style="margin: 0 0 0.75rem 0; font-size: 0.9rem; line-height: 1.4; color: #333;">${evaluation.summary}</p>
+  < div style = "margin-bottom: 1.5rem; padding: 1rem; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #0d6efd;" >
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;" >
+      <span style="font-size: 1.3rem;" > ${evaluation.icon} </span>
+        < strong style = "font-size: 0.95rem;" > ${evaluation.agentName} </strong>
+          < span style = "font-size: 0.8rem; color: #999; margin-left: auto;" > Round ${evaluation.round} </span>
+            </div>
+            < p style = "margin: 0 0 0.75rem 0; font-size: 0.9rem; line-height: 1.4; color: #333;" > ${evaluation.summary} </p>
         ${concernsHtml}
         ${referencesHtml}
-      </div>
-    `;
+</div>
+  `;
   });
 
-  timelineHtml = `<div style="background: white; padding: 0; border-radius: 8px;">${timelineHtml}</div>`;
+  timelineHtml = `< div style = "background: white; padding: 0; border-radius: 8px;" > ${timelineHtml} </div>`;
 
   // Determine min and max rounds from evaluations
   const allRounds = Array.from(groupedResults.values()).flatMap((evals) =>
@@ -1310,24 +1300,24 @@ export function generateEnhancedHtmlReport(
               <tr>
                 <th style="min-width: 120px; position: sticky; left: 0; background: #f8f9fa;">Round</th>
                 ${metricEvolution
-                  .map((evolution) => {
-                    const fullName =
-                      metricNames[evolution.metric] ||
-                      evolution.metric.replace(/([A-Z])/g, ' $1').trim();
-                    return `<th style="text-align: center; min-width: 140px;">${fullName}</th>`;
-                  })
-                  .join('')}
+      .map((evolution) => {
+        const fullName =
+          metricNames[evolution.metric] ||
+          evolution.metric.replace(/([A-Z])/g, ' $1').trim();
+        return `<th style="text-align: center; min-width: 140px;">${fullName}</th>`;
+      })
+      .join('')}
                 <th style="text-align: center; min-width: 140px; font-weight: 700; color: #dc3545;">NET Debt (−=improve)</th>
               </tr>
             </thead>
             <tbody>
               ${Array.from({ length: maxRound - minRound + 1 }, (_, idx) => {
-                const roundNum = minRound + idx;
-                const roundIndex = roundNum - 1; // Convert to 0-based index for phase lookup
-                const roundPhases = ['Initial Analysis', 'Concerns & Questions', 'Validation'];
-                const phaseLabel = roundPhases[roundIndex] || `Round ${roundNum}`;
+        const roundNum = minRound + idx;
+        const roundIndex = roundNum - 1; // Convert to 0-based index for phase lookup
+        const roundPhases = ['Initial Analysis', 'Concerns & Questions', 'Validation'];
+        const phaseLabel = roundPhases[roundIndex] || `Round ${roundNum}`;
 
-                return `
+        return `
                 <tr>
                   <td style="font-weight: 600; position: sticky; left: 0; background: #f8f9fa;">
                     <span title="Round ${roundNum}: ${phaseLabel}">
@@ -1335,107 +1325,107 @@ export function generateEnhancedHtmlReport(
                     </span>
                   </td>
                   ${metricEvolution
-                    .map((evolution) => {
-                      const value = evolution.rounds.get(roundNum);
-                      const previousValue =
-                        roundNum > minRound ? evolution.rounds.get(roundNum - 1) : undefined;
-                      let cellContent =
-                        value !== undefined && value !== null ? value.toFixed(1) : '—';
-                      let cellStyle = '';
+            .map((evolution) => {
+              const value = evolution.rounds.get(roundNum);
+              const previousValue =
+                roundNum > minRound ? evolution.rounds.get(roundNum - 1) : undefined;
+              let cellContent =
+                value !== undefined && value !== null ? value.toFixed(1) : '—';
+              let cellStyle = '';
 
-                      // Add change indicator
-                      if (
-                        value !== undefined &&
-                        value !== null &&
-                        previousValue !== undefined &&
-                        previousValue !== null
-                      ) {
-                        const diff = value - previousValue;
-                        if (Math.abs(diff) > 0.05) {
-                          const arrow = diff > 0 ? '↑' : '↓';
-                          const color = diff > 0 ? '#28a745' : '#dc3545';
-                          cellContent =
-                            '<span style="color: ' +
-                            color +
-                            '; font-weight: 600;">' +
-                            arrow +
-                            ' ' +
-                            cellContent +
-                            '</span>';
-                          cellStyle = 'background-color: rgba(0,0,0,0.02);';
-                        }
-                      }
+              // Add change indicator
+              if (
+                value !== undefined &&
+                value !== null &&
+                previousValue !== undefined &&
+                previousValue !== null
+              ) {
+                const diff = value - previousValue;
+                if (Math.abs(diff) > 0.05) {
+                  const arrow = diff > 0 ? '↑' : '↓';
+                  const color = diff > 0 ? '#28a745' : '#dc3545';
+                  cellContent =
+                    '<span style="color: ' +
+                    color +
+                    '; font-weight: 600;">' +
+                    arrow +
+                    ' ' +
+                    cellContent +
+                    '</span>';
+                  cellStyle = 'background-color: rgba(0,0,0,0.02);';
+                }
+              }
 
-                      return (
-                        '<td style="text-align: center; ' +
-                        cellStyle +
-                        '; padding: 0.75rem 0.5rem;">' +
-                        cellContent +
-                        '</td>'
-                      );
-                    })
-                    .join('')}
+              return (
+                '<td style="text-align: center; ' +
+                cellStyle +
+                '; padding: 0.75rem 0.5rem;">' +
+                cellContent +
+                '</td>'
+              );
+            })
+            .join('')}
                   <!-- NET Debt column -->
                   ${(() => {
-                    const techDebtMetric = metricEvolution.find(
-                      (e) => e.metric === 'technicalDebtHours'
-                    );
-                    const debtReductionMetric = metricEvolution.find(
-                      (e) => e.metric === 'debtReductionHours'
-                    );
-                    const techDebtValue = techDebtMetric?.rounds.get(roundNum) ?? 0;
-                    const debtReductionValue = debtReductionMetric?.rounds.get(roundNum) ?? 0;
-                    const netDebt = techDebtValue - debtReductionValue;
+            const techDebtMetric = metricEvolution.find(
+              (e) => e.metric === 'technicalDebtHours'
+            );
+            const debtReductionMetric = metricEvolution.find(
+              (e) => e.metric === 'debtReductionHours'
+            );
+            const techDebtValue = techDebtMetric?.rounds.get(roundNum) ?? 0;
+            const debtReductionValue = debtReductionMetric?.rounds.get(roundNum) ?? 0;
+            const netDebt = techDebtValue - debtReductionValue;
 
-                    const prevTechDebt =
-                      roundNum > minRound
-                        ? (techDebtMetric?.rounds.get(roundNum - 1) ?? 0)
-                        : undefined;
-                    const prevDebtReduction =
-                      roundNum > minRound
-                        ? (debtReductionMetric?.rounds.get(roundNum - 1) ?? 0)
-                        : undefined;
-                    const prevNetDebt =
-                      prevTechDebt !== undefined && prevDebtReduction !== undefined
-                        ? prevTechDebt - prevDebtReduction
-                        : undefined;
+            const prevTechDebt =
+              roundNum > minRound
+                ? (techDebtMetric?.rounds.get(roundNum - 1) ?? 0)
+                : undefined;
+            const prevDebtReduction =
+              roundNum > minRound
+                ? (debtReductionMetric?.rounds.get(roundNum - 1) ?? 0)
+                : undefined;
+            const prevNetDebt =
+              prevTechDebt !== undefined && prevDebtReduction !== undefined
+                ? prevTechDebt - prevDebtReduction
+                : undefined;
 
-                    let netDebtContent = netDebt.toFixed(1);
-                    let netDebtStyle = '';
-                    let netDebtColor =
-                      netDebt > 0 ? '#dc3545' : netDebt < 0 ? '#28a745' : '#6c757d';
+            let netDebtContent = netDebt.toFixed(1);
+            let netDebtStyle = '';
+            let netDebtColor =
+              netDebt > 0 ? '#dc3545' : netDebt < 0 ? '#28a745' : '#6c757d';
 
-                    // Add change indicator
-                    if (prevNetDebt !== undefined) {
-                      const diff = netDebt - prevNetDebt;
-                      if (Math.abs(diff) > 0.05) {
-                        const arrow = diff > 0 ? '↑' : '↓';
-                        const arrowColor = diff > 0 ? '#dc3545' : '#28a745';
-                        netDebtContent =
-                          '<span style="color: ' +
-                          arrowColor +
-                          '; font-weight: 600;">' +
-                          arrow +
-                          ' ' +
-                          netDebtContent +
-                          '</span>';
-                        netDebtStyle = 'background-color: rgba(0,0,0,0.02);';
-                      }
-                    }
+            // Add change indicator
+            if (prevNetDebt !== undefined) {
+              const diff = netDebt - prevNetDebt;
+              if (Math.abs(diff) > 0.05) {
+                const arrow = diff > 0 ? '↑' : '↓';
+                const arrowColor = diff > 0 ? '#dc3545' : '#28a745';
+                netDebtContent =
+                  '<span style="color: ' +
+                  arrowColor +
+                  '; font-weight: 600;">' +
+                  arrow +
+                  ' ' +
+                  netDebtContent +
+                  '</span>';
+                netDebtStyle = 'background-color: rgba(0,0,0,0.02);';
+              }
+            }
 
-                    return (
-                      '<td style="text-align: center; color: ' +
-                      netDebtColor +
-                      '; font-weight: 600; ' +
-                      netDebtStyle +
-                      '; padding: 0.75rem 0.5rem;">' +
-                      netDebtContent +
-                      '</td>'
-                    );
-                  })()}
+            return (
+              '<td style="text-align: center; color: ' +
+              netDebtColor +
+              '; font-weight: 600; ' +
+              netDebtStyle +
+              '; padding: 0.75rem 0.5rem;">' +
+              netDebtContent +
+              '</td>'
+            );
+          })()}
                 </tr>
               `;
-              }).join('')}
+      }).join('')}
             </tbody>
           </table>
         </div>
@@ -1587,9 +1577,8 @@ export function generateEnhancedHtmlReport(
     </div>
 
     <!-- Commit Overview Card -->
-    ${
-      metadata?.commitHash || metadata?.commitAuthor
-        ? `
+    ${metadata?.commitHash || metadata?.commitAuthor
+      ? `
     <div class="card mb-4 shadow-sm border-primary">
       <div class="card-header bg-primary text-white">
         <h5 class="mb-0">
@@ -1599,94 +1588,86 @@ export function generateEnhancedHtmlReport(
       </div>
       <div class="card-body">
         <div class="row">
-          ${
-            metadata?.commitHash
-              ? `
+          ${metadata?.commitHash
+        ? `
           <div class="col-md-6 mb-3">
             <strong>📌 Commit Hash:</strong><br>
             <code class="d-inline-block mt-1 px-2 py-1 bg-light rounded">${metadata.commitHash}</code>
           </div>
           `
-              : ''
-          }
-          ${
-            metadata?.commitAuthor
-              ? `
+        : ''
+      }
+          ${metadata?.commitAuthor
+        ? `
           <div class="col-md-6 mb-3">
             <strong>👤 Author:</strong><br>
             <span class="d-inline-block mt-1">${metadata.commitAuthor}</span>
           </div>
           `
-              : ''
-          }
-          ${
-            metadata?.commitDate
-              ? `
+        : ''
+      }
+          ${metadata?.commitDate
+        ? `
           <div class="col-md-6 mb-3">
             <strong>📅 Date:</strong><br>
             <span class="d-inline-block mt-1">${new Date(metadata.commitDate).toLocaleString()}</span>
           </div>
           `
-              : ''
-          }
-          ${
-            metadata?.commitMessage
-              ? `
+        : ''
+      }
+          ${metadata?.commitMessage
+        ? `
           <div class="col-12 mb-3">
             <strong>💬 Commit Message:</strong><br>
             <div class="mt-2 p-3 bg-light rounded" style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 0.9rem;">${metadata.commitMessage}</div>
           </div>
           `
-              : ''
-          }
-          ${
-            metadata?.filesChanged !== undefined ||
-            metadata?.insertions !== undefined ||
-            metadata?.deletions !== undefined
-              ? `
+        : ''
+      }
+          ${metadata?.filesChanged !== undefined ||
+        metadata?.insertions !== undefined ||
+        metadata?.deletions !== undefined
+        ? `
           <div class="col-12 mb-3">
             <strong>📊 Commit Statistics:</strong><br>
             <div class="mt-2 p-3 bg-light rounded" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; text-align: center;">
-              ${
-                metadata?.filesChanged !== undefined
-                  ? `
+              ${metadata?.filesChanged !== undefined
+          ? `
               <div>
                 <div style="font-size: 1.8rem; font-weight: bold; color: #667eea;">${metadata.filesChanged}</div>
                 <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Files Changed</div>
               </div>
               `
-                  : ''
-              }
-              ${
-                metadata?.insertions !== undefined
-                  ? `
+          : ''
+        }
+              ${metadata?.insertions !== undefined
+          ? `
               <div>
                 <div style="font-size: 1.8rem; font-weight: bold; color: #28a745;">+${metadata.insertions}</div>
                 <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Insertions</div>
               </div>
               `
-                  : ''
-              }
-              ${
-                metadata?.deletions !== undefined
-                  ? `
+          : ''
+        }
+              ${metadata?.deletions !== undefined
+          ? `
               <div>
                 <div style="font-size: 1.8rem; font-weight: bold; color: #dc3545;">-${metadata.deletions}</div>
                 <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Deletions</div>
               </div>
               `
-                  : ''
-              }
+          : ''
+        }
             </div>
           </div>
           `
-              : ''
-          }
+        : ''
+      }
         </div>
       </div>
     </div>
     `
-        : ''
+      : ''
     }
 
     <!-- Developer Overview Card -->
@@ -1699,17 +1680,16 @@ export function generateEnhancedHtmlReport(
       </div>
       <div class="card-body">
         <div class="alert alert-light mb-0">
-          ${
-            metadata?.developerOverview
-              ? `
+          ${metadata?.developerOverview
+      ? `
             <div style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 0.95rem; line-height: 1.6;">${metadata.developerOverview}</div>
           `
-              : `
+      : `
             <div style="color: #666; font-style: italic;">
               💡 <strong>Developer overview not yet generated.</strong> This section is populated when the Developer Author agent provides insights about implementation decisions, trade-offs, and actual time spent on the changes.
             </div>
           `
-          }
+    }
         </div>
       </div>
     </div>
@@ -1749,28 +1729,26 @@ export function generateEnhancedHtmlReport(
           📊 Metric Evolution
         </button>
       </li>
-      ${
-        results.some((r: AgentResult) => r.internalIterations !== undefined)
-          ? `
+      ${results.some((r: AgentResult) => r.internalIterations !== undefined)
+      ? `
       <li class="nav-item">
         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#refinement">
           🔄 Refinement Journey
         </button>
       </li>
       `
-          : ''
-      }
-      ${
-        evaluationHistory.length > 0
-          ? `
+      : ''
+    }
+      ${evaluationHistory.length > 0
+      ? `
       <li class="nav-item">
         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#history">
           📈 Evaluation History
         </button>
       </li>
       `
-          : ''
-      }
+      : ''
+    }
     </ul>
 
     <!-- Tab Content -->
@@ -1800,9 +1778,8 @@ export function generateEnhancedHtmlReport(
         ${evolutionHtml}
       </div>
 
-      ${
-        results.some((r: AgentResult) => r.internalIterations !== undefined)
-          ? `
+      ${results.some((r: AgentResult) => r.internalIterations !== undefined)
+      ? `
       <!-- Refinement Journey Tab -->
       <div class="tab-pane fade" id="refinement">
         <h2 class="mb-4">🔄 Agent Refinement Journey</h2>
@@ -1812,17 +1789,17 @@ export function generateEnhancedHtmlReport(
         </p>
         <div class="row">
           ${Array.from(groupedResults.entries())
-            .map(([agentName, evals]) => {
-              const latestEval = evals[evals.length - 1];
-              const result = results.find((r) => {
-                const rAgentName = detectAgentName(r, 0);
-                return rAgentName === agentName;
-              });
-              const iterations = result?.internalIterations || 0;
-              const clarity = result?.clarityScore || 0;
+        .map(([agentName, evals]) => {
+          const latestEval = evals[evals.length - 1];
+          const result = results.find((r) => {
+            const rAgentName = detectAgentName(r, 0);
+            return rAgentName === agentName;
+          });
+          const iterations = result?.internalIterations || 0;
+          const clarity = result?.clarityScore || 0;
 
-              return iterations > 0
-                ? `
+          return iterations > 0
+            ? `
               <div class="col-md-6 mb-4">
                 <div class="card h-100 shadow-sm border-${latestEval.color}">
                   <div class="card-header bg-${latestEval.color} text-white">
@@ -1845,9 +1822,8 @@ export function generateEnhancedHtmlReport(
                       This agent refined their analysis through <strong>${iterations}</strong> self-iteration cycles,
                       progressively improving their confidence from internal gap analysis and question generation.
                     </p>
-                    ${
-                      result?.refinementNotes && result.refinementNotes.length > 0
-                        ? `
+                    ${result?.refinementNotes && result.refinementNotes.length > 0
+              ? `
                       <div class="mt-3">
                         <strong class="small">Refinement Notes:</strong>
                         <ul class="small mt-2">
@@ -1855,39 +1831,37 @@ export function generateEnhancedHtmlReport(
                         </ul>
                       </div>
                     `
-                        : ''
-                    }
-                    ${
-                      result?.missingInformation && result.missingInformation.length > 0
-                        ? `
+              : ''
+            }
+                    ${result?.missingInformation && result.missingInformation.length > 0
+              ? `
                       <div class="mt-3 alert alert-warning p-2">
                         <strong class="small">Final Gaps Identified:</strong>
                         <ul class="small mt-2 mb-0">
                           ${result.missingInformation
-                            .slice(0, 3)
-                            .map((gap) => `<li>${gap}</li>`)
-                            .join('')}
+                .slice(0, 3)
+                .map((gap) => `<li>${gap}</li>`)
+                .join('')}
                         </ul>
                       </div>
                     `
-                        : ''
-                    }
+              : ''
+            }
                   </div>
                 </div>
               </div>
             `
-                : '';
-            })
-            .join('')}
+            : '';
+        })
+        .join('')}
         </div>
       </div>
       `
-          : ''
-      }
+      : ''
+    }
 
-      ${
-        evaluationHistory.length > 0
-          ? `
+      ${evaluationHistory.length > 0
+      ? `
       <!-- Evaluation History Tab -->
       <div class="tab-pane fade" id="history">
         <h2 class="mb-4">📈 Evaluation History & Comparisons</h2>
@@ -1898,8 +1872,8 @@ export function generateEnhancedHtmlReport(
         ${historyHtml}
       </div>
       `
-          : ''
-      }
+      : ''
+    }
     </div>
 
     <div class="text-center mt-5 pt-4 border-top">
