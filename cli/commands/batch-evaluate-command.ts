@@ -152,6 +152,10 @@ export async function runBatchEvaluateCommand(args: string[]) {
     if (/^\s+\[[\d]+\/[\d]+\]/.test(str)) {
       return true; // Suppress
     }
+    // Block OKR generation progress lines (e.g., "   📝 Generating comprehensive OKR draft...")
+    if (/^\s+[📝🧐✨]/.test(str)) {
+      return true; // Suppress
+    }
     // Block explicit newlines from progress tracking
     if (str === '\n' || str === '\r\n') {
       return true; // Suppress
@@ -249,6 +253,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
       const evalRoot = getEvaluationRoot();
       await promptAndGenerateOkrs(config, authors, evalRoot, {
         sinceDate: options.since ? new Date(options.since) : undefined,
+        silent: true, // Suppress OKR progress display during batch evaluation
       });
     }
   }

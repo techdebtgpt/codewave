@@ -27,28 +27,28 @@ export const OkrGenerationState = Annotation.Root({
   }>,
   okr6Month: Annotation<
     | {
-        objective: string;
-        keyResults: Array<{ kr: string; why: string }>;
-      }
+      objective: string;
+      keyResults: Array<{ kr: string; why: string }>;
+    }
     | undefined
   >,
   okr12Month: Annotation<
     | {
-        objective: string;
-        keyResults: Array<{ kr: string; why: string }>;
-      }
+      objective: string;
+      keyResults: Array<{ kr: string; why: string }>;
+    }
     | undefined
   >,
 
   // Action Plan
   actionPlan: Annotation<
     | Array<{
-        area: string;
-        action: string;
-        timeline: string;
-        success: string;
-        support: string;
-      }>
+      area: string;
+      action: string;
+      timeline: string;
+      success: string;
+      support: string;
+    }>
     | undefined
   >,
 
@@ -63,7 +63,15 @@ export const OkrGenerationState = Annotation.Root({
  * Create the OKR Generation Graph
  */
 export function createOkrGenerationGraph(config: AppConfig) {
-  const llm = LLMService.getChatModel(config);
+  // Ensure maxTokens is at least 8000 for comprehensive OKR generation
+  const okrConfig = {
+    ...config,
+    llm: {
+      ...config.llm,
+      maxTokens: Math.max(config.llm.maxTokens, 8000),
+    },
+  };
+  const llm = LLMService.getChatModel(okrConfig);
 
   // Node: Generate Initial Draft
   async function generateDraft(state: typeof OkrGenerationState.State) {
@@ -143,8 +151,9 @@ Focus on:
     const content = getContent(response);
 
     try {
-      // Parse JSON response
-      const parsed = JSON.parse(content);
+      // Parse JSON response (strip markdown code blocks if present)
+      const jsonContent = extractJSON(content);
+      const parsed = JSON.parse(jsonContent);
 
       return {
         strongPoints: parsed.strongPoints || [],
@@ -301,7 +310,9 @@ Refine the 3-month OKR to address the feedback. Return JSON:
     const content = getContent(response);
 
     try {
-      const parsed = JSON.parse(content);
+      // Parse JSON response (strip markdown code blocks if present)
+      const jsonContent = extractJSON(content);
+      const parsed = JSON.parse(jsonContent);
 
       if (isFinalRound) {
         return {
@@ -372,4 +383,14 @@ function parseOkrs(text: string): string[] {
 // Helper: Get Content safely
 function getContent(response: any): string {
   return typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+}
+
+// Helper: Extract JSON from markdown code blocks
+function extractJSON(content: string): string {
+  // Remove markdown code blocks if present (```json ... ``` or ``` ... ```)
+  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) {
+    return jsonMatch[1].trim();
+  }
+  return content.trim();
 }

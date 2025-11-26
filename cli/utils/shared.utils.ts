@@ -17,6 +17,7 @@ import {
   EvaluationHistoryEntry,
 } from '../../src/types/output.types';
 import fs from 'fs/promises';
+import * as fsSync from 'fs';
 import path from 'path';
 
 /**
@@ -925,47 +926,234 @@ async function generateAuthorPage(
   const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
   const authorPagePath = path.join(evaluationsRoot, `author-${authorSlug}.html`);
 
-  // Aggregate author metrics for display
-  // Note: commits[].metrics already contains weighted consensus values from MetricsCalculationService
-  // This is just aggregating those pre-calculated values for the author dashboard
-  const authorMetrics = {
-    quality: 0,
-    complexity: 0,
-    testCoverage: 0,
-    functionalImpact: 0,
-    actualTime: 0,
-    techDebt: 0,
-    count: 0,
-  };
-
   // Sort commits by commit date (newest first)
   commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
 
-  commits.forEach((c) => {
-    if (c.metrics) {
-      authorMetrics.quality += c.metrics.codeQuality || 0;
-      authorMetrics.complexity += c.metrics.codeComplexity || 0;
-      authorMetrics.testCoverage += c.metrics.testCoverage || 0;
-      authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
-      authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
-      authorMetrics.techDebt += c.metrics.technicalDebtHours || 0;
-      authorMetrics.count++;
-    }
+  // Use centralized metrics calculation service for consistency with OKR generation
+  const { AuthorStatsAggregatorService } = require('../../src/services/author-stats-aggregator.service');
+  const authorData = await AuthorStatsAggregatorService.aggregateAuthorStats(evaluationsRoot, {
+    targetAuthor: author,
   });
 
-  const avgQuality =
-    authorMetrics.count > 0 ? (authorMetrics.quality / authorMetrics.count).toFixed(1) : 'N/A';
-  const avgComplexity =
-    authorMetrics.count > 0 ? (authorMetrics.complexity / authorMetrics.count).toFixed(1) : 'N/A';
-  const avgTestCoverage =
-    authorMetrics.count > 0 ? (authorMetrics.testCoverage / authorMetrics.count).toFixed(1) : 'N/A';
-  const avgFunctionalImpact =
-    authorMetrics.count > 0
-      ? (authorMetrics.functionalImpact / authorMetrics.count).toFixed(1)
-      : 'N/A';
-  const avgActualTime =
-    authorMetrics.count > 0 ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2) : 'N/A';
-  const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
+  const evaluations = authorData.get(author);
+  const analysis = evaluations && evaluations.length > 0
+    ? AuthorStatsAggregatorService.analyzeAuthor(evaluations)
+    : null;
+
+  // Use centralized stats or fallback to empty
+  const avgQuality = analysis ? analysis.stats.quality.toFixed(1) : 'N/A';
+  const avgComplexity = analysis ? analysis.stats.complexity.toFixed(1) : 'N/A';
+  const avgTestCoverage = analysis ? analysis.stats.tests.toFixed(1) : 'N/A';
+  const avgFunctionalImpact = analysis ? analysis.stats.impact.toFixed(1) : 'N/A';
+  const avgActualTime = analysis ? analysis.stats.time.toFixed(2) : 'N/A';
+  const totalTechDebt = analysis ? analysis.stats.techDebt.toFixed(2) : 'N/A';
+  const authorMetrics = { count: commits.length };
+
+  // Check for OKR files and load latest OKR data
+  const okrsDir = path.join(evaluationsRoot, '.okrs', authorSlug);
+  let okrContentHtml = '';
+
+  if (fsSync.existsSync(okrsDir)) {
+    const files = fsSync.readdirSync(okrsDir);
+    const okrJsonFiles = files
+      .filter((f: string) => f.startsWith('okr_') && f.endsWith('.json'))
+      .sort()
+      .reverse(); // Newest first
+
+    if (okrJsonFiles.length > 0) {
+      // Load the latest OKR data
+      const latestJsonPath = path.join(okrsDir, okrJsonFiles[0]);
+      try {
+        const okrData = JSON.parse(fsSync.readFileSync(latestJsonPath, 'utf-8'));
+        const generatedDate = new Date(okrData.generatedAt).toLocaleDateString();
+
+        // Build collapsible OKR section with cards
+        okrContentHtml = `
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <strong>✅ Latest OKR Profile</strong>
+              <span class="text-muted ms-2">(Generated: ${generatedDate})</span>
+            </div>
+            <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#okrDetails">
+              <span class="collapsed-text">▼ Show Details</span>
+              <span class="expanded-text" style="display:none;">▲ Hide Details</span>
+            </button>
+          </div>
+
+          <div class="collapse" id="okrDetails">
+            <!-- Strong Points -->
+            <div class="card mb-3 border-success">
+              <div class="card-header bg-success text-white">
+                <strong>✅ Strong Points</strong>
+              </div>
+              <div class="card-body">
+                <ul class="mb-0">
+                  ${okrData.strongPoints.map((point: string) => `<li>${point}</li>`).join('')}
+                </ul>
+              </div>
+            </div>
+
+            <!-- Weak Points -->
+            <div class="card mb-3 border-warning">
+              <div class="card-header bg-warning text-dark">
+                <strong>⚠️ Growth Areas</strong>
+              </div>
+              <div class="card-body">
+                <ul class="mb-0">
+                  ${okrData.weakPoints.map((point: string) => `<li>${point}</li>`).join('')}
+                </ul>
+              </div>
+            </div>
+
+            <!-- Knowledge Gaps -->
+            <div class="card mb-3 border-info">
+              <div class="card-header bg-info text-white">
+                <strong>🧩 Knowledge Gaps</strong>
+              </div>
+              <div class="card-body">
+                <ul class="mb-0">
+                  ${okrData.knowledgeGaps.map((gap: string) => `<li>${gap}</li>`).join('')}
+                </ul>
+              </div>
+            </div>
+
+            <!-- 3-Month OKR -->
+            <div class="card mb-3 border-primary">
+              <div class="card-header bg-primary text-white">
+                <strong>🎯 3-Month Objective</strong>
+              </div>
+              <div class="card-body">
+                <h6 class="text-primary">${okrData.okr3Month.objective}</h6>
+                <div class="mt-3">
+                  <strong>Key Results:</strong>
+                  ${okrData.okr3Month.keyResults.map((kr: any, i: number) => `
+                    <div class="mt-2 p-2 bg-light rounded">
+                      <div><strong>KR${i + 1}:</strong> ${kr.kr}</div>
+                      <div class="text-muted small mt-1"><em>Why:</em> ${kr.why}</div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+
+            ${okrData.okr6Month ? `
+            <!-- 6-Month OKR -->
+            <div class="card mb-3 border-primary">
+              <div class="card-header bg-primary text-white" style="opacity: 0.9;">
+                <strong>📆 6-Month Objective</strong>
+              </div>
+              <div class="card-body">
+                <h6 class="text-primary">${okrData.okr6Month.objective}</h6>
+                <div class="mt-3">
+                  <strong>Key Results:</strong>
+                  ${okrData.okr6Month.keyResults.map((kr: any, i: number) => `
+                    <div class="mt-2 p-2 bg-light rounded">
+                      <div><strong>KR${i + 1}:</strong> ${kr.kr}</div>
+                      <div class="text-muted small mt-1"><em>Why:</em> ${kr.why}</div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+            ` : ''}
+
+            ${okrData.okr12Month ? `
+            <!-- 12-Month OKR -->
+            <div class="card mb-3 border-primary">
+              <div class="card-header bg-primary text-white" style="opacity: 0.8;">
+                <strong>📅 12-Month Objective</strong>
+              </div>
+              <div class="card-body">
+                <h6 class="text-primary">${okrData.okr12Month.objective}</h6>
+                <div class="mt-3">
+                  <strong>Key Results:</strong>
+                  ${okrData.okr12Month.keyResults.map((kr: any, i: number) => `
+                    <div class="mt-2 p-2 bg-light rounded">
+                      <div><strong>KR${i + 1}:</strong> ${kr.kr}</div>
+                      <div class="text-muted small mt-1"><em>Why:</em> ${kr.why}</div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+            ` : ''}
+
+            ${okrData.actionPlan && okrData.actionPlan.length > 0 ? `
+            <!-- Action Plan -->
+            <div class="card mb-3 border-secondary">
+              <div class="card-header bg-secondary text-white">
+                <strong>🚀 Action Plan</strong>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-sm mb-0">
+                    <thead>
+                      <tr>
+                        <th>Area</th>
+                        <th>Action</th>
+                        <th>Timeline</th>
+                        <th>Success Criteria</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${okrData.actionPlan.map((item: any) => `
+                        <tr>
+                          <td><strong>${item.area}</strong></td>
+                          <td>${item.action}</td>
+                          <td><span class="badge bg-secondary">${item.timeline}</span></td>
+                          <td>${item.success}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            ` : ''}
+
+            <!-- View Full Report Link -->
+            <div class="text-center mt-3">
+              <a href=".okrs/${authorSlug}/${okrJsonFiles[0].replace('.json', '.html')}"
+                 class="btn btn-primary"
+                 target="_blank">
+                📄 View Full OKR Report
+              </a>
+              ${okrJsonFiles.length > 1 ? `
+                <div class="mt-2">
+                  <small class="text-muted">
+                    ${okrJsonFiles.length - 1} older profile${okrJsonFiles.length > 2 ? 's' : ''} available
+                  </small>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      } catch (e) {
+        okrContentHtml = `
+          <div class="alert alert-warning">
+            <strong>⚠️ Error loading OKR data</strong>
+            <p class="mb-0 mt-2">Unable to read OKR profile. The file may be corrupted.</p>
+          </div>
+        `;
+      }
+    } else {
+      okrContentHtml = `
+        <div class="alert alert-info">
+          <strong>📋 No OKR profiles yet</strong>
+          <p class="mb-0 mt-2">OKRs are generated periodically to track developer growth and set quarterly objectives.</p>
+          <p class="mb-0 mt-1 text-muted"><small>Run: <code>npm run okr</code> to generate OKR profiles</small></p>
+        </div>
+      `;
+    }
+  } else {
+    okrContentHtml = `
+      <div class="alert alert-info">
+        <strong>📋 No OKR profiles yet</strong>
+        <p class="mb-0 mt-2">OKRs are generated periodically to track developer growth and set quarterly objectives.</p>
+        <p class="mb-0 mt-1 text-muted"><small>Run: <code>npm run okr</code> to generate OKR profiles</small></p>
+      </div>
+    `;
+  }
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1066,6 +1254,14 @@ async function generateAuthorPage(
             </div>
         </div>
 
+        <!-- OKR Section -->
+        <div class="table-container" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);">
+            <h3 class="section-title">🎯 OKR & Growth Profile</h3>
+            <div id="okrSection">
+                ${okrContentHtml}
+            </div>
+        </div>
+
         <div class="table-container">
             <h3 class="section-title">📝 Commits by ${author}</h3>
             <div style="overflow-x: auto;">
@@ -1130,6 +1326,26 @@ ${commits
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Handle collapse button text toggle
+        const okrDetails = document.getElementById('okrDetails');
+        if (okrDetails) {
+            okrDetails.addEventListener('show.bs.collapse', function () {
+                const btn = document.querySelector('[data-bs-target="#okrDetails"]');
+                if (btn) {
+                    btn.querySelector('.collapsed-text').style.display = 'none';
+                    btn.querySelector('.expanded-text').style.display = 'inline';
+                }
+            });
+            okrDetails.addEventListener('hide.bs.collapse', function () {
+                const btn = document.querySelector('[data-bs-target="#okrDetails"]');
+                if (btn) {
+                    btn.querySelector('.collapsed-text').style.display = 'inline';
+                    btn.querySelector('.expanded-text').style.display = 'none';
+                }
+            });
+        }
+    </script>
 </body>
 </html>`;
 

@@ -11,7 +11,7 @@ export async function promptAndGenerateOkrs(
   config: AppConfig,
   authors: string[],
   evalRoot: string,
-  options: AggregationOptions = {}
+  options: AggregationOptions & { silent?: boolean } = {}
 ): Promise<void> {
   if (authors.length === 0) {
     return;
@@ -51,11 +51,22 @@ export async function promptAndGenerateOkrs(
   // Generate OKRs
   console.log(chalk.cyan('\n🎯 Starting OKR generation...\n'));
   const orchestrator = new OkrOrchestrator(config);
-  const okrMap = await orchestrator.generateOkrsWithProgress(authors, evalRoot, options, 2);
+  const { silent, ...aggregationOptions } = options;
+  const okrMap = await orchestrator.generateOkrsWithProgress(
+    authors,
+    evalRoot,
+    aggregationOptions,
+    2,
+    silent || false
+  );
 
   // Save OKRs
   await orchestrator.saveOkrs(evalRoot, okrMap);
 
   console.log(chalk.green('\n✅ OKR Generation Complete!'));
-  console.log(chalk.white('📁 OKR files saved to .evaluated-commits/.okrs/\n'));
+  console.log(chalk.white('📁 OKR files saved to .evaluated-commits/.okrs/'));
+  console.log(chalk.gray('   Structure: .okrs/{author}/okr_{date}.{ext}'));
+  console.log(chalk.gray('   • JSON (.json) for programmatic access and history'));
+  console.log(chalk.gray('   • Markdown (.md) for version control and editing'));
+  console.log(chalk.gray('   • HTML (.html) for viewing in browser\n'));
 }

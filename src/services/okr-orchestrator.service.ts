@@ -9,6 +9,7 @@ import {
 } from './author-stats-aggregator.service';
 import { OkrAgentService } from './okr-agent.service';
 import { formatOKRToMarkdown } from '../formatters/okr-formatter';
+import { formatOKRToHTML } from '../formatters/okr-html-formatter';
 
 /**
  * Progress information for a single author's OKR generation
@@ -51,12 +52,14 @@ export class OkrOrchestrator {
    * @param evalRoot Evaluation root directory
    * @param options Aggregation options
    * @param concurrency Maximum concurrent OKR generations (default: 2)
+   * @param silent If true, suppress progress display (for batch evaluation)
    */
   async generateOkrsWithProgress(
     authors: string[],
     evalRoot: string,
     options: AggregationOptions = {},
-    concurrency: number = 2
+    concurrency: number = 2,
+    silent: boolean = false
   ): Promise<Map<string, any>> {
     const pLimit = (await import('p-limit')).default;
     const limit = pLimit(concurrency);
@@ -64,12 +67,14 @@ export class OkrOrchestrator {
     // Initialize progress tracking
     this.initializeProgress(authors);
 
-    // Display initial progress
-    this.displayProgress();
+    // Display initial progress (only if not silent)
+    if (!silent) {
+      this.displayProgress();
+    }
 
     // Create tasks for parallel execution
     const tasks = authors.map((author) =>
-      limit(async () => this.generateSingleAuthorOkr(author, evalRoot, options))
+      limit(async () => this.generateSingleAuthorOkr(author, evalRoot, options, silent))
     );
 
     // Execute all tasks
@@ -83,8 +88,10 @@ export class OkrOrchestrator {
       }
     });
 
-    // Final progress display
-    this.displayProgress(true);
+    // Final progress display (only if not silent)
+    if (!silent) {
+      this.displayProgress(true);
+    }
 
     return okrMap;
   }
@@ -96,12 +103,15 @@ export class OkrOrchestrator {
   private async generateSingleAuthorOkr(
     author: string,
     evalRoot: string,
-    options: AggregationOptions
+    options: AggregationOptions,
+    silent: boolean = false
   ): Promise<OkrGenerationResult | null> {
     try {
-      // Update status to running
+      // Update status to running (only if not silent)
       this.updateProgress(author, { status: 'running' });
-      this.displayProgress();
+      if (!silent) {
+        this.displayProgress();
+      }
 
       // Aggregate author data
       const authorData = await AuthorStatsAggregatorService.aggregateAuthorStats(evalRoot, {
@@ -129,7 +139,7 @@ export class OkrOrchestrator {
       // Calculate cost (approximate based on token usage)
       const cost = this.estimateCost(okrData);
 
-      // Update progress with results
+      // Update progress with results (only if not silent)
       this.updateProgress(author, {
         status: 'done',
         strongPoints: okrData.strongPoints?.length || 0,
@@ -138,7 +148,9 @@ export class OkrOrchestrator {
         okrSummary: this.buildOkrSummary(okrData),
         cost,
       });
-      this.displayProgress();
+      if (!silent) {
+        this.displayProgress();
+      }
 
       return { author, okrData, cost };
     } catch (error) {
@@ -146,7 +158,9 @@ export class OkrOrchestrator {
         status: 'failed',
         error: error instanceof Error ? error.message : String(error),
       });
-      this.displayProgress();
+      if (!silent) {
+        this.displayProgress();
+      }
       return null;
     }
   }
@@ -161,51 +175,100 @@ export class OkrOrchestrator {
       await fs.promises.mkdir(okrsDir, { recursive: true });
     }
 
-    // Save JSON
-    await this.saveOkrsJson(okrsDir, okrMap);
-
-    // Save Markdown files
-    await this.saveOkrsMarkdown(okrsDir, okrMap);
-  }
-
-  /**
-   * Save OKRs as JSON (for programmatic access)
-   */
-  private async saveOkrsJson(okrsDir: string, okrMap: Map<string, any>): Promise<void> {
-    const jsonPath = path.join(okrsDir, 'author-okrs.json');
-
-    // Merge with existing
-    let existingOkrs: Record<string, any> = {};
-    if (fs.existsSync(jsonPath)) {
-      try {
-        existingOkrs = JSON.parse(await fs.promises.readFile(jsonPath, 'utf-8'));
-      } catch (e) {
-        // Ignore parse errors
-      }
-    }
-
-    const allOkrs = { ...existingOkrs, ...Object.fromEntries(okrMap) };
-    await fs.promises.writeFile(jsonPath, JSON.stringify(allOkrs, null, 2));
-    console.log(chalk.cyan(`\n💾 Saved OKRs (JSON) to ${jsonPath}`));
-  }
-
-  /**
-   * Save OKRs as Markdown files (for human reading)
-   */
-  private async saveOkrsMarkdown(okrsDir: string, okrMap: Map<string, any>): Promise<void> {
+    // Save all formats per author
     for (const [author, okrData] of okrMap.entries()) {
-      const sanitizedAuthor = author.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const timestamp = new Date().toISOString().split('T')[0];
-      const mdPath = path.join(okrsDir, `${sanitizedAuthor}_${timestamp}.md`);
-
-      const markdown = formatOKRToMarkdown({
-        authorName: author,
-        ...okrData,
-      });
-
-      await fs.promises.writeFile(mdPath, markdown);
-      console.log(chalk.cyan(`💾 Saved OKR profile (Markdown) to ${mdPath}`));
+      await this.saveAuthorOkrs(okrsDir, author, okrData);
     }
+  }
+
+  /**
+   * Save all OKR formats for a single author
+   * Creates author-specific folder with JSON, MD, and HTML files
+   */
+  private async saveAuthorOkrs(
+    okrsDir: string,
+    author: string,
+    okrData: any
+  ): Promise<void> {
+    const sanitizedAuthor = author.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const authorDir = path.join(okrsDir, sanitizedAuthor);
+
+    // Create author directory if it doesn't exist
+    if (!fs.existsSync(authorDir)) {
+      await fs.promises.mkdir(authorDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().split('T')[0];
+
+    // Save JSON (historical record)
+    await this.saveAuthorJson(authorDir, author, okrData, timestamp);
+
+    // Save Markdown
+    await this.saveAuthorMarkdown(authorDir, author, okrData, timestamp);
+
+    // Save HTML
+    await this.saveAuthorHtml(authorDir, author, okrData, timestamp);
+  }
+
+  /**
+   * Save author OKR as JSON with historical tracking
+   */
+  private async saveAuthorJson(
+    authorDir: string,
+    author: string,
+    okrData: any,
+    timestamp: string
+  ): Promise<void> {
+    const jsonPath = path.join(authorDir, `okr_${timestamp}.json`);
+
+    const jsonData = {
+      authorName: author,
+      generatedAt: new Date().toISOString(),
+      ...okrData,
+    };
+
+    await fs.promises.writeFile(jsonPath, JSON.stringify(jsonData, null, 2));
+    console.log(chalk.cyan(`💾 Saved OKR profile (JSON) to ${jsonPath}`));
+  }
+
+  /**
+   * Save author OKR as Markdown
+   */
+  private async saveAuthorMarkdown(
+    authorDir: string,
+    author: string,
+    okrData: any,
+    timestamp: string
+  ): Promise<void> {
+    const mdPath = path.join(authorDir, `okr_${timestamp}.md`);
+
+    const markdown = formatOKRToMarkdown({
+      authorName: author,
+      ...okrData,
+    });
+
+    await fs.promises.writeFile(mdPath, markdown);
+    console.log(chalk.cyan(`💾 Saved OKR profile (Markdown) to ${mdPath}`));
+  }
+
+  /**
+   * Save author OKR as HTML
+   */
+  private async saveAuthorHtml(
+    authorDir: string,
+    author: string,
+    okrData: any,
+    timestamp: string
+  ): Promise<void> {
+    const htmlPath = path.join(authorDir, `okr_${timestamp}.html`);
+
+    const html = formatOKRToHTML({
+      authorName: author,
+      ...okrData,
+    });
+
+    await fs.promises.writeFile(htmlPath, html);
+    console.log(chalk.cyan(`💾 Saved OKR profile (HTML) to ${htmlPath}`));
   }
 
   /**
@@ -265,38 +328,44 @@ export class OkrOrchestrator {
   }
 
   /**
-   * Display progress table
-   * DRY: Similar pattern to batch-evaluate-command but extracted for reuse
+   * Display progress using simple console output
+   * Note: This method is only called when silent=false
+   * No progress bars to avoid conflicts with batch evaluation
    */
   private displayProgress(final: boolean = false): void {
-    // Clear console and redraw (only if not final)
-    if (!final) {
-      process.stdout.write('\x1B[2J\x1B[0f'); // Clear screen
-    }
-
-    console.log(chalk.cyan('\n🎯 Generating OKRs...\n'));
-
-    // Display each author's progress
-    for (const progress of this.progressMap.values()) {
-      const statusIcon = this.getStatusIcon(progress.status);
-      const progressBar = this.getProgressBar(progress.status);
-      const summary = this.getProgressSummary(progress);
-
-      console.log(
-        `${progress.author.padEnd(20)} ${progressBar} ${statusIcon.padEnd(10)} ${summary}`
-      );
-    }
-
-    // Display totals
+    // Calculate stats
     const completed = Array.from(this.progressMap.values()).filter(
       (p) => p.status === 'done'
     ).length;
     const total = this.progressMap.size;
     const totalCost = Array.from(this.progressMap.values()).reduce((sum, p) => sum + p.cost, 0);
 
-    console.log(
-      chalk.gray(`\nProgress: ${completed}/${total} | Total cost: $${totalCost.toFixed(4)}`)
-    );
+    if (final) {
+      // Print final summary
+      console.log(chalk.cyan('\n🎯 OKR Generation Complete!\n'));
+      for (const progress of this.progressMap.values()) {
+        const statusIcon = this.getStatusIcon(progress.status);
+        const summary = this.getProgressSummary(progress);
+        console.log(`${progress.author.padEnd(20)} ${statusIcon.padEnd(10)} ${summary}`);
+      }
+      console.log(
+        chalk.gray(`\nTotal: ${completed}/${total} | Total cost: $${totalCost.toFixed(4)}`)
+      );
+    } else {
+      // Show current progress inline (no progress bars)
+      const currentProgress = Array.from(this.progressMap.values()).find(
+        (p) => p.status === 'running'
+      );
+
+      if (currentProgress) {
+        const statusIcon = this.getStatusIcon(currentProgress.status);
+        console.log(
+          chalk.gray(
+            `  [${completed}/${total}] ${statusIcon} ${currentProgress.author.padEnd(20)}`
+          )
+        );
+      }
+    }
   }
 
   /**
@@ -312,23 +381,6 @@ export class OkrOrchestrator {
         return chalk.red('✗ failed');
       default:
         return chalk.gray('○ pending');
-    }
-  }
-
-  /**
-   * Get progress bar for display
-   */
-  private getProgressBar(status: OkrProgress['status']): string {
-    const barLength = 12;
-    if (status === 'done') {
-      return chalk.green('█'.repeat(barLength));
-    } else if (status === 'running') {
-      const filled = Math.floor(barLength / 2);
-      return chalk.yellow('█'.repeat(filled)) + chalk.gray('░'.repeat(barLength - filled));
-    } else if (status === 'failed') {
-      return chalk.red('█'.repeat(barLength));
-    } else {
-      return chalk.gray('░'.repeat(barLength));
     }
   }
 

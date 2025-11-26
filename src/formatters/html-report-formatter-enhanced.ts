@@ -1137,19 +1137,19 @@ export function generateEnhancedHtmlReport(
     const agentDescription = AGENT_DESCRIPTIONS[agentName] || '';
 
     agentCardsHtml += `
-  < div class="col-md-6 mb-4" >
-    <div class="card h-100 shadow-sm border-${latestEval.color}" data - agent="${agentName}" >
-      <div class="card-header bg-${latestEval.color} text-white" >
-        <h5 class="mb-0" >
-          <span class="me-2" style = "font-size: 1.5rem;" > ${latestEval.icon} </span>
+      <div class="col-md-6 mb-4">
+        <div class="card h-100 shadow-sm border-${latestEval.color}" data-agent="${agentName}">
+          <div class="card-header bg-${latestEval.color} text-white">
+            <h5 class="mb-0">
+              <span class="me-2" style="font-size: 1.5rem;">${latestEval.icon}</span>
               ${agentName}
               ${hasMultipleRounds ? `<span class="badge bg-light text-dark ms-2">${numRounds} Rounds</span>` : ''}
-</h5>
+            </h5>
             ${agentDescription ? `<small class="text-white-50 d-block mt-1">${agentDescription}</small>` : ''}
-</div>
-  < div class="card-body" >
-    <h6 class="text-${latestEval.color} mb-2" >📊 Metrics </h6>
-      < div class="mb-3" >
+          </div>
+          <div class="card-body">
+            <h6 class="text-${latestEval.color} mb-2">📊 Metrics</h6>
+            <div class="mb-3">
         ${latestEval.metrics
         ? Object.entries(latestEval.metrics)
           .map(([key, value]) => {
@@ -1162,11 +1162,11 @@ export function generateEnhancedHtmlReport(
           .join('')
         : '<em class="text-muted">No metrics</em>'
       }
-</div>
+            </div>
 
-  < h6 class="text-${latestEval.color} mb-2" >💭 Final Assessment </h6>
-    < p class="small" > ${latestEval.summary.substring(0, 200)}${latestEval.summary.length > 200 ? '...' : ''} </p>
-            
+            <h6 class="text-${latestEval.color} mb-2">💭 Final Assessment</h6>
+            <p class="small">${latestEval.summary.substring(0, 200)}${latestEval.summary.length > 200 ? '...' : ''}</p>
+
             ${latestEval.concernsRaised.length > 0
         ? `
               <h6 class="text-danger mb-2">⚠️ Concerns (Round ${latestEval.round})</h6>
@@ -1177,12 +1177,12 @@ export function generateEnhancedHtmlReport(
         : ''
       }
 
-<button class="btn btn-sm btn-outline-${latestEval.color}" onclick = "showAgentDetails('${agentName}')" >
-  View Full Analysis →
-</button>
-  </div>
-  </div>
-  </div>
+            <button class="btn btn-sm btn-outline-${latestEval.color}" onclick="showAgentDetails('${agentName}')">
+              View Full Analysis →
+            </button>
+          </div>
+        </div>
+      </div>
     `;
   });
   agentCardsHtml += '</div>';
@@ -1219,13 +1219,13 @@ export function generateEnhancedHtmlReport(
         emoji: '🔄',
       };
       timelineHtml += `
-  < div style = "margin: 2rem 0 1.5rem 0; padding-bottom: 1rem; border-bottom: 2px solid #e9ecef;" >
-    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;" >
-      <span style="font-size: 1.5rem;" > ${phase.emoji} </span>
-        < h4 style = "margin: 0; font-size: 1.1rem; color: #333;" > Round ${currentRound}: ${phase.title} </h4>
+        <div style="margin: 2rem 0 1.5rem 0; padding-bottom: 1rem; border-bottom: 2px solid #e9ecef;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+            <span style="font-size: 1.5rem;">${phase.emoji}</span>
+            <h4 style="margin: 0; font-size: 1.1rem; color: #333;">Round ${currentRound}: ${phase.title}</h4>
           </div>
-          < p style = "margin: 0; font-size: 0.9rem; color: #666;" > ${phase.description} </p>
-            </div>
+          <p style="margin: 0; font-size: 0.9rem; color: #666;">${phase.description}</p>
+        </div>
               `;
     }
 
@@ -1233,39 +1233,39 @@ export function generateEnhancedHtmlReport(
     const concernsHtml =
       evaluation.concernsRaised.length > 0
         ? `
-            < div style = "margin-top: 0.75rem; padding: 0.75rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;" >
-              <strong style="font-size: 0.85rem; color: #856404;" > Concerns: </strong>
-                < ul style = "margin: 0.5rem 0 0 1rem; padding: 0; font-size: 0.85rem; color: #856404;" >
-                  ${evaluation.concernsRaised.map((c) => `<li>${c}</li>`).join('')}
-</ul>
-  </div>
+            <div style="margin-top: 0.75rem; padding: 0.75rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+              <strong style="font-size: 0.85rem; color: #856404;">Concerns:</strong>
+              <ul style="margin: 0.5rem 0 0 1rem; padding: 0; font-size: 0.85rem; color: #856404;">
+                ${evaluation.concernsRaised.map((c) => `<li>${c}</li>`).join('')}
+              </ul>
+            </div>
     `
         : '';
 
     const referencesHtml =
       evaluation.referencesTo.length > 0
         ? `
-  < div style = "margin-top: 0.5rem; font-size: 0.85rem; color: #0d6efd;" >
-        💬 References: <strong>${evaluation.referencesTo.join(', ')} </strong>
-  </div>
+            <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #0d6efd;">
+              💬 References: <strong>${evaluation.referencesTo.join(', ')}</strong>
+            </div>
     `
         : '';
 
     timelineHtml += `
-  < div style = "margin-bottom: 1.5rem; padding: 1rem; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #0d6efd;" >
-    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;" >
-      <span style="font-size: 1.3rem;" > ${evaluation.icon} </span>
-        < strong style = "font-size: 0.95rem;" > ${evaluation.agentName} </strong>
-          < span style = "font-size: 0.8rem; color: #999; margin-left: auto;" > Round ${evaluation.round} </span>
-            </div>
-            < p style = "margin: 0 0 0.75rem 0; font-size: 0.9rem; line-height: 1.4; color: #333;" > ${evaluation.summary} </p>
-        ${concernsHtml}
-        ${referencesHtml}
-</div>
+        <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #0d6efd;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <span style="font-size: 1.3rem;">${evaluation.icon}</span>
+            <strong style="font-size: 0.95rem;">${evaluation.agentName}</strong>
+            <span style="font-size: 0.8rem; color: #999; margin-left: auto;">Round ${evaluation.round}</span>
+          </div>
+          <p style="margin: 0 0 0.75rem 0; font-size: 0.9rem; line-height: 1.4; color: #333;">${evaluation.summary}</p>
+          ${concernsHtml}
+          ${referencesHtml}
+        </div>
   `;
   });
 
-  timelineHtml = `< div style = "background: white; padding: 0; border-radius: 8px;" > ${timelineHtml} </div>`;
+  timelineHtml = `<div style="background: white; padding: 0; border-radius: 8px;">${timelineHtml}</div>`;
 
   // Determine min and max rounds from evaluations
   const allRounds = Array.from(groupedResults.values()).flatMap((evals) =>
