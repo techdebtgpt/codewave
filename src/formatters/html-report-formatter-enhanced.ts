@@ -624,9 +624,14 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
 function loadEvaluationHistory(outputDir: string): EvaluationHistoryEntry[] {
   try {
     const historyPath = path.join(outputDir, 'history.json');
+
+    if (!fs.existsSync(historyPath)) {
+      return [];
+    }
+
     const content = fs.readFileSync(historyPath, 'utf-8');
     return JSON.parse(content);
-  } catch {
+  } catch (error) {
     return [];
   }
 }
