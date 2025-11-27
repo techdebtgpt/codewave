@@ -45,10 +45,37 @@ export class OkrAgentService {
       await this.vectorStoreService.initialize(comments);
     }
 
-    // 2. Load previous OKR for progress tracking
+    // 2. Load previous OKR for progress tracking (time-based)
     let previousOkr: any = undefined;
+
     if (evalRoot) {
-      previousOkr = await this.loadPreviousOkr(evalRoot, author);
+      const loadedOkr = await this.loadPreviousOkr(evalRoot, author);
+      if (loadedOkr && loadedOkr.generatedAt) {
+        const okrDate = new Date(loadedOkr.generatedAt);
+        const now = new Date();
+        const monthsElapsed = (now.getTime() - okrDate.getTime()) / (1000 * 60 * 60 * 24 * 30.44); // Average month length
+
+        // Determine which timeframe to track based on elapsed time
+        if (monthsElapsed >= 12 && loadedOkr.okr12Month) {
+          previousOkr = {
+            ...loadedOkr,
+            targetTimeframe: '12-month',
+            monthsElapsed: Math.floor(monthsElapsed),
+          };
+        } else if (monthsElapsed >= 6 && loadedOkr.okr6Month) {
+          previousOkr = {
+            ...loadedOkr,
+            targetTimeframe: '6-month',
+            monthsElapsed: Math.floor(monthsElapsed),
+          };
+        } else if (monthsElapsed >= 3) {
+          previousOkr = {
+            ...loadedOkr,
+            targetTimeframe: '3-month',
+            monthsElapsed: Math.floor(monthsElapsed),
+          };
+        }
+      }
     }
 
     // 3. Run the Graph
@@ -61,7 +88,7 @@ export class OkrAgentService {
       currentOkrs: [],
       feedback: '',
       rounds: 0,
-      maxRounds: this.config.agents?.maxRounds || 2, // Use config setting, default to 2
+      maxRounds: this.config.agents?.maxRounds || 3,
     };
 
     const result = await this.graph.invoke(initialState);
@@ -106,7 +133,7 @@ export class OkrAgentService {
       // Load the most recent one
       const latestJsonPath = path.join(authorDir, okrJsonFiles[0]);
       const okrData = JSON.parse(fs.readFileSync(latestJsonPath, 'utf-8'));
-      console.log(`   📂 Loaded previous OKR from ${okrJsonFiles[0]}`);
+      // Loaded previous OKR
       return okrData;
     } catch (error) {
       console.warn(`   ⚠️  Failed to load previous OKR: ${error}`);

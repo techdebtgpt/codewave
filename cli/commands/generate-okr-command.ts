@@ -7,7 +7,7 @@ import {
   AuthorStatsAggregatorService,
   AggregationOptions,
 } from '../../src/services/author-stats-aggregator.service';
-import { OkrOrchestrator } from '../../src/services/okr-orchestrator.service';
+import { OkrOrchestrator } from '../../src/orchestrator/okr-orchestrator';
 import { OkrProgressTracker } from '../utils/okr-progress-tracker';
 
 /**

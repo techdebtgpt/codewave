@@ -932,9 +932,6 @@ async function generateAuthorPage(
   const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
   const authorPagePath = path.join(evaluationsRoot, `author-${authorSlug}.html`);
 
-  // Sort commits by commit date (newest first)
-  commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
-
   // Use centralized metrics calculation service for consistency with OKR generation
   const {
     AuthorStatsAggregatorService,
@@ -943,11 +940,19 @@ async function generateAuthorPage(
     targetAuthor: author,
   });
 
-  const evaluations = authorData.get(author);
+  // Use deduplicated evaluations (latest per commit) for both metrics AND display
+  const evaluations = authorData.get(author) || [];
   const analysis =
     evaluations && evaluations.length > 0
       ? AuthorStatsAggregatorService.analyzeAuthor(evaluations)
       : null;
+
+  // Sort deduplicated commits by commit date (newest first) for display
+  const deduplicatedCommits = evaluations.sort(
+    (a: any, b: any) =>
+      new Date(b.metadata?.commitDate || 0).getTime() -
+      new Date(a.metadata?.commitDate || 0).getTime()
+  );
 
   // Use centralized stats or fallback to empty
   const avgQuality = analysis ? analysis.stats.quality.toFixed(1) : 'N/A';
@@ -956,7 +961,7 @@ async function generateAuthorPage(
   const avgFunctionalImpact = analysis ? analysis.stats.impact.toFixed(1) : 'N/A';
   const avgActualTime = analysis ? analysis.stats.time.toFixed(2) : 'N/A';
   const totalTechDebt = analysis ? analysis.stats.techDebt.toFixed(2) : 'N/A';
-  const authorMetrics = { count: commits.length };
+  const commitCount = deduplicatedCommits.length; // Use deduplicated count
 
   // Check for OKR files and load latest OKR data
   const okrsDir = path.join(evaluationsRoot, '.okrs', authorSlug);
@@ -1089,15 +1094,28 @@ async function generateAuthorPage(
                     (kr: any, i: number) => `
                   <div class="col-md-4 mb-3">
                     <div class="p-3 bg-light rounded h-100 border">
-                      <div class="fw-bold mb-2">KR ${i + 1}: ${kr.kr}</div>
-                      <div class="text-muted small border-top pt-2 mt-2"><em>Why:</em> ${kr.why}</div>
+                      <div class="fw-bold mb-2 text-primary">KR ${i + 1}</div>
+                      <div class="mb-2">${kr.kr}</div>
+                      <div class="text-muted small border-top pt-2 mt-2 mb-2"><em>Why:</em> ${kr.why}</div>
+                      ${
+                        kr.actionSteps && kr.actionSteps.length > 0
+                          ? `
+                        <div class="border-top pt-2 mt-2">
+                          <strong class="small text-success">✓ Action Steps:</strong>
+                          <ol class="small mb-0 mt-1 ps-3">
+                            ${kr.actionSteps.map((step: string) => `<li class="mb-1">${step}</li>`).join('')}
+                          </ol>
+                        </div>
+                      `
+                          : ''
+                      }
                     </div>
                   </div>
                 `
                   )
                   .join('')}
               </div>
-            </div>
+          </div>
           </div>
 
           ${

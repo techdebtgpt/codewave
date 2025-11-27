@@ -38,14 +38,14 @@ function padCellToWidth(value: string, targetWidth: number, rightAlign: boolean 
 }
 
 function generateHeaderAndFormat(): { header: string; format: string; columnWidths: number[] } {
-  const headers = ['Author', 'Status', 'Progress', 'Stats (S/W/G)', 'Cost'];
+  const headers = ['Author', 'Status', 'Progress', 'Tokens (In/Out)', 'Cost'];
 
   // Author: 20 chars
   // Status: 10 chars
   // Progress: 20 chars (bar)
-  // Stats: 15 chars (e.g. "5/3/2")
+  // Tokens: 20 chars (e.g. "10k/5k")
   // Cost: 10 chars
-  const columnWidths = [20, 12, 20, 15, 12];
+  const columnWidths = [20, 12, 20, 20, 10];
 
   const paddedHeaders = headers.map((h, i) => {
     const colored = `${colors.bright}${colors.cyan}${h}${colors.reset}`;
@@ -57,7 +57,7 @@ function generateHeaderAndFormat(): { header: string; format: string; columnWidt
     `${colors.white}{author}${colors.reset}`,
     `${colors.magenta}{status}${colors.reset}`,
     `${colors.blue}{bar}${colors.reset}`,
-    `${colors.yellow}{stats}${colors.reset}`,
+    `${colors.yellow}{tokens}${colors.reset}`,
     `${colors.cyan}{cost}${colors.reset}`,
   ];
 
@@ -95,13 +95,13 @@ export class OkrProgressTracker implements ProgressRenderer {
 
     authors.forEach((author) => {
       const initialStatus = `${colors.dim}pending${colors.reset}`;
-      const initialStats = `${colors.dim}-/-/-${colors.reset}`;
-      const initialCost = `${colors.dim}$0.0000${colors.reset}`;
+      const initialTokens = `${colors.dim}0/0${colors.reset}`;
+      const initialCost = `${colors.dim}$0${colors.reset}`;
 
       const bar = this.multibar!.create(100, 0, {
         author: padCellToWidth(author.substring(0, 18), this.columnWidths[0]),
         status: padCellToWidth(initialStatus, this.columnWidths[1]),
-        stats: padCellToWidth(initialStats, this.columnWidths[3]),
+        tokens: padCellToWidth(initialTokens, this.columnWidths[3]),
         cost: padCellToWidth(initialCost, this.columnWidths[4]),
       });
 
@@ -120,28 +120,38 @@ export class OkrProgressTracker implements ProgressRenderer {
     else if (data.status === 'failed') statusStr = `${colors.red}failed${colors.reset}`;
     else statusStr = `${colors.dim}${statusStr}${colors.reset}`;
 
-    // Update stats
-    let statsStr = `${colors.dim}-/-/-${colors.reset}`;
-    if (data.strongPoints !== undefined) {
-      statsStr = `${data.strongPoints}/${data.weakPoints}/${data.knowledgeGaps}`;
+    // Update tokens
+    let tokensStr = `${colors.dim}0/0${colors.reset}`;
+    if (data.inputTokens !== undefined && data.outputTokens !== undefined) {
+      const inK = (data.inputTokens / 1000).toFixed(0);
+      const outK = (data.outputTokens / 1000).toFixed(0);
+      tokensStr = `${inK}k/${outK}k`;
     }
 
     // Update cost
-    let costStr = `${colors.dim}$0.0000${colors.reset}`;
+    let costStr = `${colors.dim}$0${colors.reset}`;
     if (data.cost !== undefined) {
       costStr = `${colors.cyan}$${data.cost.toFixed(4)}${colors.reset}`;
-      // Note: We don't track total cost here accurately if update is called multiple times with same cost
-      // But for OKR generation, cost usually comes once at the end.
     }
 
-    // Progress
+    // Progress - more granular updates
     let progress = 0;
-    if (data.status === 'done') progress = 100;
-    else if (data.status === 'running') progress = 50; // Indeterminate state
+    if (data.status === 'done') {
+      progress = 100;
+    } else if (data.status === 'running') {
+      // Show progress based on which data we have
+      if (data.strongPoints !== undefined) {
+        progress = 75; // Have OKR items, almost done
+      } else {
+        progress = 33; // Still generating
+      }
+    } else if (data.status === 'pending') {
+      progress = 0;
+    }
 
     bar.update(progress, {
       status: padCellToWidth(statusStr, this.columnWidths[1]),
-      stats: padCellToWidth(statsStr, this.columnWidths[3]),
+      tokens: padCellToWidth(tokensStr, this.columnWidths[3]),
       cost: padCellToWidth(costStr, this.columnWidths[4]),
     });
   }

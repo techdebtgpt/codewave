@@ -5,9 +5,8 @@ import { AppConfig } from '../config/config.interface';
 import {
   AuthorStatsAggregatorService,
   AggregationOptions,
-  AuthorStats,
-} from './author-stats-aggregator.service';
-import { OkrAgentService } from './okr-agent.service';
+} from '../services/author-stats-aggregator.service';
+import { OkrAgentService } from '../services/okr-agent.service';
 import { formatOKRToMarkdown } from '../formatters/okr-formatter';
 import { formatOKRToHTML } from '../formatters/okr-html-formatter';
 
@@ -22,6 +21,8 @@ interface OkrProgress {
   knowledgeGaps: number;
   okrSummary: string;
   cost: number;
+  inputTokens?: number;
+  outputTokens?: number;
   error?: string;
 }
 
@@ -32,6 +33,8 @@ interface OkrGenerationResult {
   author: string;
   okrData: any;
   cost: number;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 /**
@@ -83,7 +86,7 @@ export class OkrOrchestrator {
 
     // Collect successful results
     const okrMap = new Map<string, any>();
-    results.forEach((result, index) => {
+    results.forEach((result) => {
       if (result.status === 'fulfilled' && result.value) {
         okrMap.set(result.value.author, result.value.okrData);
       }
@@ -142,8 +145,8 @@ export class OkrOrchestrator {
         evalRoot // Pass evalRoot for previous OKR loading
       );
 
-      // Calculate cost (approximate based on token usage)
-      const cost = this.estimateCost(okrData);
+      // Calculate cost and tokens (approximate based on token usage)
+      const { cost, inputTokens, outputTokens } = this.estimateCostAndTokens(okrData);
 
       // Update progress with results (only if not silent)
       this.updateProgress(author, {
@@ -153,14 +156,20 @@ export class OkrOrchestrator {
         knowledgeGaps: okrData.knowledgeGaps?.length || 0,
         okrSummary: this.buildOkrSummary(okrData),
         cost,
+        inputTokens,
+        outputTokens,
       });
+
       if (onProgress) {
         onProgress(author, this.progressMap.get(author)!);
       } else if (!silent) {
         this.displayProgress();
       }
 
-      return { author, okrData, cost };
+      // Add a small delay to ensure UI updates are rendered before process exit
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      return { author, okrData, cost, inputTokens, outputTokens };
     } catch (error) {
       this.updateProgress(author, {
         status: 'failed',
@@ -237,7 +246,6 @@ export class OkrOrchestrator {
     };
 
     await fs.promises.writeFile(jsonPath, JSON.stringify(jsonData, null, 2));
-    console.log(chalk.cyan(`💾 Saved OKR profile (JSON) to ${jsonPath}`));
   }
 
   /**
@@ -257,7 +265,6 @@ export class OkrOrchestrator {
     });
 
     await fs.promises.writeFile(mdPath, markdown);
-    console.log(chalk.cyan(`💾 Saved OKR profile (Markdown) to ${mdPath}`));
   }
 
   /**
@@ -271,13 +278,53 @@ export class OkrOrchestrator {
   ): Promise<void> {
     const htmlPath = path.join(authorDir, `okr_${timestamp}.html`);
 
+    // Load all historical OKRs for this author
+    const historicalOkrs = await this.loadHistoricalOkrs(authorDir);
+
     const html = formatOKRToHTML({
       authorName: author,
       ...okrData,
+      historicalOkrs, // Pass historical data to formatter
     });
 
     await fs.promises.writeFile(htmlPath, html);
-    console.log(chalk.cyan(`💾 Saved OKR profile (HTML) to ${htmlPath}`));
+  }
+
+  /**
+   * Load all historical OKRs for an author
+   */
+  private async loadHistoricalOkrs(authorDir: string): Promise<any[]> {
+    try {
+      if (!fs.existsSync(authorDir)) {
+        return [];
+      }
+
+      const files = fs.readdirSync(authorDir);
+      const okrJsonFiles = files
+        .filter((f: string) => f.startsWith('okr_') && f.endsWith('.json'))
+        .sort()
+        .reverse(); // Newest first
+
+      const historicalData = [];
+      for (const file of okrJsonFiles) {
+        try {
+          const filePath = path.join(authorDir, file);
+          const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          historicalData.push({
+            filename: file,
+            generatedAt: data.generatedAt,
+            ...data,
+          });
+        } catch (error) {
+          console.warn(`Failed to load ${file}:`, error);
+        }
+      }
+
+      return historicalData;
+    } catch (error) {
+      console.warn('Failed to load historical OKRs:', error);
+      return [];
+    }
   }
 
   /**
@@ -291,21 +338,36 @@ export class OkrOrchestrator {
   }
 
   /**
-   * Estimate cost for a single OKR generation result
+   * Estimate cost and tokens for a single OKR generation result
    */
-  private estimateCost(okrData: any): number {
+  private estimateCostAndTokens(okrData: any): {
+    cost: number;
+    inputTokens: number;
+    outputTokens: number;
+  } {
     // Rough estimation based on content size
+    // Updated for more detailed prompt requirements
     const contentSize =
-      (okrData.strongPoints?.length || 0) * 50 +
-      (okrData.weakPoints?.length || 0) * 50 +
-      (okrData.knowledgeGaps?.length || 0) * 30 +
-      (okrData.okr3Month ? 200 : 0) +
-      (okrData.okr6Month ? 200 : 0) +
-      (okrData.okr12Month ? 200 : 0) +
-      (okrData.actionPlan?.length || 0) * 100;
+      (okrData.strongPoints?.length || 0) * 80 + // Increased from 50
+      (okrData.weakPoints?.length || 0) * 80 + // Increased from 50
+      (okrData.knowledgeGaps?.length || 0) * 50 + // Increased from 30
+      (okrData.okr3Month ? 400 : 0) + // Increased from 200
+      (okrData.okr6Month ? 400 : 0) + // Increased from 200
+      (okrData.okr12Month ? 400 : 0) + // Increased from 200
+      (okrData.actionPlan?.length || 0) * 150; // Increased from 100
 
-    const costPer1MTokens = 0.15;
-    return (contentSize * costPer1MTokens) / 1000000;
+    // Estimate tokens
+    // Input tokens are roughly constant + some context (evaluations)
+    // Output tokens are proportional to content size
+    const inputTokens = 2500 + Math.floor(Math.random() * 500); // Increased base input due to longer prompt
+    const outputTokens = Math.floor(contentSize / 3.5); // Approx 3.5 chars per token (slightly denser)
+
+    const inputCostPer1M = 0.15;
+    const outputCostPer1M = 0.6;
+
+    const cost = (inputTokens * inputCostPer1M + outputTokens * outputCostPer1M) / 1000000;
+
+    return { cost, inputTokens, outputTokens };
   }
 
   /**

@@ -80,7 +80,7 @@ export function createOkrGenerationGraph(config: AppConfig) {
     ...config,
     llm: {
       ...config.llm,
-      maxTokens: Math.max(config.llm.maxTokens, 8000),
+      maxTokens: Math.max(config.llm.maxTokens || 0, 16000),
     },
   };
   const llm = LLMService.getChatModel(okrConfig);
@@ -118,7 +118,7 @@ export function createOkrGenerationGraph(config: AppConfig) {
     }
 
     const prompt = `
-You are an Engineering Manager creating a developer growth profile. Based on the metrics below, generate a structured assessment.
+You are an Engineering Manager creating a HIGHLY DETAILED developer growth profile. Based on the metrics below, generate a comprehensive assessment with ACTIONABLE and SPECIFIC objectives.
 
 DEVELOPER METRICS:
 ${formatStats(state.authorStats)}
@@ -127,48 +127,79 @@ IDENTIFIED STRENGTHS: ${state.strengths.join(', ')}
 IDENTIFIED WEAKNESSES: ${state.weaknesses.join(', ')}
 ${context}${previousOkrContext}
 
-${state.previousOkr ? 'IMPORTANT: Compare current metrics with the Previous OKR. Assess if they achieved their objectives and key results. Generate a progress report.' : ''}
+${state.previousOkr ? 'IMPORTANT: Compare current metrics with the Previous OKR. Assess if they achieved their objectives and key results. Generate a detailed progress report.' : ''}
+
+CRITICAL REQUIREMENTS FOR OKRs:
+1. Objectives must be CONCRETE and ACHIEVABLE within 3 months
+2. Key Results must be MEASURABLE with specific numbers or clear completion criteria
+3. Include 3-5 ACTIONABLE STEPS per Key Result - what the developer should actually DO
+4. Use REAL EXAMPLES from their codebase/tech stack when possible
+5. Make it DEVELOPER-FRIENDLY - avoid management jargon
+6. BE VERBOSE: Provide detailed explanations and context for every point. Short, one-line answers are UNACCEPTABLE.
 
 Generate the following in JSON format:
 
 {
   "strongPoints": [
-    "Observable strength with impact (3-5 points)",
-    "Example: 'Writes exceptionally clean React code—PRs often used as examples'"
+    "Observable strength with impact (5-7 points)",
+    "Example: 'Consistently writes clean, well-documented TypeScript code with 95%+ test coverage, reducing bug reports by 20%'",
+    "Example: 'Proactively refactors legacy code—reduced technical debt by 15 hours in last quarter, improving build times by 30%'"
   ],
   "weakPoints": [
-    "Constructive growth area (2-4 points)",
-    "Example: 'Tends to underestimate task complexity, leading to sprint overruns'"
+    "Constructive growth area (3-5 points)",
+    "Example: 'Could improve estimation accuracy—tasks often take 30-50% longer than estimated due to overlooking edge cases'",
+    "Example: 'Would benefit from more comprehensive error handling in API endpoints to prevent unhandled promise rejections'"
   ],
   "knowledgeGaps": [
-    "Specific skill or concept to develop (3-5 items)",
-    "Example: 'Advanced performance profiling (React.memo, bundle analysis)'"
+    "Specific skill or concept to develop (4-6 items)",
+    "Example: 'Performance optimization: React.memo, useMemo, bundle size analysis, and lazy loading strategies'",
+    "Example: 'Database indexing strategies for query optimization and analyzing query execution plans'",
+    "Example: 'Advanced Git workflows: interactive rebase, cherry-pick, bisect, and resolving complex merge conflicts'"
   ]${progressReportPrompt},
   "okr3Month": {
-    "objective": "Tactical, achievable outcome this quarter",
+    "objective": "SPECIFIC, ACTIONABLE outcome (e.g., 'Reduce API response time by 40% and eliminate all P0 bugs to improve user retention')",
     "keyResults": [
       {
-        "kr": "Specific, time-bound result",
-        "why": "Why it matters for growth"
+        "kr": "MEASURABLE result with NUMBER (e.g., 'Reduce average API response time from 800ms to 480ms by implementing caching and query optimization')",
+        "why": "Impact explanation (e.g., 'Improves user experience and reduces server costs by ~$200/month. Faster load times directly correlate with higher conversion rates.')",
+        "actionSteps": [
+          "Concrete action 1 (e.g., 'Profile top 10 slowest endpoints using New Relic to identify bottlenecks')",
+          "Concrete action 2 (e.g., 'Implement Redis caching for frequently accessed data with a 5-minute TTL')",
+          "Concrete action 3 (e.g., 'Add database indexes on user_id and created_at columns to speed up dashboard queries')",
+          "Concrete action 4 (e.g., 'Refactor N+1 query issues in the user-feed service')"
+        ]
       },
       {
-        "kr": "Learning or collaboration outcome",
-        "why": "Why it matters"
+        "kr": "LEARNING outcome with clear deliverable (e.g., 'Complete advanced TypeScript course and refactor 3 legacy modules to use generics and utility types')",
+        "why": "Growth rationale (e.g., 'Improves code maintainability and reduces type-related bugs by 60%. Stronger typing prevents runtime errors.')",
+        "actionSteps": [
+          "Specific learning task (e.g., 'Complete TypeScript Deep Dive course on Udemy (12 hours) focusing on advanced types')",
+          "Application task (e.g., 'Refactor user-service.ts to use strict typing and generics instead of any')",
+          "Knowledge sharing (e.g., 'Present 30-min team workshop on advanced TypeScript patterns and best practices')",
+          "Code review (e.g., 'Review 5 PRs specifically looking for type safety improvements')"
+        ]
       },
       {
-        "kr": "Quality or reliability metric",
-        "why": "Why it matters"
+        "kr": "QUALITY metric with target (e.g., 'Increase test coverage from 65% to 85% and achieve 0 critical security vulnerabilities')",
+        "why": "Quality impact (e.g., 'Reduces production bugs and ensures compliance with security standards. Higher confidence in deployments.')",
+        "actionSteps": [
+          "Audit task (e.g., 'Identify 20 untested critical paths using coverage report and prioritize them')",
+          "Implementation (e.g., 'Write integration tests for authentication and payment flows using Jest and Supertest')",
+          "Tooling (e.g., 'Set up SonarQube to block PRs with coverage < 80% and fix reported hotspots')",
+          "Security (e.g., 'Run npm audit and fix all high-severity vulnerabilities')"
+        ]
       }
     ]
   }
 }
 
 Focus on:
-- Strong points: Observable behaviors with team/product impact
-- Weak points: Frame as opportunities ("Could grow by..." not "Fails to...")
-- Knowledge gaps: Skills that would unlock higher impact
-- 3-month OKRs: Directly address weak points and close knowledge gaps
-${state.previousOkr ? '- Progress report: Compare current metrics with previous OKR to assess achievement' : ''}
+- Strong points: Observable behaviors with QUANTIFIED team/product impact. Provide context.
+- Weak points: Frame as opportunities with SPECIFIC improvement areas. Be constructive but direct.
+- Knowledge gaps: Skills that would unlock higher impact with CONCRETE examples.
+- 3-month OKRs: DIRECTLY address weak points with MEASURABLE targets and ACTIONABLE steps.
+- Action Steps: Break down each KR into 3-5 CONCRETE tasks the developer can start TODAY.
+${state.previousOkr ? '- Progress report: Compare current metrics with previous OKR to assess achievement in detail.' : ''}
 `;
 
     const response = await llm.invoke([

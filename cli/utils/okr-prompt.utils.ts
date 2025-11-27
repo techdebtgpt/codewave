@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { AppConfig } from '../../src/config/config.interface';
-import { OkrOrchestrator } from '../../src/services/okr-orchestrator.service';
+import { OkrOrchestrator } from '../../src/orchestrator/okr-orchestrator';
 import { AggregationOptions } from '../../src/services/author-stats-aggregator.service';
 import { OkrProgressTracker } from './okr-progress-tracker';
 

@@ -37,6 +37,7 @@ export class AuthorStatsAggregatorService {
    */
   private static getLatestEvaluationPerCommit(evaluations: any[]): any[] {
     const uniqueEvaluations = new Map<string, any>();
+    let duplicatesSkipped = 0;
 
     for (const evaluation of evaluations) {
       const hash = evaluation.metadata?.commitHash;
@@ -47,10 +48,28 @@ export class AuthorStatsAggregatorService {
       } else {
         // Keep the one with the later timestamp
         const existing = uniqueEvaluations.get(hash);
-        if (new Date(evaluation.timestamp) > new Date(existing.timestamp)) {
+        const evalDate = new Date(evaluation.timestamp);
+        const existingDate = new Date(existing.timestamp);
+
+        if (evalDate > existingDate) {
+          console.log(
+            `   🔄 Replacing evaluation for ${hash.substring(0, 7)} (${existingDate.toISOString()} → ${evalDate.toISOString()})`
+          );
           uniqueEvaluations.set(hash, evaluation);
+          duplicatesSkipped++;
+        } else {
+          console.log(
+            `   ⏭️  Skipping older evaluation for ${hash.substring(0, 7)} (${evalDate.toISOString()} < ${existingDate.toISOString()})`
+          );
+          duplicatesSkipped++;
         }
       }
+    }
+
+    if (duplicatesSkipped > 0) {
+      console.log(
+        `   📊 Deduplication: ${duplicatesSkipped} duplicate evaluations skipped, ${uniqueEvaluations.size} unique commits kept`
+      );
     }
 
     return Array.from(uniqueEvaluations.values());
