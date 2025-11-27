@@ -7,9 +7,10 @@ Complete command-line interface reference with examples for every command and op
 1. [Global Options](#global-options)
 2. [evaluate Command](#evaluate-command)
 3. [batch-evaluate Command](#batch-evaluate-command)
-4. [config Command](#config-command)
-5. [Exit Codes](#exit-codes)
-6. [Examples](#examples)
+4. [generate-okr Command](#generate-okr-command)
+5. [config Command](#config-command)
+6. [Exit Codes](#exit-codes)
+7. [Examples](#examples)
 
 ---
 
@@ -404,6 +405,65 @@ Cost:
 Results:
   • Output Directory: .evaluated-commits/
   • Summary Report:   batch-summary.json
+```
+
+---
+
+---
+
+## generate-okr Command
+
+Generate Objectives and Key Results (OKRs) for developers based on their commit history.
+
+### Syntax
+
+```bash
+codewave generate-okr [options]
+```
+
+### Options
+
+#### `--authors <names>`
+
+Comma-separated list of author names to generate OKRs for.
+
+**Type**: String
+**Default**: All authors found in evaluation data
+
+```bash
+codewave generate-okr --authors "John Doe,Jane Smith"
+```
+
+#### `--months <number>`
+
+Number of months of history to analyze.
+
+**Type**: Integer
+**Default**: `3`
+
+```bash
+codewave generate-okr --months 6
+```
+
+#### `--concurrency <number>`
+
+Number of parallel generations.
+
+**Type**: Integer
+**Default**: `2`
+
+```bash
+codewave generate-okr --concurrency 4
+```
+
+#### `--model <model>`
+
+Override the LLM model used for generation.
+
+**Type**: String
+
+```bash
+codewave generate-okr --model gpt-4o
 ```
 
 ---

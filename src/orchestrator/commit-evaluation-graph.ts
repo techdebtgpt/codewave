@@ -579,10 +579,7 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
     const newPillarScores: Partial<PillarScores> = {};
     for (const pillar of SEVEN_PILLARS as unknown as PillarName[]) {
       if (pillarScoresCollected[pillar].length > 0) {
-        newPillarScores[pillar] = calculateWeightedAverage(
-          pillarScoresCollected[pillar],
-          pillar
-        );
+        newPillarScores[pillar] = calculateWeightedAverage(pillarScoresCollected[pillar], pillar);
       }
     }
 

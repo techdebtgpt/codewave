@@ -10,11 +10,11 @@
 
 /**
  * The 7 conceptual evaluation pillars
- * 
- * Note: We collect 8 raw metrics from agents (including both technicalDebtHours 
- * and debtReductionHours separately), but present 7 pillars to users where the 
+ *
+ * Note: We collect 8 raw metrics from agents (including both technicalDebtHours
+ * and debtReductionHours separately), but present 7 pillars to users where the
  * 7th pillar is netDebt (calculated as technicalDebtHours - debtReductionHours).
- * 
+ *
  * All agents MUST return scores for all 8 raw metrics.
  */
 export const SEVEN_PILLARS = [

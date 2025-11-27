@@ -240,6 +240,22 @@ ls -1 .evaluated-commits/ | wc -l
 jq -s '[.[].totalCost] | add' .evaluated-commits/*/results.json
 ```
 
+### generate-okr - Generate Developer OKRs
+
+```bash
+codewave generate-okr [options]
+```
+
+**Examples:**
+
+```bash
+# Generate OKRs for all authors based on last 3 months
+codewave generate-okr
+
+# Generate for specific authors
+codewave generate-okr --authors "John Doe" --months 6
+```
+
 ### config - Manage Configuration
 
 ```bash
