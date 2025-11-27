@@ -112,14 +112,14 @@ CodeWave leverages its deep understanding of code quality and developer patterns
 
 1.  **Data Aggregation**: The system aggregates metric data from all evaluated commits for a specific author over a configurable timeframe (default: 3 months).
 2.  **Pattern Recognition**: It identifies recurring patterns, such as:
-    *   Consistently high code quality but low test coverage.
-    *   Tendency to introduce technical debt in complex features.
-    *   High impact but frequent estimation misses.
+    - Consistently high code quality but low test coverage.
+    - Tendency to introduce technical debt in complex features.
+    - High impact but frequent estimation misses.
 3.  **LLM Analysis**: A specialized LLM agent analyzes this aggregated data to construct a "Growth Profile" and a set of actionable OKRs.
 4.  **OKR Generation**: The system generates 3-5 Objectives, each with 3-5 Key Results. These are:
-    *   **Actionable**: Specific steps to take.
-    *   **Measurable**: Tied to CodeWave metrics (e.g., "Maintain Code Quality > 8").
-    *   **Time-bound**: Designed for the next quarter.
+    - **Actionable**: Specific steps to take.
+    - **Measurable**: Tied to CodeWave metrics (e.g., "Maintain Code Quality > 8").
+    - **Time-bound**: Designed for the next quarter.
 
 ### Configuration
 

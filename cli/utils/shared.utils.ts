@@ -576,14 +576,17 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Commit Evaluations Index</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { padding: 20px; background: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
+        .header { background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
         .stats { display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap; }
         .stat-card { flex: 1; min-width: 150px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .stat-number { font-size: 2.5rem; font-weight: bold; color: #667eea; }
+        .stat-number { font-size: 2.5rem; font-weight: bold; color: #4a5568; }
         .stat-label { color: #666; margin-top: 5px; font-size: 0.9rem; }
         .stat-mini { font-size: 0.85rem; color: #999; margin-top: 8px; }
         .table-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 30px; }
@@ -758,7 +761,7 @@ ${Array.from(byAuthor.entries())
       authorMetrics.count > 0 ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2) : 'N/A';
     const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
 
-    const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const authorPageUrl = `author-${authorSlug}.html`;
 
     return `
@@ -924,12 +927,12 @@ export function generateBatchIdentifier(options: {
 /**
  * Generate author-specific page with their commits and dashboard
  */
-async function generateAuthorPage(
+export async function generateAuthorPage(
   evaluationsRoot: string,
   author: string,
   commits: any[]
 ): Promise<void> {
-  const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '_');
   const authorPagePath = path.join(evaluationsRoot, `author-${authorSlug}.html`);
 
   // Use centralized metrics calculation service for consistency with OKR generation
@@ -1235,7 +1238,7 @@ async function generateAuthorPage(
         <div class="alert alert-info">
           <strong>📋 No OKR profiles yet</strong>
           <p class="mb-0 mt-2">OKRs are generated periodically to track developer growth and set quarterly objectives.</p>
-          <p class="mb-0 mt-1 text-muted"><small>Run: <code>npm run okr</code> to generate OKR profiles</small></p>
+          <p class="mb-0 mt-1 text-muted"><small>Run: <code>codewave generate-okr</code> to generate OKR profiles</small></p>
         </div>
       `;
     }
@@ -1244,7 +1247,7 @@ async function generateAuthorPage(
       <div class="alert alert-info">
         <strong>📋 No OKR profiles yet</strong>
         <p class="mb-0 mt-2">OKRs are generated periodically to track developer growth and set quarterly objectives.</p>
-        <p class="mb-0 mt-1 text-muted"><small>Run: <code>npm run okr</code> to generate OKR profiles</small></p>
+        <p class="mb-0 mt-1 text-muted"><small>Run: <code>codewave generate-okr</code> to generate OKR profiles</small></p>
       </div>
     `;
   }
@@ -1254,14 +1257,17 @@ async function generateAuthorPage(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>${author} - Commit Evaluations</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { padding: 20px; background: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
+        .header { background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
         .stats { display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap; }
         .stat-card { flex: 1; min-width: 150px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .stat-number { font-size: 2.5rem; font-weight: bold; color: #667eea; }
+        .stat-number { font-size: 2.5rem; font-weight: bold; color: #4a5568; }
         .stat-label { color: #666; margin-top: 5px; font-size: 0.9rem; }
         .stat-mini { font-size: 0.85rem; color: #999; margin-top: 8px; }
         .table-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 30px; }

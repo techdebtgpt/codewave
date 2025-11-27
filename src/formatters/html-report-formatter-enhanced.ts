@@ -1444,11 +1444,14 @@ export function generateEnhancedHtmlReport(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Commit Evaluation Report - Conversation View</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       min-height: 100vh;
       padding: 40px 0;
     }
@@ -1464,7 +1467,7 @@ export function generateEnhancedHtmlReport(
       text-align: center;
       margin-bottom: 40px;
       padding-bottom: 30px;
-      border-bottom: 3px solid #667eea;
+      border-bottom: 3px solid #4a5568;
       position: relative;
     }
     .report-header h1 {
@@ -1490,13 +1493,13 @@ export function generateEnhancedHtmlReport(
       top: 0;
       bottom: 0;
       width: 4px;
-      background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(180deg, #4a5568 0%, #2d3748 100%);
     }
     .timeline-round {
       margin: 3rem 0 2rem 0;
       padding: 1.5rem;
       background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
-      border-left: 4px solid #667eea;
+      border-left: 4px solid #4a5568;
       border-radius: 4px;
     }
     .round-header {
@@ -1544,18 +1547,18 @@ export function generateEnhancedHtmlReport(
     
     /* Tab Styles */
     .nav-tabs .nav-link {
-      color: #667eea;
+      color: #4a5568;
       font-weight: 600;
     }
     .nav-tabs .nav-link.active {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       color: white;
       border: none;
     }
     
     /* Modal for detailed view */
     .modal-header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       color: white;
     }
   </style>
@@ -1564,7 +1567,7 @@ export function generateEnhancedHtmlReport(
   <div class="report-container">
     <div class="report-header">
       <div class="position-relative">
-        <a href="../index.html" class="btn btn-sm" style="position: absolute; top: 0; right: 0; background: white; color: #667eea; border: 2px solid white; font-weight: 600; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000;">
+        <a href="../index.html" class="btn btn-sm" style="position: absolute; top: 0; right: 0; background: white; color: #4a5568; border: 2px solid white; font-weight: 600; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000;">
           ← Back to Index
         </a>
         <div class="text-center">
@@ -1643,7 +1646,7 @@ export function generateEnhancedHtmlReport(
                 metadata?.filesChanged !== undefined
                   ? `
               <div>
-                <div style="font-size: 1.8rem; font-weight: bold; color: #667eea;">${metadata.filesChanged}</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #4a5568;">${metadata.filesChanged}</div>
                 <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Files Changed</div>
               </div>
               `

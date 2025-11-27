@@ -88,10 +88,52 @@ export async function promptAndGenerateOkrs(
   // Save OKRs
   await orchestrator.saveOkrs(evalRoot, okrMap);
 
+  // Regenerate author pages to include OKR data
+  console.log(chalk.cyan('\n📄 Regenerating author dashboards with OKR data...'));
+  await regenerateAuthorPages(evalRoot, authors);
+
   console.log(chalk.green('\n✅ OKR Generation Complete!'));
   console.log(chalk.white('📁 OKR files saved to .evaluated-commits/.okrs/'));
   console.log(chalk.gray('   Structure: .okrs/{author}/okr_{date}.{ext}'));
   console.log(chalk.gray('   • JSON (.json) for programmatic access and history'));
   console.log(chalk.gray('   • Markdown (.md) for version control and editing'));
-  console.log(chalk.gray('   • HTML (.html) for viewing in browser\n'));
+  console.log(chalk.gray('   • HTML (.html) for viewing in browser'));
+  console.log(chalk.cyan('📊 Author dashboards updated with new OKR sections\n'));
+}
+
+/**
+ * Regenerate author pages to include latest OKR data
+ */
+async function regenerateAuthorPages(evalRoot: string, authors: string[]): Promise<void> {
+  const fs = await import('fs');
+  const path = await import('path');
+  const { generateAuthorPage } = await import('./shared.utils.js');
+
+  // Read index.json to get commit data for each author
+  const indexPath = path.join(evalRoot, 'index.json');
+  if (!fs.existsSync(indexPath)) {
+    console.log(chalk.yellow('⚠️  No index.json found, skipping author page regeneration'));
+    return;
+  }
+
+  const indexData = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+
+  // Group commits by author
+  const byAuthor = new Map<string, any[]>();
+  indexData.forEach((item: any) => {
+    const author = item.commitAuthor || 'Unknown';
+    if (!byAuthor.has(author)) {
+      byAuthor.set(author, []);
+    }
+    byAuthor.get(author)!.push(item);
+  });
+
+  // Regenerate pages only for authors with new OKRs
+  for (const author of authors) {
+    const commits = byAuthor.get(author);
+    if (commits && commits.length > 0) {
+      await generateAuthorPage(evalRoot, author, commits);
+      console.log(chalk.gray(`   ✓ Updated dashboard for ${author}`));
+    }
+  }
 }

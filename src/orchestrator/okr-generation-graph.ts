@@ -141,20 +141,22 @@ Generate the following in JSON format:
 
 {
   "strongPoints": [
-    "Observable strength with impact (5-7 points)",
-    "Example: 'Consistently writes clean, well-documented TypeScript code with 95%+ test coverage, reducing bug reports by 20%'",
-    "Example: 'Proactively refactors legacy code—reduced technical debt by 15 hours in last quarter, improving build times by 30%'"
+    "First observable strength with quantified impact - be specific about behaviors and measurable outcomes",
+    "Second observable strength with quantified impact - include context and team/product benefits",
+    "Third observable strength with quantified impact - reference real technologies and metrics from their work",
+    "Fourth observable strength (optional) - demonstrate consistent patterns with concrete evidence",
+    "Fifth observable strength (optional) - show growth trajectory and tangible improvements"
   ],
   "weakPoints": [
-    "Constructive growth area (3-5 points)",
-    "Example: 'Could improve estimation accuracy—tasks often take 30-50% longer than estimated due to overlooking edge cases'",
-    "Example: 'Would benefit from more comprehensive error handling in API endpoints to prevent unhandled promise rejections'"
+    "First constructive growth area - frame as opportunity with specific improvement path",
+    "Second constructive growth area - be direct but supportive, include actionable suggestions",
+    "Third constructive growth area - reference patterns observed in their commits with examples"
   ],
   "knowledgeGaps": [
-    "Specific skill or concept to develop (4-6 items)",
-    "Example: 'Performance optimization: React.memo, useMemo, bundle size analysis, and lazy loading strategies'",
-    "Example: 'Database indexing strategies for query optimization and analyzing query execution plans'",
-    "Example: 'Advanced Git workflows: interactive rebase, cherry-pick, bisect, and resolving complex merge conflicts'"
+    "First specific skill or concept to develop - explain how it would unlock higher impact",
+    "Second specific skill or concept - include concrete technologies or methodologies",
+    "Third specific skill or concept - show connection to their current work and growth path",
+    "Fourth specific skill or concept - identify missing knowledge that limits effectiveness"
   ]${progressReportPrompt},
   "okr3Month": {
     "objective": "SPECIFIC, ACTIONABLE outcome (e.g., 'Reduce API response time by 40% and eliminate all P0 bugs to improve user retention')",

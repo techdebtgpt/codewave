@@ -26,7 +26,7 @@ export class OkrGeneratorService {
     stats: AuthorStats,
     strengths: string[],
     weaknesses: string[]
-  ): Promise<string[]> {
+  ): Promise<any[]> {
     const prompt = this.buildOkrPrompt(stats, strengths, weaknesses);
 
     try {
@@ -38,12 +38,27 @@ export class OkrGeneratorService {
       const okrText =
         typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
 
-      // Parse and clean OKRs
-      const okrs = okrText
-        .split('\n')
-        .filter((line: string) => line.trim().length > 0)
-        .map((line: string) => line.replace(/^[\d-]+\.\s*/, '').trim()) // Remove numbering
-        .slice(0, 3); // Take first 3
+      // Parse OKRs
+      let okrs: any[] = [];
+
+      try {
+        let jsonContent = okrText;
+        // Extract JSON from markdown code blocks if present
+        const jsonMatch =
+          okrText.match(/```json\s*([\s\S]*?)\s*```/) || okrText.match(/```\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          jsonContent = jsonMatch[1];
+        }
+
+        const parsed = JSON.parse(jsonContent);
+        if (Array.isArray(parsed)) {
+          okrs = parsed;
+        }
+      } catch (e) {
+        console.error(`Failed to parse OKR JSON for ${author}:`, e);
+        // Return empty array on failure rather than malformed strings
+        okrs = [];
+      }
 
       return okrs;
     } catch (error) {
@@ -58,8 +73,8 @@ export class OkrGeneratorService {
    */
   async generateOkrsForAll(
     authorAnalyses: Map<string, { stats: AuthorStats; strengths: string[]; weaknesses: string[] }>
-  ): Promise<Record<string, string[]>> {
-    const allOkrs: Record<string, string[]> = {};
+  ): Promise<Record<string, any[]>> {
+    const allOkrs: Record<string, any[]> = {};
 
     for (const [author, analysis] of authorAnalyses.entries()) {
       const okrs = await this.generateOkrsForAuthor(
@@ -101,15 +116,31 @@ ANALYSIS:
 • Areas needing improvement: ${weaknesses.join(', ') || 'Maintain current performance levels'}
 
 YOUR TASK:
-Create 3 specific, measurable OKRs that:
-1. Address the weakest areas (lowest scores above)
-2. Set realistic improvement targets (typically +2 to +3 points for scores below 7)
-3. For complexity: lower scores are better, so suggest reducing from current value
-4. Are 1-2 sentences each
-5. Use ONLY the exact metric values shown above if you reference current state
+Create 3 specific, measurable OKRs.
+For each OKR, provide:
+1. An **Objective** statement.
+2. A set of **Key Results** (3-5 per objective).
+3. **Action Steps** (bullet points) for each Key Result.
 
-IMPORTANT: When stating current values, copy them EXACTLY from the "CURRENT STATE" section above.
+GUIDELINES:
+1. Address the weakest areas (prioritize low Quality/Tests/Impact scores, or high Complexity/Tech Debt values).
+2. Set realistic improvement targets (typically +2 to +3 points for scores below 7).
+3. For complexity: lower scores are better, so suggest reducing from current value.
+4. Use ONLY the exact metric values shown above if you reference current state.
 
-Return only the 3 OKR texts, one per line, no numbering or formatting.`;
+FORMAT:
+Return a JSON array of objects. Each object must follow this structure:
+[
+  {
+    "objective": "Objective statement",
+    "keyResults": [
+      {
+        "kr": "Key Result 1",
+        "why": "Why this matters",
+        "actionSteps": ["Action 1", "Action 2", "Action 3"]
+      }
+    ]
+  }
+]`;
   }
 }

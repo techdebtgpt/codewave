@@ -204,11 +204,14 @@ export function generateHtmlReport(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Commit Evaluation Report</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       min-height: 100vh;
       padding: 40px 0;
     }
@@ -224,7 +227,7 @@ export function generateHtmlReport(
       text-align: center;
       margin-bottom: 40px;
       padding-bottom: 30px;
-      border-bottom: 3px solid #667eea;
+      border-bottom: 3px solid #4a5568;
     }
     .report-header h1 {
       color: #2c3e50;

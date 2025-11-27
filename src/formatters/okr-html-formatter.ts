@@ -50,18 +50,21 @@ export function formatOKRToHTML(data: OKRData): string {
   } = data;
 
   // Extract author slug for back button
-  const authorSlug = authorName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const authorSlug = authorName.toLowerCase().replace(/[^a-z0-9]/g, '_');
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>OKR Profile - ${authorName}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { padding: 20px; background: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
+    .header { background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
     .table-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 30px; }
     .section-title { margin-bottom: 20px; color: #333; font-weight: 600; font-size: 1.3rem; }
   </style>
@@ -150,9 +153,9 @@ export function formatOKRToHTML(data: OKRData): string {
                       ? `
                     <div class="border-top pt-2 mt-2">
                       <strong class="small text-success">✓ Action Steps:</strong>
-                      <ol class="small mb-0 mt-1 ps-3">
+                      <ul class="small mb-0 mt-1 ps-3">
                         ${kr.actionSteps.map((step: string) => `<li class="mb-1">${step}</li>`).join('')}
-                      </ol>
+                      </ul>
                     </div>
                   `
                       : ''
