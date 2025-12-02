@@ -229,7 +229,7 @@ export function generateConversationTranscript(
     markdown += `| Metric | Agent | ${roundHeaders.join(' | ')} | Change |\n`;
     markdown += `|--------|-------|${roundHeaders.map(() => '---------').join('|')}|--------|\n`;
 
-    allMetrics.forEach((data, key) => {
+    allMetrics.forEach((data) => {
       const metricName = data.metric;
       const label = metricName
         .replace(/([A-Z])/g, ' $1')
@@ -371,7 +371,7 @@ export function generateConversationTranscript(
   if (changedMetrics.length > 0) {
     markdown += `### Metrics That Changed\n\n`;
     markdown += `${changedMetrics.length} metric${changedMetrics.length > 1 ? 's' : ''} changed between rounds:\n\n`;
-    changedMetrics.forEach(([key, data]) => {
+    changedMetrics.forEach(([, data]) => {
       // Format: "Agent Name - Metric Name"
       const metricLabel = data.metric
         .replace(/([A-Z])/g, ' $1')

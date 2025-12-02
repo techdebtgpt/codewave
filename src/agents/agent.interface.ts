@@ -1,7 +1,6 @@
 export interface Agent {
   getMetadata(): AgentMetadata;
   canExecute(context: AgentContext): Promise<boolean>;
-  estimateTokens(context: AgentContext): Promise<number>;
   execute(context: AgentContext, options?: AgentExecutionOptions): Promise<AgentResult>;
 }
 

@@ -2,6 +2,28 @@
 
 All notable changes to CodeWave are documented here.
 
+## [0.0.5] - 2025-11-27
+
+### OKR Generation Enhancements
+
+- **Detailed & Verbose Output**: Significantly enhanced prompt engineering to generate "HIGHLY DETAILED" and "VERBOSE" OKRs.
+  - Increased strong/weak points count (5-7 items).
+  - Required specific examples with context.
+  - Added actionable steps per Key Result (3-5 items).
+- **Increased Token Limits**: Bumped `maxTokens` to 16,000 for OKR generation to accommodate detailed responses.
+- **Improved Cost Estimation**: Updated `estimateCostAndTokens` to accurately reflect the larger prompt and response sizes.
+- **Granular Progress Tracking**:
+  - Added "Tokens (In/Out)" column to the CLI progress bar.
+  - Real-time updates for token usage and cost.
+  - Smoother progress bar experience with delay handling for final updates.
+- **Refactoring**: Moved `OkrOrchestrator` to `src/orchestrator/` for better architectural alignment.
+- **Historical Tracking**: OKRs are now saved in JSON, Markdown, and HTML formats with timestamps for historical analysis.
+
+### Fixes
+
+- Fixed file corruption in `OkrOrchestrator`.
+- Fixed lint warnings in `OkrOrchestrator`.
+
 ## [0.0.4] - 2025-11-09
 
 ### CLI Improvements

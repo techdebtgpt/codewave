@@ -10,6 +10,7 @@
     "rootDir": ".",
     "baseUrl": "./src",
     "moduleResolution": "nodenext",
+    "sourceMap": true,
     "paths": {
       "@modules/*": ["modules/*"],
       "@common/*": ["common/*"],

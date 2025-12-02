@@ -1,6 +1,6 @@
 {
   "name": "@techdebtgpt/codewave",
-  "version": "0.1.3",
+  "version": "0.1.7",
   "description": "CodeWave - AI-Powered Commit Intelligence. Multi-agent system for comprehensive code quality evaluation using 7-pillar methodology.",
   "main": "./dist/cli/index.js",
   "types": "./dist/src/index.d.ts",
@@ -22,7 +22,8 @@
     "validate:publish": "npm run build && npm run lint && npm run prettier:check",
     "prepublishOnly": "npm run validate:publish",
     "prepack": "npm run build",
-    "postpack": "echo '✅ Package created successfully'"
+    "postpack": "echo '✅ Package created successfully'",
+    "batch": "node ./dist/cli/index.js batch --count 3"
   },
   "bin": {
     "codewave": "./dist/cli/index.js"

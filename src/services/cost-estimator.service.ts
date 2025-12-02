@@ -52,10 +52,21 @@ export class CostEstimatorService {
   private readonly AVG_OUTPUT_TOKENS_PER_AGENT = 859; // Updated with actual data (was 151!)
   private readonly MAX_OUTPUT_TOKENS_PER_AGENT = 1295; // Round 2 final output
   private readonly AVG_AGENTS_PER_COMMIT = 5; // 5 agents per commit
-  private readonly AVG_ROUNDS = 3; // Average 3 discussion rounds
-  private readonly NUM_AGENTS = this.AVG_AGENTS_PER_COMMIT * this.AVG_ROUNDS; // 15 agent-rounds per commit
 
-  constructor(private config: AppConfig) {}
+  constructor(private config: AppConfig) {
+    // Verify config has maxRounds set
+    if (!this.config.agents.maxRounds && !this.config.agents.retries) {
+      this.config.agents.maxRounds = 3; // Ensure default is set
+    }
+  }
+
+  private get AVG_ROUNDS(): number {
+    return this.config.agents.maxRounds || this.config.agents.retries || 3;
+  }
+
+  private get NUM_AGENTS(): number {
+    return this.AVG_AGENTS_PER_COMMIT * this.AVG_ROUNDS; // agent-rounds per commit
+  }
 
   /**
    * Estimate cost for evaluating multiple commits

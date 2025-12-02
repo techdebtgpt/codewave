@@ -463,7 +463,6 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
   const {
     getAgentWeight,
     calculateWeightedAverage,
-    AGENT_EXPERTISE_WEIGHTS,
     SEVEN_PILLARS,
   } = require('../constants/agent-weights.constants');
 
@@ -625,9 +624,14 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
 function loadEvaluationHistory(outputDir: string): EvaluationHistoryEntry[] {
   try {
     const historyPath = path.join(outputDir, 'history.json');
+
+    if (!fs.existsSync(historyPath)) {
+      return [];
+    }
+
     const content = fs.readFileSync(historyPath, 'utf-8');
     return JSON.parse(content);
-  } catch {
+  } catch (error) {
     return [];
   }
 }
@@ -701,16 +705,8 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
   }
 
   // Build comparison tables - Evaluations as ROWS, Metrics as COLUMNS
-  const allMetrics = [
-    'functionalImpact',
-    'idealTimeHours',
-    'testCoverage',
-    'codeQuality',
-    'codeComplexity',
-    'actualTimeHours',
-    'technicalDebtHours',
-    'debtReductionHours',
-  ];
+  const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+  const allMetrics = SEVEN_PILLARS;
   const stats = calculateHistoryStatistics(history, allMetrics);
 
   // Build evaluation rows (each row is one evaluation with all metrics as columns)
@@ -724,7 +720,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
           <td><strong>Evaluation #${h.evaluationNumber}</strong><br/><small class="text-muted">${timestamp}</small><br/><small>${sourceLabel}</small></td>
       `;
 
-      allMetrics.forEach((metric) => {
+      allMetrics.forEach((metric: string) => {
         // Backward compatibility: default to 0 for debtReductionHours if not present in old evaluations
         let val = (h.metrics as any)[metric];
         if (metric === 'debtReductionHours' && val === undefined) {
@@ -760,7 +756,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
   // Build metric statistics rows - show final consensus values and history statistics
   const latestEntry = history[history.length - 1];
   const statsRows = allMetrics
-    .map((metric) => {
+    .map((metric: string) => {
       const stat = stats[metric];
       if (!stat) return '';
 
@@ -794,7 +790,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
   const convergenceTrend = convergenceScores[convergenceScores.length - 1] - convergenceScores[0];
 
   const metricHeaders = allMetrics
-    .map((m) => {
+    .map((m: string) => {
       const label = m
         .replace(/([A-Z])/g, ' $1')
         .replace(/^./, (s) => s.toUpperCase())
@@ -873,7 +869,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
             <tbody>
               ${history
                 .map(
-                  (h, idx) => `
+                  (h) => `
                 <tr>
                   <td><strong>Eval #${h.evaluationNumber}</strong> <small class="text-muted">${new Date(h.timestamp).toLocaleString()}</small></td>
                   <td class="text-center">${(h.tokens?.inputTokens || 0).toLocaleString()}</td>
@@ -1154,24 +1150,24 @@ export function generateEnhancedHtmlReport(
           <div class="card-body">
             <h6 class="text-${latestEval.color} mb-2">📊 Metrics</h6>
             <div class="mb-3">
-              ${
-                latestEval.metrics
-                  ? Object.entries(latestEval.metrics)
-                      .map(([key, value]) => {
-                        const label = key
-                          .replace(/([A-Z])/g, ' $1')
-                          .replace(/^./, (str) => str.toUpperCase())
-                          .trim();
-                        return `<span class="badge bg-${latestEval.color} me-2">${label}: ${value}</span>`;
-                      })
-                      .join('')
-                  : '<em class="text-muted">No metrics</em>'
-              }
+        ${
+          latestEval.metrics
+            ? Object.entries(latestEval.metrics)
+                .map(([key, value]) => {
+                  const label = key
+                    .replace(/([A-Z])/g, ' $1')
+                    .replace(/^./, (str) => str.toUpperCase())
+                    .trim();
+                  return `<span class="badge bg-${latestEval.color} me-2">${label}: ${value}</span>`;
+                })
+                .join('')
+            : '<em class="text-muted">No metrics</em>'
+        }
             </div>
-            
+
             <h6 class="text-${latestEval.color} mb-2">💭 Final Assessment</h6>
             <p class="small">${latestEval.summary.substring(0, 200)}${latestEval.summary.length > 200 ? '...' : ''}</p>
-            
+
             ${
               latestEval.concernsRaised.length > 0
                 ? `
@@ -1182,7 +1178,7 @@ export function generateEnhancedHtmlReport(
             `
                 : ''
             }
-            
+
             <button class="btn btn-sm btn-outline-${latestEval.color}" onclick="showAgentDetails('${agentName}')">
               View Full Analysis →
             </button>
@@ -1215,12 +1211,12 @@ export function generateEnhancedHtmlReport(
   ];
 
   let currentRound = -1;
-  allEvaluations.forEach((evaluation, idx) => {
+  allEvaluations.forEach((evaluation) => {
     if (evaluation.round !== currentRound) {
       currentRound = evaluation.round;
       const roundIndex = currentRound - 1; // Convert to 0-based for phase lookup
       const phase = roundPhases[roundIndex] || {
-        title: `Round ${currentRound}`,
+        title: `Round ${currentRound} `,
         description: '',
         emoji: '🔄',
       };
@@ -1232,43 +1228,43 @@ export function generateEnhancedHtmlReport(
           </div>
           <p style="margin: 0; font-size: 0.9rem; color: #666;">${phase.description}</p>
         </div>
-      `;
+              `;
     }
 
     // Simplified card with only essential information
     const concernsHtml =
       evaluation.concernsRaised.length > 0
         ? `
-      <div style="margin-top: 0.75rem; padding: 0.75rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
-        <strong style="font-size: 0.85rem; color: #856404;">Concerns:</strong>
-        <ul style="margin: 0.5rem 0 0 1rem; padding: 0; font-size: 0.85rem; color: #856404;">
-          ${evaluation.concernsRaised.map((c) => `<li>${c}</li>`).join('')}
-        </ul>
-      </div>
+            <div style="margin-top: 0.75rem; padding: 0.75rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+              <strong style="font-size: 0.85rem; color: #856404;">Concerns:</strong>
+              <ul style="margin: 0.5rem 0 0 1rem; padding: 0; font-size: 0.85rem; color: #856404;">
+                ${evaluation.concernsRaised.map((c) => `<li>${c}</li>`).join('')}
+              </ul>
+            </div>
     `
         : '';
 
     const referencesHtml =
       evaluation.referencesTo.length > 0
         ? `
-      <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #0d6efd;">
-        💬 References: <strong>${evaluation.referencesTo.join(', ')}</strong>
-      </div>
+            <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #0d6efd;">
+              💬 References: <strong>${evaluation.referencesTo.join(', ')}</strong>
+            </div>
     `
         : '';
 
     timelineHtml += `
-      <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #0d6efd;">
-        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
-          <span style="font-size: 1.3rem;">${evaluation.icon}</span>
-          <strong style="font-size: 0.95rem;">${evaluation.agentName}</strong>
-          <span style="font-size: 0.8rem; color: #999; margin-left: auto;">Round ${evaluation.round}</span>
+        <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #0d6efd;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <span style="font-size: 1.3rem;">${evaluation.icon}</span>
+            <strong style="font-size: 0.95rem;">${evaluation.agentName}</strong>
+            <span style="font-size: 0.8rem; color: #999; margin-left: auto;">Round ${evaluation.round}</span>
+          </div>
+          <p style="margin: 0 0 0.75rem 0; font-size: 0.9rem; line-height: 1.4; color: #333;">${evaluation.summary}</p>
+          ${concernsHtml}
+          ${referencesHtml}
         </div>
-        <p style="margin: 0 0 0.75rem 0; font-size: 0.9rem; line-height: 1.4; color: #333;">${evaluation.summary}</p>
-        ${concernsHtml}
-        ${referencesHtml}
-      </div>
-    `;
+  `;
   });
 
   timelineHtml = `<div style="background: white; padding: 0; border-radius: 8px;">${timelineHtml}</div>`;
@@ -1448,11 +1444,14 @@ export function generateEnhancedHtmlReport(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Commit Evaluation Report - Conversation View</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       min-height: 100vh;
       padding: 40px 0;
     }
@@ -1468,7 +1467,7 @@ export function generateEnhancedHtmlReport(
       text-align: center;
       margin-bottom: 40px;
       padding-bottom: 30px;
-      border-bottom: 3px solid #667eea;
+      border-bottom: 3px solid #4a5568;
       position: relative;
     }
     .report-header h1 {
@@ -1494,13 +1493,13 @@ export function generateEnhancedHtmlReport(
       top: 0;
       bottom: 0;
       width: 4px;
-      background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(180deg, #4a5568 0%, #2d3748 100%);
     }
     .timeline-round {
       margin: 3rem 0 2rem 0;
       padding: 1.5rem;
       background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
-      border-left: 4px solid #667eea;
+      border-left: 4px solid #4a5568;
       border-radius: 4px;
     }
     .round-header {
@@ -1548,18 +1547,18 @@ export function generateEnhancedHtmlReport(
     
     /* Tab Styles */
     .nav-tabs .nav-link {
-      color: #667eea;
+      color: #4a5568;
       font-weight: 600;
     }
     .nav-tabs .nav-link.active {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       color: white;
       border: none;
     }
     
     /* Modal for detailed view */
     .modal-header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       color: white;
     }
   </style>
@@ -1568,7 +1567,7 @@ export function generateEnhancedHtmlReport(
   <div class="report-container">
     <div class="report-header">
       <div class="position-relative">
-        <a href="../index.html" class="btn btn-sm" style="position: absolute; top: 0; right: 0; background: white; color: #667eea; border: 2px solid white; font-weight: 600; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000;">
+        <a href="../index.html" class="btn btn-sm" style="position: absolute; top: 0; right: 0; background: white; color: #4a5568; border: 2px solid white; font-weight: 600; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000;">
           ← Back to Index
         </a>
         <div class="text-center">
@@ -1647,7 +1646,7 @@ export function generateEnhancedHtmlReport(
                 metadata?.filesChanged !== undefined
                   ? `
               <div>
-                <div style="font-size: 1.8rem; font-weight: bold; color: #667eea;">${metadata.filesChanged}</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #4a5568;">${metadata.filesChanged}</div>
                 <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Files Changed</div>
               </div>
               `

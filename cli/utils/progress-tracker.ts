@@ -5,7 +5,8 @@
  */
 
 import cliProgress from 'cli-progress';
-import { table } from 'table';
+import { ProgressRenderer } from './progress-renderer.interface';
+import { consoleManager } from '../../src/common/utils/console-manager';
 
 // ANSI color codes
 const colors = {
@@ -121,7 +122,7 @@ interface CommitProgress {
   files?: number;
 }
 
-export class ProgressTracker {
+export class ProgressTracker implements ProgressRenderer {
   private multibar: cliProgress.MultiBar | null = null;
   private bars: Map<string, cliProgress.SingleBar> = new Map();
   private commits: Map<string, CommitProgress> = new Map();
@@ -141,11 +142,8 @@ export class ProgressTracker {
   private totalCost = 0;
   private completedCommits = 0;
   private failedCommits = 0;
-  private originalLog?: typeof console.log;
 
-  constructor(originalLog?: typeof console.log) {
-    this.originalLog = originalLog;
-  }
+  constructor() {}
 
   /**
    * Initialize tracker with commits using cli-progress
@@ -157,9 +155,8 @@ export class ProgressTracker {
     const { header, format, columnWidths } = generateHeaderAndFormat();
     this.columnWidths = columnWidths; // Store for use in updateProgress
 
-    // Print aligned header with column labels (using original console.log to avoid suppression)
-    const logFn = this.originalLog || console.log;
-    logFn(header);
+    // Print aligned header with column labels (using consoleManager to ensure it prints)
+    consoleManager.logImportant(header);
 
     // Initialize multibar container with color formatting
     this.multibar = new cliProgress.MultiBar(
@@ -228,6 +225,20 @@ export class ProgressTracker {
 
   /**
    * Update progress for a specific commit
+   */
+  update(commitHash: string, update: any) {
+    this.updateProgress(commitHash, update);
+  }
+
+  /**
+   * Stop the renderer and clean up
+   */
+  stop() {
+    this.finalize();
+  }
+
+  /**
+   * Update progress for a specific commit (Legacy method kept for compatibility)
    */
   updateProgress(
     commitHash: string,
@@ -352,24 +363,15 @@ export class ProgressTracker {
 
     this.commitTokens.set(commitHash, commitTokens);
 
-    // Format vector progress
-    const vectorPct = this.commitVectorProgress.get(commitHash) || 0;
-    const vectorColor =
-      vectorPct === 100 ? colors.green : vectorPct > 0 ? colors.yellow : colors.dim;
-    const vectorStr = `${vectorColor}${vectorPct}%${colors.reset}`;
-
-    // Format token info with colors
-    const inputColor = inputTokens > 0 ? colors.green : colors.dim;
-    const outputColor = outputTokens > 0 ? colors.yellow : colors.dim;
+    // Format token info with colors (consolidated to reduce ANSI code overhead)
     const costColor = totalCost > 0 ? colors.magenta : colors.dim;
-
-    const tokenStr = `${inputColor}${inputTokens.toLocaleString()}${colors.reset}/${outputColor}${outputTokens.toLocaleString()}${colors.reset}`;
+    const tokenStr = `${colors.bright}${inputTokens.toLocaleString()}/${outputTokens.toLocaleString()}${colors.reset}`;
     const costStr = `${costColor}$${totalCost.toFixed(4)}${colors.reset}`;
 
     // Format round info (display is 1-indexed, storage is 0-indexed)
     const roundInfo = this.commitRound.get(commitHash);
     const roundStr = roundInfo
-      ? `${colors.cyan}${Math.min(roundInfo.current + 1, roundInfo.max)}/${roundInfo.max}${colors.reset}`
+      ? `${colors.bright}${Math.min(roundInfo.current + 1, roundInfo.max)}/${roundInfo.max}${colors.reset}`
       : `${colors.dim}0/0${colors.reset}`;
 
     // Get current state
@@ -396,7 +398,7 @@ export class ProgressTracker {
     // Get commit and user data for padding
     const commit = this.commits.get(commitHash);
     const shortCommit = commit?.shortHash.substring(0, 7) || commitHash.substring(0, 7);
-    const user = commit?.author.substring(0, 12).padEnd(12) || 'unknown';
+    const user = commit?.author.substring(0, 12) || 'unknown'; // Let padCellToWidth handle all padding
 
     // Pad each cell to match column widths for consistent alignment
     // Column indices: 0=commit, 1=user, 2=diff, 3=chunks, 4=bar, 5=state, 6=tokens, 7=cost, 8=round
@@ -424,26 +426,28 @@ export class ProgressTracker {
       this.multibar = null;
     }
 
-    // Print summary using console.log (safe after multibar is stopped) with colors
+    // Print summary using consoleManager.logImportant (safe after multibar is stopped) with colors
     const inputTokensFormatted = this.totalInputTokens.toLocaleString();
     const outputTokensFormatted = this.totalOutputTokens.toLocaleString();
     const costFormatted = `$${this.totalCost.toFixed(4)}`;
 
-    console.log(
+    consoleManager.logImportant(
       `\n📊 ${colors.bright}Total:${colors.reset} ${colors.green}${inputTokensFormatted}${colors.reset} input | ${colors.yellow}${outputTokensFormatted}${colors.reset} output | ${colors.magenta}${costFormatted}${colors.reset}\n`
     );
 
     // Print error summary if there were any failures
     if (this.failedCommits > 0 && this.commitErrors.size > 0) {
-      console.log(`${colors.red}${colors.bright}❌ Failed Commits:${colors.reset}\n`);
+      consoleManager.logImportant(
+        `${colors.red}${colors.bright}❌ Failed Commits:${colors.reset}\n`
+      );
       for (const [commitHash, errorMessage] of this.commitErrors.entries()) {
         const commit = this.commits.get(commitHash);
         const shortHash = commit?.shortHash || commitHash.substring(0, 7);
         const author = commit?.author || 'unknown';
-        console.log(
+        consoleManager.logImportant(
           `  ${colors.red}●${colors.reset} ${colors.bright}${shortHash}${colors.reset} (${author})`
         );
-        console.log(`    ${colors.dim}Error: ${errorMessage}${colors.reset}\n`);
+        consoleManager.logImportant(`    ${colors.dim}Error: ${errorMessage}${colors.reset}\n`);
       }
     }
   }

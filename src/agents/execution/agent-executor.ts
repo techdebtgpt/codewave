@@ -21,9 +21,7 @@ export class AgentExecutor {
   constructor(
     private readonly config: any,
     private readonly metadata: AgentMetadata,
-    private readonly expertise: AgentExpertise,
-    private readonly systemInstructions: string,
-    private readonly metricDefinitions: Record<string, MetricGuidelinesSet>
+    private readonly systemInstructions: string
   ) {}
 
   /**
@@ -43,8 +41,7 @@ export class AgentExecutor {
       previousAnalysis: string,
       selfQuestions: string[],
       clarityScore: number
-    ) => string,
-    options?: AgentExecutionOptions
+    ) => string
   ): Promise<AgentResult> {
     // Get depth configuration
     const depthMode = (context.depthMode || 'normal') as 'fast' | 'normal' | 'deep';
@@ -261,6 +258,7 @@ export class AgentExecutor {
       codeComplexity: null,
       actualTimeHours: null,
       technicalDebtHours: null,
+      debtReductionHours: null,
     };
   }
 }

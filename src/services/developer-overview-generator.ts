@@ -7,6 +7,7 @@
 import { DeveloperOverview } from '../agents/agent.interface';
 import { AppConfig } from '../config/config.interface';
 import { LLMService } from '../llm/llm-service';
+import { estimateTokens, truncateToTokenLimit } from '../utils/token-counter';
 
 export class DeveloperOverviewGenerator {
   private config: AppConfig;
@@ -25,7 +26,38 @@ export class DeveloperOverviewGenerator {
     commitMessage?: string
   ): Promise<DeveloperOverview> {
     // Build the prompt
-    const prompt = this.buildPrompt(commitDiff, filesChanged, commitMessage);
+    let prompt = this.buildPrompt(commitDiff, filesChanged, commitMessage);
+
+    // Check if prompt will exceed token limit (Claude 3.5 has 128k limit)
+    const promptTokens = estimateTokens(prompt);
+    const maxAllowedTokens = 120000; // Leave 8k buffer for safety
+
+    if (promptTokens > maxAllowedTokens) {
+      console.warn(
+        `⚠️  Developer overview prompt too large (${promptTokens} tokens, max ${maxAllowedTokens}). Truncating diff.`
+      );
+
+      // Truncate the diff to reduce token count
+      const maxDiffTokens = Math.max(
+        5000,
+        maxAllowedTokens - estimateTokens(commitMessage || '') - 3000
+      );
+      const truncatedDiff = truncateToTokenLimit(commitDiff, maxDiffTokens);
+      prompt = this.buildPrompt(truncatedDiff, filesChanged, commitMessage);
+
+      const newTokens = estimateTokens(prompt);
+      if (newTokens > maxAllowedTokens) {
+        console.warn(
+          `⚠️  Truncated prompt still large (${newTokens} tokens). Reducing files list.`
+        );
+        // If still too large, reduce files list too
+        const truncatedFiles = filesChanged.slice(
+          0,
+          Math.max(1, Math.floor(filesChanged.length / 2))
+        );
+        prompt = this.buildPrompt(truncatedDiff, truncatedFiles, commitMessage);
+      }
+    }
 
     // Get the configured LLM model (reuses same provider/config as agents)
     // Override maxTokens to 500 for concise developer overview
@@ -33,18 +65,40 @@ export class DeveloperOverviewGenerator {
     config.llm = { ...config.llm, maxTokens: 500 };
     const model = LLMService.getChatModel(config);
 
-    // Invoke the model using LangChain's standardized interface
-    const result = await model.invoke([
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ]);
+    try {
+      // Invoke the model using LangChain's standardized interface
+      const result = await model.invoke([
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ]);
 
-    const responseText = typeof result.content === 'string' ? result.content : '';
+      const responseText = typeof result.content === 'string' ? result.content : '';
 
-    // Parse the structured response
-    return this.parseResponse(responseText);
+      // Parse the structured response
+      return this.parseResponse(responseText);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // Check if it's a token limit error
+      if (errorMsg.includes('128000 tokens') || errorMsg.includes('maximum context length')) {
+        console.warn(
+          `⚠️  Failed to generate developer overview: Token limit exceeded. Using fallback overview.`
+        );
+        // Return a minimal overview instead of crashing
+        return {
+          summary: filesChanged.slice(0, 3).join(', '),
+          description: `Changes in ${filesChanged.length} file(s)`,
+          keyPoints: filesChanged.slice(0, 5),
+          testingApproach: 'Review changes carefully',
+          generatedAt: new Date().toISOString(),
+        };
+      }
+
+      // For other errors, re-throw
+      throw error;
+    }
   }
 
   /**

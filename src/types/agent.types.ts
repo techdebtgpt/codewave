@@ -37,7 +37,7 @@ export interface ConversationMessage {
   referencesTo?: string[]; // Other agent names referenced
 }
 
-// 7-Pillar metrics structure
+// 8-Pillar metrics structure (previously 7-pillar)
 // Metrics can be null if an agent cannot assess them
 export interface PillarScores {
   codeQuality: number | null; // 1-10 (Developer Reviewer)
@@ -45,6 +45,7 @@ export interface PillarScores {
   idealTimeHours: number | null; // Business Analyst
   actualTimeHours: number | null; // Developer Author
   technicalDebtHours: number | null; // +/- (Senior Architect)
+  debtReductionHours: number | null; // +/- (Senior Architect) - potential debt reduction from changes
   functionalImpact: number | null; // 1-10 (Business Analyst)
   testCoverage: number | null; // 1-10 (QA Engineer)
 }

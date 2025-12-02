@@ -9,10 +9,15 @@
 // Tertiary expertise (~8-13%): Areas where agent has limited but valuable perspective
 
 /**
- * The 7 immutable evaluation pillars
- * All agents MUST return scores for all 7 pillars and ONLY these pillars
+ * The 7 conceptual evaluation pillars
+ *
+ * Note: We collect 8 raw metrics from agents (including both technicalDebtHours
+ * and debtReductionHours separately), but present 7 pillars to users where the
+ * 7th pillar is netDebt (calculated as technicalDebtHours - debtReductionHours).
+ *
+ * All agents MUST return scores for all 8 raw metrics.
  */
-export const EIGHT_PILLARS = [
+export const SEVEN_PILLARS = [
   'functionalImpact',
   'idealTimeHours',
   'testCoverage',
@@ -23,10 +28,7 @@ export const EIGHT_PILLARS = [
   'debtReductionHours',
 ] as const;
 
-// Backward compatibility alias
-export const SEVEN_PILLARS = EIGHT_PILLARS;
-
-export type PillarName = (typeof EIGHT_PILLARS)[number];
+export type PillarName = (typeof SEVEN_PILLARS)[number];
 
 export interface AgentWeights {
   functionalImpact: number;
