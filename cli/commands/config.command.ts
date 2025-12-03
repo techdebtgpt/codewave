@@ -12,6 +12,8 @@ const DEFAULT_CONFIG = {
     google: '',
     xai: '',
     ollama: '',
+    'lm-studio': '',
+    groq: '',
   },
   llm: {
     provider: 'anthropic',
@@ -154,6 +156,11 @@ async function initializeConfig(): Promise<void> {
           value: 'ollama',
           short: 'Ollama',
         },
+        {
+          name: 'LM Studio (local, free) - OpenAI-compatible local server',
+          value: 'lm-studio',
+          short: 'LM Studio',
+        },
       ],
       default: defaultProvider,
     },
@@ -221,24 +228,36 @@ async function initializeConfig(): Promise<void> {
       url: 'https://console.x.ai/',
     },
     ollama: {
-      defaultModel: 'llama3',
+      defaultModel: 'gpt-oss-20b',
       models: [
         {
-          name: 'llama3 (recommended) - Balanced reasoning and performance',
-          value: 'llama3',
-        },
-        {
-          name: 'mistral - Smaller, faster local model',
-          value: 'mistral',
-        },
-        {
-          name: 'gemma2 - Lightweight and efficient',
-          value: 'gemma2',
+          name: 'gpt-oss-20b (recommended) - Balanced reasoning and performance',
+          value: 'gpt-oss-20b',
         },
       ],
       keyFormat: '(no API key required)',
       url: 'https://ollama.com/library',
-    }
+    },
+    'lm-studio': {
+      defaultModel: 'local-model', // LM Studio often ignores the model name if only one is loaded
+      models: [
+        {
+          name: 'Load from LM Studio (uses currently loaded model)',
+          value: 'local-model',
+        },
+      ],
+      keyFormat: '(no API key required)',
+      url: 'http://localhost:1234',
+    },
+    groq: {
+      defaultModel: 'openai/gpt-oss-120b',
+      models: [
+        {
+          name: 'openai/gpt-oss-120b (recommended) - Balanced reasoning and performance',
+          value: 'openai/gpt-oss-120b',
+        },
+      ],
+    },
   };
 
   const info = providerInfo[provider as keyof typeof providerInfo];
@@ -303,7 +322,7 @@ async function initializeConfig(): Promise<void> {
   }
 
   let apiKey = '';
-  if (provider !== 'ollama') {
+  if (provider !== 'ollama' && provider !== 'lm-studio') {
     console.log(chalk.gray(`\nGet your API key at: ${info.url}\n`));
 
     const existingApiKey = config.apiKeys[provider];
@@ -327,7 +346,7 @@ async function initializeConfig(): Promise<void> {
 
     apiKey = response.apiKey;
   } else {
-    console.log(chalk.gray('\n(Local Ollama models do not require an API key.)\n'));
+    console.log(chalk.gray('\n(Local models do not require an API key.)\n'));
   }
 
   // Configure provider - use new key if provided, otherwise keep existing

@@ -10,9 +10,11 @@ export interface AppConfig {
     google: string;
     xai: string;
     ollama: string;
+    'lm-studio': string;
+    groq: string;
   };
   llm: {
-    provider: 'anthropic' | 'openai' | 'google' | 'xai' | 'ollama';
+    provider: 'anthropic' | 'openai' | 'google' | 'xai' | 'ollama' | 'lm-studio' | 'groq';
     model: string;
     temperature: number;
     maxTokens: number;

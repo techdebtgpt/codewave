@@ -10,6 +10,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     google: '',
     xai: '',
     ollama: '',
+    'lm-studio': '',
+    groq: '',
   },
   llm: {
     provider: 'anthropic',

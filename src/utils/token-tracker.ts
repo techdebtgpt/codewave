@@ -52,6 +52,12 @@ export const TOKEN_PRICING = {
     llama3: { input: 0, output: 0 },
     mistral: { input: 0, output: 0 },
   },
+  groq: {
+    'openai/gpt-oss-120b': { input: 0.075, output: 0.3 },
+  },
+  'lm-studio': {
+    'openai/gpt-oss-20b': { input: 0, output: 0 },
+  },
 };
 
 /**

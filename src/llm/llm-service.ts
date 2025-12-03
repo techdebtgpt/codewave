@@ -2,6 +2,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { ChatOllama } from '@langchain/ollama';
+import { ChatGroq } from '@langchain/groq';
 import { AppConfig } from '../config/config.interface';
 
 export class LLMService {
@@ -21,9 +22,33 @@ export class LLMService {
       ? Math.min(maxTokensOverride, configMaxTokens)
       : configMaxTokens;
 
+    switch (provider) {
+      case 'ollama':
+        return new ChatOllama({
+          baseUrl: config.llm.baseUrl || 'http://localhost:11434',
+          model: model || 'llama3',
+          temperature,
+        });
+      case 'lm-studio':
+        return new ChatOpenAI({
+          apiKey: 'lm-studio',
+          temperature,
+          maxTokens,
+          modelName: model,
+          configuration: {
+            baseURL: config.llm.baseUrl || 'http://localhost:1234/v1',
+          },
+        });
+      default:
+        break;
+    }
     // Get API key for selected provider
     const apiKey = config.apiKeys?.[provider];
-
+    if (!apiKey) {
+      throw new Error(
+        `Missing API key for provider: ${provider}. Run: codewave config --set apiKeys.${provider}=<your-key>`
+      );
+    }
     switch (provider) {
       case 'anthropic':
         if (!apiKey) throw new Error('Missing Anthropic API key');
@@ -63,15 +88,15 @@ export class LLMService {
             baseURL: 'https://api.x.ai/v1',
           },
         });
-
-      case 'ollama':
-        // ✅ Local Llama (or any Ollama model)
-        return new ChatOllama({
-          baseUrl: config.llm.baseUrl || 'http://localhost:11434',
-          model: model || 'llama3',
+      case 'groq': {
+        if (!apiKey) throw new Error('Missing Groq API key');
+        return new ChatGroq({
+          apiKey,
           temperature,
+          maxTokens,
+          model,
         });
-
+      }
       default:
         throw new Error(`Unsupported LLM provider: ${provider}`);
     }
