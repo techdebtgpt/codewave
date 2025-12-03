@@ -26,7 +26,7 @@ export class LLMService {
       case 'ollama':
         return new ChatOllama({
           baseUrl: config.llm.baseUrl || 'http://localhost:11434',
-          model: model || 'llama3',
+          model,
           temperature,
         });
       case 'lm-studio':
@@ -49,9 +49,9 @@ export class LLMService {
         `Missing API key for provider: ${provider}. Run: codewave config --set apiKeys.${provider}=<your-key>`
       );
     }
+
     switch (provider) {
       case 'anthropic':
-        if (!apiKey) throw new Error('Missing Anthropic API key');
         return new ChatAnthropic({
           anthropicApiKey: apiKey,
           temperature,
@@ -60,7 +60,6 @@ export class LLMService {
         });
 
       case 'openai':
-        if (!apiKey) throw new Error('Missing OpenAI API key');
         return new ChatOpenAI({
           openAIApiKey: apiKey,
           temperature,
@@ -69,7 +68,6 @@ export class LLMService {
         });
 
       case 'google':
-        if (!apiKey) throw new Error('Missing Google API key');
         return new ChatGoogleGenerativeAI({
           apiKey,
           temperature,
@@ -78,7 +76,6 @@ export class LLMService {
         });
 
       case 'xai':
-        if (!apiKey) throw new Error('Missing xAI API key');
         return new ChatOpenAI({
           openAIApiKey: apiKey,
           temperature,
@@ -89,7 +86,6 @@ export class LLMService {
           },
         });
       case 'groq': {
-        if (!apiKey) throw new Error('Missing Groq API key');
         return new ChatGroq({
           apiKey,
           temperature,
