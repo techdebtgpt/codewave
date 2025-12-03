@@ -89,7 +89,7 @@ codewave config --init
 
 This launches an interactive wizard to configure:
 
-- **LLM Provider**: Choose Anthropic Claude, OpenAI, Google Gemini, or Ollama (local free models)
+- **LLM Provider**: Choose Anthropic Claude, OpenAI, Google Gemini, Groq or Ollama/LM Studio(local free models)
 - **API Keys**: Set your LLM provider credentials
 - **Model Selection**: Pick your preferred model (defaults recommended)
 - **Default Settings**: Configure batch size, output directory, and reporting preferences
@@ -965,10 +965,21 @@ Choose your LLM provider and model based on your needs and budget:
 - **Recommended**: grok-4-fast-non-reasoning
 - **Alternatives**: grok-4.2, grok-4-0709
 
+**Groq**
+
+- Cost-effective option
+- **Recommended**: openai/gpt-oss-120b
+- **Alternatives**: openai/gpt-oss-20b
+
 **Ollama (Local LLMs — Free)**
 - Run models entirely on your machine (no API key required)
 - Supports **Llama 3**, **Mistral**, **Gemma 2**, and more
 - Works offline once the model is pulled
+- Ideal for contributors or privacy-sensitive environments
+
+**LM Studio (Local LLMs — Free)**
+
+- OpenAI-compatible local server
 - Ideal for contributors or privacy-sensitive environments
 
 **Example**: Switch to OpenAI
