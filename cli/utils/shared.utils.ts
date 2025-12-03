@@ -2,11 +2,11 @@
 // Shared utilities for CLI commands to eliminate duplication
 
 import { AgentRegistry } from '../../src/agents/agent-registry';
-import { BusinessAnalystAgent } from '../../src/agents/business-analyst-agent';
-import { SDETAgent } from '../../src/agents/sdet-agent';
-import { DeveloperAuthorAgent } from '../../src/agents/developer-author-agent';
-import { SeniorArchitectAgent } from '../../src/agents/senior-architect-agent';
-import { DeveloperReviewerAgent } from '../../src/agents/developer-reviewer-agent';
+import { BusinessAnalystAgent } from '../../src/agents/implementations/business-analyst-agent';
+import { SDETAgent } from '../../src/agents/implementations/sdet-agent';
+import { DeveloperAuthorAgent } from '../../src/agents/implementations/developer-author-agent';
+import { SeniorArchitectAgent } from '../../src/agents/implementations/senior-architect-agent';
+import { DeveloperReviewerAgent } from '../../src/agents/implementations/developer-reviewer-agent';
 import { AppConfig } from '../../src/config/config.interface';
 import { generateEnhancedHtmlReport } from '../../src/formatters/html-report-formatter-enhanced';
 import { generateConversationTranscript } from '../../src/formatters/conversation-transcript-formatter';
@@ -17,6 +17,7 @@ import {
   EvaluationHistoryEntry,
 } from '../../src/types/output.types';
 import fs from 'fs/promises';
+import * as fsSync from 'fs';
 import path from 'path';
 
 /**
@@ -69,9 +70,8 @@ export function createAgentRegistry(config: AppConfig): AgentRegistry {
   };
 
   for (const agentId of enabledAgents) {
-    const agentFactory = agentMap[agentId];
-    if (agentFactory) {
-      agentRegistry.register(agentFactory());
+    if (agentMap[agentId]) {
+      agentRegistry.register(agentMap[agentId]());
     } else {
       console.warn(`⚠️  Unknown agent: ${agentId}. Skipping.`);
     }
@@ -91,6 +91,11 @@ export interface EvaluationMetadata {
   timestamp?: string;
   source?: string; // 'commit', 'staged', 'current', 'file'
   developerOverview?: string;
+  commitStats?: {
+    filesChanged: number;
+    insertions: number;
+    deletions: number;
+  };
 }
 
 /**
@@ -146,6 +151,9 @@ export async function saveEvaluationReports(options: SaveReportsOptions): Promis
     commitDate: metadata.commitDate,
     timestamp: metadata.timestamp || new Date().toISOString(),
     developerOverview,
+    filesChanged: metadata.commitStats?.filesChanged,
+    insertions: metadata.commitStats?.insertions,
+    deletions: metadata.commitStats?.deletions,
   });
 
   // 3. Generate conversation transcript
@@ -180,50 +188,51 @@ function extractMetricsSnapshot(agentResults: AgentResult[]): MetricsSnapshot {
   // Get final round agents (last 5)
   const finalAgents = agentResults.slice(-5);
 
-  const metricSums = {
-    functionalImpact: 0,
-    idealTimeHours: 0,
-    testCoverage: 0,
-    codeQuality: 0,
-    codeComplexity: 0,
-    actualTimeHours: 0,
-    technicalDebtHours: 0,
-  };
+  // Import weight functions for weighted averaging
+  const {
+    calculateWeightedAverage,
+    SEVEN_PILLARS,
+  } = require('../../src/constants/agent-weights.constants');
 
-  let count = 0;
-  finalAgents.forEach((agent) => {
-    if (agent.metrics) {
-      metricSums.functionalImpact += agent.metrics.functionalImpact || 0;
-      metricSums.idealTimeHours += agent.metrics.idealTimeHours || 0;
-      metricSums.testCoverage += agent.metrics.testCoverage || 0;
-      metricSums.codeQuality += agent.metrics.codeQuality || 0;
-      metricSums.codeComplexity += agent.metrics.codeComplexity || 0;
-      metricSums.actualTimeHours += agent.metrics.actualTimeHours || 0;
-      metricSums.technicalDebtHours += agent.metrics.technicalDebtHours || 0;
-      count++;
+  const metrics = SEVEN_PILLARS;
+
+  const result: any = {};
+
+  // Calculate weighted average for each metric
+  metrics.forEach((metricName: string) => {
+    const contributors: Array<{ agentName: string; score: number | null }> = [];
+    finalAgents.forEach((agent) => {
+      if (agent.metrics && metricName in agent.metrics) {
+        const score = agent.metrics[metricName];
+        contributors.push({
+          agentName: agent.agentName || agent.agentRole || 'Unknown',
+          score: score !== null && score !== undefined ? score : null,
+        });
+      }
+    });
+
+    if (contributors.length > 0) {
+      const weightedValue = calculateWeightedAverage(contributors, metricName);
+      // Determine decimal places based on metric
+      if (metricName.includes('Hours') || metricName.includes('Time')) {
+        result[metricName] = Number(weightedValue.toFixed(2));
+      } else {
+        result[metricName] = Number(weightedValue.toFixed(1));
+      }
+    } else {
+      result[metricName] = 0;
     }
   });
 
-  if (count === 0) {
-    return {
-      functionalImpact: 0,
-      idealTimeHours: 0,
-      testCoverage: 0,
-      codeQuality: 0,
-      codeComplexity: 0,
-      actualTimeHours: 0,
-      technicalDebtHours: 0,
-    };
-  }
-
   return {
-    functionalImpact: Number((metricSums.functionalImpact / count).toFixed(1)),
-    idealTimeHours: Number((metricSums.idealTimeHours / count).toFixed(2)),
-    testCoverage: Number((metricSums.testCoverage / count).toFixed(1)),
-    codeQuality: Number((metricSums.codeQuality / count).toFixed(1)),
-    codeComplexity: Number((metricSums.codeComplexity / count).toFixed(1)),
-    actualTimeHours: Number((metricSums.actualTimeHours / count).toFixed(2)),
-    technicalDebtHours: Number((metricSums.technicalDebtHours / count).toFixed(2)),
+    functionalImpact: result.functionalImpact,
+    idealTimeHours: result.idealTimeHours,
+    testCoverage: result.testCoverage,
+    codeQuality: result.codeQuality,
+    codeComplexity: result.codeComplexity,
+    actualTimeHours: result.actualTimeHours,
+    technicalDebtHours: result.technicalDebtHours,
+    debtReductionHours: result.debtReductionHours,
   };
 }
 
@@ -319,6 +328,7 @@ async function trackEvaluationHistory(
           codeComplexity: 0,
           actualTimeHours: 0,
           technicalDebtHours: 0,
+          debtReductionHours: 0,
         },
     tokens: agentResults
       ? extractTokenSnapshot(agentResults)
@@ -420,75 +430,13 @@ export async function createEvaluationDirectory(
 }
 
 /**
- * Create batch evaluation directory
- * No longer needed - batches just process multiple commits into .evaluated-commits/{hash}/
- * This function now just returns the evaluation root
- */
-export async function createBatchDirectory(
-  identifier: string,
-  baseDir: string = '.'
-): Promise<string> {
-  const evaluationsRoot = getEvaluationRoot(baseDir);
-  await fs.mkdir(evaluationsRoot, { recursive: true });
-  return evaluationsRoot;
-}
-
-/**
- * Calculate averaged metrics from agent results
+ * Calculate averaged metrics from agent results using weighted averaging (matching report calculations)
  */
 async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
-  try {
-    const resultsPath = path.join(evaluationDir, 'results.json');
-    const content = await fs.readFile(resultsPath, 'utf-8');
-    const results = JSON.parse(content);
-
-    if (!results.agents || results.agents.length === 0) {
-      return null;
-    }
-
-    // Get final round agents (last 5 entries)
-    const finalAgents = results.agents.slice(-5);
-
-    // Aggregate metrics from all final agents
-    const metricSums = {
-      functionalImpact: 0,
-      idealTimeHours: 0,
-      testCoverage: 0,
-      codeQuality: 0,
-      codeComplexity: 0,
-      actualTimeHours: 0,
-      technicalDebtHours: 0,
-    };
-
-    let count = 0;
-    finalAgents.forEach((agent: any) => {
-      if (agent.metrics) {
-        metricSums.functionalImpact += agent.metrics.functionalImpact || 0;
-        metricSums.idealTimeHours += agent.metrics.idealTimeHours || 0;
-        metricSums.testCoverage += agent.metrics.testCoverage || 0;
-        metricSums.codeQuality += agent.metrics.codeQuality || 0;
-        metricSums.codeComplexity += agent.metrics.codeComplexity || 0;
-        metricSums.actualTimeHours += agent.metrics.actualTimeHours || 0;
-        metricSums.technicalDebtHours += agent.metrics.technicalDebtHours || 0;
-        count++;
-      }
-    });
-
-    if (count === 0) return null;
-
-    // Calculate averages
-    return {
-      functionalImpact: Number((metricSums.functionalImpact / count).toFixed(1)),
-      idealTimeHours: Number((metricSums.idealTimeHours / count).toFixed(2)),
-      testCoverage: Number((metricSums.testCoverage / count).toFixed(1)),
-      codeQuality: Number((metricSums.codeQuality / count).toFixed(1)),
-      codeComplexity: Number((metricSums.codeComplexity / count).toFixed(1)),
-      actualTimeHours: Number((metricSums.actualTimeHours / count).toFixed(2)),
-      technicalDebtHours: Number((metricSums.technicalDebtHours / count).toFixed(2)),
-    };
-  } catch {
-    return null;
-  }
+  const { MetricsCalculationService } = await import(
+    '../../src/services/metrics-calculation.service.js'
+  );
+  return MetricsCalculationService.loadMetricsFromDirectory(evaluationDir);
 }
 
 /**
@@ -576,7 +524,9 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     await generateAuthorPage(evaluationsRoot, author, commits);
   }
 
-  // Calculate overall metrics averages
+  // Calculate overall metrics for display
+  // Note: item.metrics already contains weighted consensus values from MetricsCalculationService
+  // This is just aggregating those pre-calculated values for the summary stats
   const overallMetrics = {
     avgQuality: 0,
     avgComplexity: 0,
@@ -594,7 +544,10 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
       overallMetrics.avgFunctionalImpact += item.metrics.functionalImpact || 0;
       overallMetrics.avgTestCoverage += item.metrics.testCoverage || 0;
       overallMetrics.avgActualTime += item.metrics.actualTimeHours || 0;
-      overallMetrics.totalTechDebt += item.metrics.technicalDebtHours || 0;
+      // Calculate NET debt (debt introduced - debt reduction)
+      const netDebt =
+        (item.metrics.technicalDebtHours || 0) - (item.metrics.debtReductionHours || 0);
+      overallMetrics.totalTechDebt += netDebt;
       overallMetrics.count++;
     }
   });
@@ -618,94 +571,22 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     overallMetrics.totalTechDebt = Number(overallMetrics.totalTechDebt.toFixed(2));
   }
 
-  // Generate author stats section with metrics
-  const authorStatsHtml = Array.from(byAuthor.entries())
-    .sort((a, b) => b[1].length - a[1].length) // Sort by commit count
-    .map(([author, commits]) => {
-      // Calculate author's average metrics
-      const authorMetrics = {
-        quality: 0,
-        complexity: 0,
-        testCoverage: 0,
-        functionalImpact: 0,
-        actualTime: 0,
-        techDebt: 0,
-        count: 0,
-      };
-      commits.forEach((c) => {
-        if (c.metrics) {
-          authorMetrics.quality += c.metrics.codeQuality || 0;
-          authorMetrics.complexity += c.metrics.codeComplexity || 0;
-          authorMetrics.testCoverage += c.metrics.testCoverage || 0;
-          authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
-          authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
-          authorMetrics.techDebt += c.metrics.technicalDebtHours || 0;
-          authorMetrics.count++;
-        }
-      });
-
-      const avgQuality =
-        authorMetrics.count > 0 ? (authorMetrics.quality / authorMetrics.count).toFixed(1) : 'N/A';
-      const avgComplexity =
-        authorMetrics.count > 0
-          ? (authorMetrics.complexity / authorMetrics.count).toFixed(1)
-          : 'N/A';
-      const avgTestCoverage =
-        authorMetrics.count > 0
-          ? (authorMetrics.testCoverage / authorMetrics.count).toFixed(1)
-          : 'N/A';
-      const avgFunctionalImpact =
-        authorMetrics.count > 0
-          ? (authorMetrics.functionalImpact / authorMetrics.count).toFixed(1)
-          : 'N/A';
-      const avgActualTime =
-        authorMetrics.count > 0
-          ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2)
-          : 'N/A';
-      const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
-
-      return `
-            <div class="author-card">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <h6 class="mb-1">👤 ${author}</h6>
-                        <div class="text-muted small mb-2">${commits.length} commit${commits.length > 1 ? 's' : ''}</div>
-                        ${
-                          authorMetrics.count > 0
-                            ? `
-                        <div class="metrics-mini">
-                            <span class="badge bg-primary">Quality: ${avgQuality}/10</span>
-                            <span class="badge bg-info">Complexity: ${avgComplexity}/10</span>
-                            <span class="badge bg-success">Tests: ${avgTestCoverage}/10</span>
-                        </div>
-                        `
-                            : ''
-                        }
-                    </div>
-                    <div>
-                        <button class="btn btn-sm btn-outline-primary" onclick="filterByAuthor('${author.replace(/'/g, "\\'")}')">
-                            View
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    })
-    .join('');
-
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Commit Evaluations Index</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { padding: 20px; background: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
+        .header { background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
         .stats { display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap; }
         .stat-card { flex: 1; min-width: 150px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .stat-number { font-size: 2.5rem; font-weight: bold; color: #667eea; }
+        .stat-number { font-size: 2.5rem; font-weight: bold; color: #4a5568; }
         .stat-label { color: #666; margin-top: 5px; font-size: 0.9rem; }
         .stat-mini { font-size: 0.85rem; color: #999; margin-top: 8px; }
         .table-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 30px; }
@@ -732,6 +613,21 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
         .btn-sm { font-size: 0.85rem; padding: 6px 12px; }
         .author-filter { display: inline-block; margin: 5px; }
         .filter-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+        /* Table column sizing for better readability */
+        #commitsTable th:nth-child(1) { min-width: 100px; } /* Hash */
+        #commitsTable th:nth-child(2) { min-width: 110px; } /* Author */
+        #commitsTable th:nth-child(3) { min-width: 280px; } /* Message */
+        #commitsTable th:nth-child(4) { min-width: 110px; } /* Date */
+        #commitsTable th:nth-child(5) { min-width: 110px; } /* Last Evaluated */
+        #commitsTable th:nth-child(6) { min-width: 85px; } /* Source */
+        #commitsTable th:nth-child(7) { min-width: 90px; } /* Quality */
+        #commitsTable th:nth-child(8) { min-width: 95px; } /* Complexity */
+        #commitsTable th:nth-child(9) { min-width: 80px; } /* Tests */
+        #commitsTable th:nth-child(10) { min-width: 85px; } /* Impact */
+        #commitsTable th:nth-child(11) { min-width: 80px; } /* Time */
+        #commitsTable th:nth-child(12) { min-width: 90px; } /* Tech Debt */
+        #commitsTable th:nth-child(13) { min-width: 75px; } /* Action */
+        #commitsTable td:nth-child(3) { max-width: 280px; word-wrap: break-word; overflow-wrap: break-word; } /* Message text wrapping */
     </style>
 </head>
 <body>
@@ -842,7 +738,9 @@ ${Array.from(byAuthor.entries())
         authorMetrics.testCoverage += c.metrics.testCoverage || 0;
         authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
         authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
-        authorMetrics.techDebt += c.metrics.technicalDebtHours || 0;
+        // Calculate NET debt (debt introduced - debt reduction)
+        const netDebt = (c.metrics.technicalDebtHours || 0) - (c.metrics.debtReductionHours || 0);
+        authorMetrics.techDebt += netDebt;
         authorMetrics.count++;
       }
     });
@@ -863,7 +761,7 @@ ${Array.from(byAuthor.entries())
       authorMetrics.count > 0 ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2) : 'N/A';
     const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
 
-    const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const authorPageUrl = `author-${authorSlug}.html`;
 
     return `
@@ -917,8 +815,8 @@ ${index
       metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
     const impactColor =
       metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
-    const debtColor =
-      metrics.technicalDebtHours > 0 ? 'bad' : metrics.technicalDebtHours < 0 ? 'good' : 'medium';
+    const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
+    const debtColor = netDebt > 0 ? 'bad' : netDebt < 0 ? 'good' : 'medium';
 
     return `
                         <tr data-source="${item.source || 'unknown'}" data-author="${item.commitAuthor || ''}" data-message="${(item.commitMessage || '').toLowerCase()}" data-hash="${item.commitHash}">
@@ -938,7 +836,7 @@ ${index
                             <td class="metric-cell ${item.metrics ? `metric-${testsColor}` : ''}">${item.metrics ? `${metrics.testCoverage}/10` : 'N/A'}</td>
                             <td class="metric-cell ${item.metrics ? `metric-${impactColor}` : ''}">${item.metrics ? `${metrics.functionalImpact}/10` : 'N/A'}</td>
                             <td class="metric-cell">${item.metrics ? `${metrics.actualTimeHours}h` : 'N/A'}</td>
-                            <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${metrics.technicalDebtHours > 0 ? '+' : ''}${metrics.technicalDebtHours}h` : 'N/A'}</td>
+                            <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${netDebt > 0 ? '+' : ''}${netDebt.toFixed(1)}h` : 'N/A'}</td>
                             <td><a href="${item.directory}/report-enhanced.html" class="btn btn-primary btn-sm">View</a></td>
                         </tr>`;
   })
@@ -1029,67 +927,347 @@ export function generateBatchIdentifier(options: {
 /**
  * Generate author-specific page with their commits and dashboard
  */
-async function generateAuthorPage(
+export async function generateAuthorPage(
   evaluationsRoot: string,
   author: string,
   commits: any[]
 ): Promise<void> {
-  const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '_');
   const authorPagePath = path.join(evaluationsRoot, `author-${authorSlug}.html`);
 
-  // Calculate author metrics
-  const authorMetrics = {
-    quality: 0,
-    complexity: 0,
-    testCoverage: 0,
-    functionalImpact: 0,
-    actualTime: 0,
-    techDebt: 0,
-    count: 0,
-  };
-
-  // Sort commits by commit date (newest first)
-  commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
-
-  commits.forEach((c) => {
-    if (c.metrics) {
-      authorMetrics.quality += c.metrics.codeQuality || 0;
-      authorMetrics.complexity += c.metrics.codeComplexity || 0;
-      authorMetrics.testCoverage += c.metrics.testCoverage || 0;
-      authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
-      authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
-      authorMetrics.techDebt += c.metrics.technicalDebtHours || 0;
-      authorMetrics.count++;
-    }
+  // Use centralized metrics calculation service for consistency with OKR generation
+  const {
+    AuthorStatsAggregatorService,
+  } = require('../../src/services/author-stats-aggregator.service');
+  const authorData = await AuthorStatsAggregatorService.aggregateAuthorStats(evaluationsRoot, {
+    targetAuthor: author,
   });
 
-  const avgQuality =
-    authorMetrics.count > 0 ? (authorMetrics.quality / authorMetrics.count).toFixed(1) : 'N/A';
-  const avgComplexity =
-    authorMetrics.count > 0 ? (authorMetrics.complexity / authorMetrics.count).toFixed(1) : 'N/A';
-  const avgTestCoverage =
-    authorMetrics.count > 0 ? (authorMetrics.testCoverage / authorMetrics.count).toFixed(1) : 'N/A';
-  const avgFunctionalImpact =
-    authorMetrics.count > 0
-      ? (authorMetrics.functionalImpact / authorMetrics.count).toFixed(1)
-      : 'N/A';
-  const avgActualTime =
-    authorMetrics.count > 0 ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2) : 'N/A';
-  const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
+  // Use deduplicated evaluations (latest per commit) for both metrics AND display
+  const evaluations = authorData.get(author) || [];
+  const analysis =
+    evaluations && evaluations.length > 0
+      ? AuthorStatsAggregatorService.analyzeAuthor(evaluations)
+      : null;
+
+  // Sort deduplicated commits by commit date (newest first) for display
+  const deduplicatedCommits = evaluations.sort(
+    (a: any, b: any) =>
+      new Date(b.metadata?.commitDate || 0).getTime() -
+      new Date(a.metadata?.commitDate || 0).getTime()
+  );
+
+  // Use centralized stats or fallback to empty
+  const avgQuality = analysis ? analysis.stats.quality.toFixed(1) : 'N/A';
+  const avgComplexity = analysis ? analysis.stats.complexity.toFixed(1) : 'N/A';
+  const avgTestCoverage = analysis ? analysis.stats.tests.toFixed(1) : 'N/A';
+  const avgFunctionalImpact = analysis ? analysis.stats.impact.toFixed(1) : 'N/A';
+  const avgActualTime = analysis ? analysis.stats.time.toFixed(2) : 'N/A';
+  const totalTechDebt = analysis ? analysis.stats.techDebt.toFixed(2) : 'N/A';
+  const commitCount = deduplicatedCommits.length; // Use deduplicated count
+
+  // Check for OKR files and load latest OKR data
+  const okrsDir = path.join(evaluationsRoot, '.okrs', authorSlug);
+  let okrContentHtml = '';
+
+  if (fsSync.existsSync(okrsDir)) {
+    const files = fsSync.readdirSync(okrsDir);
+    const okrJsonFiles = files
+      .filter((f: string) => f.startsWith('okr_') && f.endsWith('.json'))
+      .sort()
+      .reverse(); // Newest first
+
+    if (okrJsonFiles.length > 0) {
+      // Load the latest OKR data
+      const latestJsonPath = path.join(okrsDir, okrJsonFiles[0]);
+      try {
+        const okrData = JSON.parse(fsSync.readFileSync(latestJsonPath, 'utf-8'));
+        const generatedDate = new Date(okrData.generatedAt).toLocaleDateString();
+
+        // Build grid-based OKR section
+        okrContentHtml = `
+          <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+              <h4 class="mb-0">✅ Latest OKR Profile</h4>
+              <span class="text-muted small">Generated: ${generatedDate}</span>
+            </div>
+            <a href=".okrs/${authorSlug}/${okrJsonFiles[0].replace('.json', '.html')}" 
+               class="btn btn-sm btn-outline-primary" 
+               target="_blank">
+              📄 View Full Report
+            </a>
+          </div>
+
+          ${
+            okrData.progressReport
+              ? `
+          <!-- Progress Report -->
+          <div class="alert alert-${okrData.progressReport.status === 'On Track' ? 'success' : okrData.progressReport.status === 'Completed' ? 'info' : okrData.progressReport.status === 'At Risk' ? 'warning' : 'danger'} mb-4" role="alert">
+            <div class="d-flex align-items-center mb-2">
+              <h5 class="mb-0 me-3">📈 Progress Report</h5>
+              <span class="badge bg-${okrData.progressReport.status === 'On Track' ? 'success' : okrData.progressReport.status === 'Completed' ? 'info' : okrData.progressReport.status === 'At Risk' ? 'warning' : 'danger'}">${okrData.progressReport.status}</span>
+            </div>
+            <p class="mb-3">${okrData.progressReport.summary}</p>
+            <div class="row">
+              ${
+                okrData.progressReport.achieved && okrData.progressReport.achieved.length > 0
+                  ? `
+              <div class="col-md-6">
+                <strong class="text-success">✓ Achieved:</strong>
+                <ul class="mb-0 mt-2">
+                  ${okrData.progressReport.achieved.map((item: string) => `<li>${item}</li>`).join('')}
+                </ul>
+              </div>
+              `
+                  : ''
+              }
+              ${
+                okrData.progressReport.missed && okrData.progressReport.missed.length > 0
+                  ? `
+              <div class="col-md-6">
+                <strong class="text-danger">✗ Missed:</strong>
+                <ul class="mb-0 mt-2">
+                  ${okrData.progressReport.missed.map((item: string) => `<li>${item}</li>`).join('')}
+                </ul>
+              </div>
+              `
+                  : ''
+              }
+            </div>
+          </div>
+          `
+              : ''
+          }
+
+          <!-- Row 1: Assessment (3 cols) -->
+          <div class="row mb-4">
+            <!-- Strong Points -->
+            <div class="col-md-4 mb-3 mb-md-0">
+              <div class="card h-100 border-success shadow-sm">
+                <div class="card-header bg-success text-white py-2">
+                  <strong>💪 Strong Points</strong>
+                </div>
+                <div class="card-body">
+                  <ul class="mb-0 ps-3 small">
+                    ${okrData.strongPoints.map((point: string) => `<li class="mb-1">${point}</li>`).join('')}
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Weak Points -->
+            <div class="col-md-4 mb-3 mb-md-0">
+              <div class="card h-100 border-warning shadow-sm">
+                <div class="card-header bg-warning text-dark py-2">
+                  <strong>⚠️ Growth Areas</strong>
+                </div>
+                <div class="card-body">
+                  <ul class="mb-0 ps-3 small">
+                    ${okrData.weakPoints.map((point: string) => `<li class="mb-1">${point}</li>`).join('')}
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Knowledge Gaps -->
+            <div class="col-md-4">
+              <div class="card h-100 border-info shadow-sm">
+                <div class="card-header bg-info text-white py-2">
+                  <strong>🧩 Knowledge Gaps</strong>
+                </div>
+                <div class="card-body">
+                  <ul class="mb-0 ps-3 small">
+                    ${okrData.knowledgeGaps.map((gap: string) => `<li class="mb-1">${gap}</li>`).join('')}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 2: Objectives -->
+          <div class="card mb-4 border-primary shadow-sm">
+            <div class="card-header bg-primary text-white">
+              <strong>🎯 3-Month Objective</strong>
+            </div>
+            <div class="card-body">
+              <h5 class="text-primary mb-3">${okrData.okr3Month.objective}</h5>
+              <div class="row">
+                ${okrData.okr3Month.keyResults
+                  .map(
+                    (kr: any, i: number) => `
+                  <div class="col-md-4 mb-3">
+                    <div class="p-3 bg-light rounded h-100 border">
+                      <div class="fw-bold mb-2 text-primary">KR ${i + 1}</div>
+                      <div class="mb-2">${kr.kr}</div>
+                      <div class="text-muted small border-top pt-2 mt-2 mb-2"><em>Why:</em> ${kr.why}</div>
+                      ${
+                        kr.actionSteps && kr.actionSteps.length > 0
+                          ? `
+                        <div class="border-top pt-2 mt-2">
+                          <strong class="small text-success">✓ Action Steps:</strong>
+                          <ol class="small mb-0 mt-1 ps-3">
+                            ${kr.actionSteps.map((step: string) => `<li class="mb-1">${step}</li>`).join('')}
+                          </ol>
+                        </div>
+                      `
+                          : ''
+                      }
+                    </div>
+                  </div>
+                `
+                  )
+                  .join('')}
+              </div>
+          </div>
+          </div>
+
+          ${
+            okrData.okr6Month
+              ? `
+          <div class="accordion mb-4" id="longTermOkrs">
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse6Month">
+                  <strong>📆 6-Month Objective:</strong> &nbsp; ${okrData.okr6Month.objective}
+                </button>
+              </h2>
+              <div id="collapse6Month" class="accordion-collapse collapse" data-bs-parent="#longTermOkrs">
+                <div class="accordion-body bg-light">
+                  <div class="row">
+                    ${okrData.okr6Month.keyResults
+                      .map(
+                        (kr: any, i: number) => `
+                      <div class="col-md-6 mb-2">
+                        <div class="p-2 bg-white rounded border">
+                          <strong>KR ${i + 1}:</strong> ${kr.kr}
+                        </div>
+                      </div>
+                    `
+                      )
+                      .join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+            ${
+              okrData.okr12Month
+                ? `
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse12Month">
+                  <strong>📅 12-Month Objective:</strong> &nbsp; ${okrData.okr12Month.objective}
+                </button>
+              </h2>
+              <div id="collapse12Month" class="accordion-collapse collapse" data-bs-parent="#longTermOkrs">
+                <div class="accordion-body bg-light">
+                  <div class="row">
+                    ${okrData.okr12Month.keyResults
+                      .map(
+                        (kr: any, i: number) => `
+                      <div class="col-md-6 mb-2">
+                        <div class="p-2 bg-white rounded border">
+                          <strong>KR ${i + 1}:</strong> ${kr.kr}
+                        </div>
+                      </div>
+                    `
+                      )
+                      .join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+            `
+                : ''
+            }
+          </div>
+          `
+              : ''
+          }
+
+          ${
+            okrData.actionPlan && okrData.actionPlan.length > 0
+              ? `
+          <!-- Action Plan -->
+          <div class="card mb-3 border-secondary shadow-sm">
+            <div class="card-header bg-secondary text-white">
+              <strong>🚀 Action Plan</strong>
+            </div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-striped mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th class="ps-3">Area</th>
+                      <th>Action</th>
+                      <th>Timeline</th>
+                      <th class="pe-3">Success Criteria</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${okrData.actionPlan
+                      .map(
+                        (item: any) => `
+                      <tr>
+                        <td class="ps-3 fw-bold text-secondary">${item.area}</td>
+                        <td>${item.action}</td>
+                        <td><span class="badge bg-secondary">${item.timeline}</span></td>
+                        <td class="pe-3 small text-muted">${item.success}</td>
+                      </tr>
+                    `
+                      )
+                      .join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          `
+              : ''
+          }
+        `;
+      } catch (e) {
+        okrContentHtml = `
+          <div class="alert alert-warning">
+            <strong>⚠️ Error loading OKR data</strong>
+            <p class="mb-0 mt-2">Unable to read OKR profile. The file may be corrupted.</p>
+          </div>
+        `;
+      }
+    } else {
+      okrContentHtml = `
+        <div class="alert alert-info">
+          <strong>📋 No OKR profiles yet</strong>
+          <p class="mb-0 mt-2">OKRs are generated periodically to track developer growth and set quarterly objectives.</p>
+          <p class="mb-0 mt-1 text-muted"><small>Run: <code>codewave generate-okr</code> to generate OKR profiles</small></p>
+        </div>
+      `;
+    }
+  } else {
+    okrContentHtml = `
+      <div class="alert alert-info">
+        <strong>📋 No OKR profiles yet</strong>
+        <p class="mb-0 mt-2">OKRs are generated periodically to track developer growth and set quarterly objectives.</p>
+        <p class="mb-0 mt-1 text-muted"><small>Run: <code>codewave generate-okr</code> to generate OKR profiles</small></p>
+      </div>
+    `;
+  }
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>${author} - Commit Evaluations</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { padding: 20px; background: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
+        .header { background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%); color: white; padding: 40px; border-radius: 10px; margin-bottom: 30px; }
         .stats { display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap; }
         .stat-card { flex: 1; min-width: 150px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .stat-number { font-size: 2.5rem; font-weight: bold; color: #667eea; }
+        .stat-number { font-size: 2.5rem; font-weight: bold; color: #4a5568; }
         .stat-label { color: #666; margin-top: 5px; font-size: 0.9rem; }
         .stat-mini { font-size: 0.85rem; color: #999; margin-top: 8px; }
         .table-container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 30px; }
@@ -1109,6 +1287,20 @@ async function generateAuthorPage(
         .metric-medium { color: #ffc107; }
         .metric-bad { color: #dc3545; }
         .btn-sm { font-size: 0.85rem; padding: 6px 12px; }
+        /* Table column sizing for author dashboard */
+        #authorCommitsTable th:nth-child(1) { min-width: 100px; } /* Hash */
+        #authorCommitsTable th:nth-child(2) { min-width: 280px; } /* Message */
+        #authorCommitsTable th:nth-child(3) { min-width: 110px; } /* Date */
+        #authorCommitsTable th:nth-child(4) { min-width: 110px; } /* Last Evaluated */
+        #authorCommitsTable th:nth-child(5) { min-width: 85px; } /* Source */
+        #authorCommitsTable th:nth-child(6) { min-width: 90px; } /* Quality */
+        #authorCommitsTable th:nth-child(7) { min-width: 95px; } /* Complexity */
+        #authorCommitsTable th:nth-child(8) { min-width: 80px; } /* Tests */
+        #authorCommitsTable th:nth-child(9) { min-width: 85px; } /* Impact */
+        #authorCommitsTable th:nth-child(10) { min-width: 80px; } /* Time */
+        #authorCommitsTable th:nth-child(11) { min-width: 90px; } /* Tech Debt */
+        #authorCommitsTable th:nth-child(12) { min-width: 75px; } /* Action */
+        #authorCommitsTable td:nth-child(2) { max-width: 280px; word-wrap: break-word; overflow-wrap: break-word; } /* Message text wrapping */
     </style>
 </head>
 <body>
@@ -1162,10 +1354,18 @@ async function generateAuthorPage(
             </div>
         </div>
 
+        <!-- OKR Section -->
+        <div class="table-container" style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);">
+            <h3 class="section-title">🎯 OKR & Growth Profile</h3>
+            <div id="okrSection">
+                ${okrContentHtml}
+            </div>
+        </div>
+
         <div class="table-container">
             <h3 class="section-title">📝 Commits by ${author}</h3>
             <div style="overflow-x: auto;">
-                <table>
+                <table id="authorCommitsTable">
                     <thead>
                         <tr>
                             <th>Hash</th>
@@ -1226,6 +1426,26 @@ ${commits
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Handle collapse button text toggle
+        const okrDetails = document.getElementById('okrDetails');
+        if (okrDetails) {
+            okrDetails.addEventListener('show.bs.collapse', function () {
+                const btn = document.querySelector('[data-bs-target="#okrDetails"]');
+                if (btn) {
+                    btn.querySelector('.collapsed-text').style.display = 'none';
+                    btn.querySelector('.expanded-text').style.display = 'inline';
+                }
+            });
+            okrDetails.addEventListener('hide.bs.collapse', function () {
+                const btn = document.querySelector('[data-bs-target="#okrDetails"]');
+                if (btn) {
+                    btn.querySelector('.collapsed-text').style.display = 'inline';
+                    btn.querySelector('.expanded-text').style.display = 'none';
+                }
+            });
+        }
+    </script>
 </body>
 </html>`;
 

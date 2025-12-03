@@ -1,145 +1,25 @@
 import * as fs from 'fs';
 import chalk from 'chalk';
-import crypto from 'crypto';
 import { spawnSync } from 'child_process';
 import { CommitEvaluationOrchestrator } from '../../src/orchestrator/commit-evaluation-orchestrator';
 import { loadConfig, configExists } from '../../src/config/config-loader';
-import { generateHtmlReport } from '../../src/formatters/html-report-formatter';
-import path from 'path';
+import * as path from 'path';
 import {
   createAgentRegistry,
-  generateTimestamp,
   saveEvaluationReports,
   createEvaluationDirectory,
   EvaluationMetadata,
   printEvaluateCompletionMessage,
+  getEvaluationRoot,
 } from '../utils/shared.utils';
-
-/**
- * Extract commit hash from diff content
- */
-function extractCommitHash(diff: string): string | null {
-  // Try to find commit hash in diff header (git diff output)
-  const commitMatch = diff.match(/^commit ([a-f0-9]{40})/m);
-  if (commitMatch) {
-    return commitMatch[1].substring(0, 8); // Use short hash
-  }
-
-  // Try to find in "From" line (git format-patch)
-  const fromMatch = diff.match(/^From ([a-f0-9]{40})/m);
-  if (fromMatch) {
-    return fromMatch[1].substring(0, 8);
-  }
-
-  return null;
-}
-
-/**
- * Generate commit hash from diff content if not found
- */
-function generateDiffHash(diff: string): string {
-  return crypto.createHash('sha256').update(diff).digest('hex').substring(0, 8);
-}
-
-/**
- * Create structured output directory for commit evaluation
- */
-function createOutputDirectory(diff: string, baseDir: string = '.'): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
-  const timestamp = `${year}${month}${day}${hours}${minutes}${seconds}`;
-
-  // Try to extract commit hash, fallback to generated hash
-  const commitHash = extractCommitHash(diff) || generateDiffHash(diff);
-
-  // Create directory: .evaluated-commits/commit-hash_yyyyMMddHHmmss
-  const evaluationsRoot = path.join(baseDir, '.evaluated-commits');
-  const commitDir = path.join(evaluationsRoot, `${commitHash}_${timestamp}`);
-
-  // Create directories recursively
-  if (!fs.existsSync(evaluationsRoot)) {
-    fs.mkdirSync(evaluationsRoot, { recursive: true });
-  }
-
-  if (!fs.existsSync(commitDir)) {
-    fs.mkdirSync(commitDir, { recursive: true });
-  }
-
-  return commitDir;
-}
-
-/**
- * Get diff from git for a specific commit hash
- */
-function getDiffFromCommit(commitHash: string, repoPath: string = '.'): string {
-  const result = spawnSync('git', ['show', commitHash], {
-    cwd: repoPath,
-    encoding: 'utf-8',
-    maxBuffer: 10 * 1024 * 1024,
-  });
-
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    throw new Error(`Git command failed: ${result.stderr}`);
-  }
-
-  return result.stdout;
-}
-
-/**
- * Get diff from current staged changes
- */
-function getDiffFromStaged(repoPath: string = '.'): string {
-  const result = spawnSync('git', ['diff', '--cached'], {
-    cwd: repoPath,
-    encoding: 'utf-8',
-    maxBuffer: 10 * 1024 * 1024,
-  });
-
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    throw new Error(`Git command failed: ${result.stderr}`);
-  }
-
-  if (!result.stdout || result.stdout.trim().length === 0) {
-    throw new Error('No staged changes found. Use "git add" to stage your changes first.');
-  }
-
-  return result.stdout;
-}
-
-/**
- * Get diff from current working directory changes (staged + unstaged)
- */
-function getDiffFromCurrent(repoPath: string = '.'): string {
-  const result = spawnSync('git', ['diff', 'HEAD'], {
-    cwd: repoPath,
-    encoding: 'utf-8',
-    maxBuffer: 10 * 1024 * 1024,
-  });
-
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    throw new Error(`Git command failed: ${result.stderr}`);
-  }
-
-  if (!result.stdout || result.stdout.trim().length === 0) {
-    throw new Error('No changes found in working directory.');
-  }
-
-  return result.stdout;
-}
+import { parseCommitStats } from '../../src/common/utils/commit-utils';
+import {
+  getCommitDiff,
+  getDiffFromStaged,
+  getDiffFromCurrent,
+  extractCommitHash,
+  generateDiffHash,
+} from '../utils/git-utils';
 
 export async function runEvaluateCommand(args: string[]) {
   // Parse arguments
@@ -147,6 +27,7 @@ export async function runEvaluateCommand(args: string[]) {
   let source = 'commit';
   let sourceDescription = '';
   let repoPath = '.';
+  let depthMode: 'fast' | 'normal' | 'deep' = 'normal';
 
   // Handle repo path first (it can appear with any other flag)
   if (args.includes('--repo')) {
@@ -156,6 +37,17 @@ export async function runEvaluateCommand(args: string[]) {
       console.error(chalk.red('Error: --repo requires a path'));
       process.exit(1);
     }
+  }
+
+  // Handle depth mode flag
+  if (args.includes('--depth')) {
+    const depthIdx = args.indexOf('--depth');
+    const depthValue = args[depthIdx + 1];
+    if (!depthValue || !['fast', 'normal', 'deep'].includes(depthValue)) {
+      console.error(chalk.red('Error: --depth must be one of: fast, normal, deep'));
+      process.exit(1);
+    }
+    depthMode = depthValue as 'fast' | 'normal' | 'deep';
   }
 
   // Check for flags or positional arguments
@@ -196,14 +88,14 @@ export async function runEvaluateCommand(args: string[]) {
     }
 
     console.log(chalk.cyan(`\n📦 Fetching diff for commit: ${commitHash}\n`));
-    diff = getDiffFromCommit(commitHash, repoPath);
+    diff = getCommitDiff(commitHash, repoPath);
     source = 'commit';
     sourceDescription = commitHash;
   } else if (args[0] && !args[0].startsWith('--')) {
     // Positional argument: treat as commit hash (default behavior)
     const commitHash = args[0];
     console.log(chalk.cyan(`\n📦 Fetching diff for commit: ${commitHash}\n`));
-    diff = getDiffFromCommit(commitHash, repoPath);
+    diff = getCommitDiff(commitHash, repoPath);
     source = 'commit';
     sourceDescription = commitHash;
   } else {
@@ -221,8 +113,9 @@ export async function runEvaluateCommand(args: string[]) {
     );
     console.log('  codewave evaluate --file <path>          # Evaluate from diff file');
     console.log('\nOptions:');
-    console.log('  --repo <path>   Repository path (default: current directory)');
-    console.log('  --no-stream     Disable streaming output (silent mode)');
+    console.log('  --repo <path>    Repository path (default: current directory)');
+    console.log('  --depth <mode>   Analysis depth: fast, normal, deep (default: normal)');
+    console.log('  --no-stream      Disable streaming output (silent mode)');
     process.exit(1);
   }
 
@@ -251,6 +144,9 @@ export async function runEvaluateCommand(args: string[]) {
     process.exit(1);
   }
 
+  // Apply depth mode to config
+  config.agents.depthMode = depthMode;
+
   // Get API key for selected provider
   const provider = config.llm.provider;
   const apiKey = config.apiKeys[provider];
@@ -263,7 +159,16 @@ export async function runEvaluateCommand(args: string[]) {
   }
 
   console.log(chalk.cyan(`\n🤖 Using ${provider} (${config.llm.model})`));
-  console.log(chalk.gray(`📄 Source: ${sourceDescription}\n`));
+  console.log(chalk.gray(`📄 Source: ${sourceDescription}`));
+  console.log(chalk.gray(`🎯 Depth: ${depthMode}\n`));
+
+  // Extract commit hash before evaluation for logging
+  let commitHash = extractCommitHash(diff);
+  if (source === 'commit' && sourceDescription) {
+    commitHash = sourceDescription.substring(0, 8); // Ensure 8 chars for consistency
+  } else if (!commitHash) {
+    commitHash = generateDiffHash(diff);
+  }
 
   // Create agent registry with all agents
   const agentRegistry = createAgentRegistry(config);
@@ -272,6 +177,7 @@ export async function runEvaluateCommand(args: string[]) {
   const context = {
     commitDiff: diff,
     filesChanged: [],
+    commitHash, // Add commit hash to context for logging
     config,
   };
 
@@ -286,6 +192,34 @@ export async function runEvaluateCommand(args: string[]) {
   // Helper to check if a message is a diagnostic log (should be filtered)
   const isDiagnosticLog = (args: any[]): boolean => {
     const message = String(args[0] || '');
+
+    // IMPORTANT: Explicitly allow round summaries and important progress messages through
+    // These should NOT be filtered even if they match other patterns
+    if (message.includes('📋 Round') && message.includes('Summary:')) return false;
+    if (message.includes('💰 Tokens:') && message.includes('Cost:')) return false;
+    if (message.includes('🎯 Team Convergence:') || message.includes('🔄 Team Convergence:'))
+      return false;
+    if (message.includes('💭 Team raised') && message.includes('concern')) return false;
+    if (message.includes('✅') && message.includes('% clarity (') && message.includes('iteration'))
+      return false;
+    if (message.includes('✅ Completed:') && message.includes('agent')) return false;
+    if (message.includes('🚀 Starting') && message.includes('agent')) return false;
+    // Allow round start headers
+    if (message.match(/🔄.*Round \d+\/\d+ \((Initial Analysis|Team Discussion|Final Review)\)/))
+      return false;
+    // Allow final evaluation summary
+    if (message.includes('✅ Evaluation complete in')) return false;
+    if (message.includes('Total agents:')) return false;
+    if (message.includes('Discussion rounds:')) return false;
+    if (message.includes('🎯 Converged early')) return false;
+    // Allow developer overview generation progress
+    if (message.includes('📝 Generating developer overview')) return false;
+    if (message.includes('✅ Developer overview generated')) return false;
+    // Allow vector store initialization (always enabled now)
+    if (message.includes('📦 Large diff detected')) return false;
+    if (message.includes('📦 Initializing RAG vector store')) return false;
+    if (message.includes('✅ Indexed') && message.includes('chunks from')) return false;
+
     // Filter out vector store diagnostic logs
     if (message.includes('Found file via diff')) return true;
     if (message.includes('Line ') && message.includes(':')) return true;
@@ -303,52 +237,74 @@ export async function runEvaluateCommand(args: string[]) {
     if (message.includes('responses (rounds:')) return true;
     // Filter out orchestrator status messages
     if (message.includes('🚀 Starting commit evaluation')) return true;
-    if (message.includes('Large diff detected')) return true;
     if (message.includes('First 3 lines:')) return true;
     if (message.includes('files | +') && message.includes('-')) return true;
-    if (message.includes('📝 Generating developer overview')) return true;
     if (message.includes('Round ') && message.includes('Analysis')) return true;
-    if (message.includes('Evaluation complete in')) return true;
-    if (message.includes('Total agents:')) return true;
-    if (message.includes('Discussion rounds:')) return true;
-    if (message.includes('💰')) return true;
-    if (message.includes('Indexed') && message.includes('chunks')) return true;
     // Filter out round information logs (e.g., "[3/4] 🔄 6b66968 - Round 2/3")
     if (/\[\d+\/\d+\]\s*🔄/.test(message)) return true;
     if (message.includes('Round ') && message.includes('Raising Concerns')) return true;
     if (message.includes('Round ') && message.includes('Validation & Final')) return true;
+    // Filter out agent iteration logs (verbose internal refinement)
+    if (message.includes('Starting initial analysis (iteration')) return true;
+    if (message.includes('Refining analysis (iteration')) return true;
+    if (message.includes('Clarity ') && message.includes('% (threshold:')) return true;
+    if (message.includes('🔄') && message.includes('[Round ') && message.includes(']: '))
+      return true;
+    if (message.includes('📊') && message.includes('[Round ') && message.includes(']: '))
+      return true;
+    if (message.includes('🔍 [Round ') && message.includes('] Executing ')) return true;
+    // Filter HTML formatter diagnostic logs
+    if (message.includes('Detected') && message.includes('unique agents:')) return true;
+    if (message.includes('responses (rounds:') && /\d+, \d+/.test(message)) return true;
+    // Filter LangSmith warnings
+    if (message.includes('[LANGSMITH]:') && message.includes('Failed to fetch info')) return true;
+
     return false;
   };
 
-  // Buffer for storing diagnostic output
+  // Track suppression state
   let suppressOutput = false;
-  const suppressedOutput: Array<{ type: string; args: any[] }> = [];
 
   // Override console methods to suppress diagnostic output during evaluation
   console.log = (...args: any[]) => {
     if (!suppressOutput) {
       originalConsoleLog(...args);
-    } else if (!isDiagnosticLog(args)) {
-      // Only buffer non-diagnostic logs (actual errors or important messages)
-      suppressedOutput.push({ type: 'log', args });
+    } else {
+      // If it's a diagnostic log, suppress it (don't print or buffer)
+      // If it's NOT a diagnostic log (important message), print immediately
+      if (isDiagnosticLog(args)) {
+        // Suppress diagnostic logs completely
+        return;
+      } else {
+        // Print important messages immediately in real-time
+        originalConsoleLog(...args);
+      }
     }
   };
 
   console.warn = (...args: any[]) => {
     if (!suppressOutput) {
       originalConsoleWarn(...args);
-    } else if (!isDiagnosticLog(args)) {
-      suppressedOutput.push({ type: 'warn', args });
+    } else {
+      if (isDiagnosticLog(args)) {
+        return; // Suppress diagnostic warnings
+      } else {
+        originalConsoleWarn(...args); // Print important warnings immediately
+      }
     }
   };
 
   console.error = (...args: any[]) => {
     if (!suppressOutput) {
       originalConsoleError(...args);
-    } else if (!isDiagnosticLog(args)) {
-      suppressedOutput.push({ type: 'error', args });
+    } else {
+      // Always print errors immediately
+      originalConsoleError(...args);
     }
   };
+
+  // Print evaluation start message
+  originalConsoleLog('\n🚀 Starting commit evaluation...\n');
 
   // Start suppressing output during evaluation
   suppressOutput = true;
@@ -356,11 +312,9 @@ export async function runEvaluateCommand(args: string[]) {
   const evaluationResult = await orchestrator.evaluateCommit(context, {
     streaming: streamingEnabled,
     threadId: `eval-${Date.now()}`,
-    onProgress: (state) => {
-      // Optional: emit progress events for UI integration
-      if (streamingEnabled && state?.agentResults?.length > 0) {
-        // Progress is now suppressed
-      }
+    onProgress: (state: any) => {
+      // For single evaluate with LangSmith (no streaming), onProgress is called once at end
+      // Just track final state for summary
     },
   });
 
@@ -369,29 +323,18 @@ export async function runEvaluateCommand(args: string[]) {
   console.warn = originalConsoleWarn;
   console.error = originalConsoleError;
 
-  // Print any buffered non-diagnostic output
-  for (const output of suppressedOutput) {
-    if (output.type === 'log') {
-      originalConsoleLog(...output.args);
-    } else if (output.type === 'warn') {
-      originalConsoleWarn(...output.args);
-    } else if (output.type === 'error') {
-      originalConsoleError(...output.args);
-    }
-  }
+  // No need to print buffered output since we're now printing important messages immediately
   const results = evaluationResult.agentResults || [];
 
-  // Determine commit hash and metadata for directory naming
-  let commitHash = extractCommitHash(diff);
+  // Determine metadata for directory naming (commitHash already extracted before evaluation)
   let commitAuthor: string | undefined;
   let commitMessage: string | undefined;
   let commitDate: string | undefined;
   let fullCommitHash: string | undefined; // Store full hash for metadata
 
   if (source === 'commit' && sourceDescription) {
-    // Use sourceDescription for fetching metadata, but ensure 8-char short hash for directory
+    // Use sourceDescription for fetching metadata
     fullCommitHash = sourceDescription;
-    commitHash = sourceDescription.substring(0, 8); // Ensure 8 chars for consistency
 
     // Get commit metadata
     const showResult = spawnSync(
@@ -408,13 +351,13 @@ export async function runEvaluateCommand(args: string[]) {
       commitMessage = message;
       commitDate = date;
     }
-  } else if (!commitHash) {
-    // Fallback to generated hash if no commit hash found
-    commitHash = generateDiffHash(diff);
   }
 
   // Create evaluation directory
   const outputDir = await createEvaluationDirectory(commitHash);
+
+  // Calculate commit statistics from diff
+  const commitStats = parseCommitStats(diff);
 
   // Prepare metadata
   const metadata: EvaluationMetadata = {
@@ -425,6 +368,7 @@ export async function runEvaluateCommand(args: string[]) {
     commitDate,
     source,
     developerOverview: evaluationResult.developerOverview,
+    commitStats,
   };
 
   // Save all reports using shared utility
@@ -439,5 +383,9 @@ export async function runEvaluateCommand(args: string[]) {
   // Print completion message using shared function
   printEvaluateCompletionMessage(outputDir);
 
-  process.exit(0);
+  if (commitAuthor) {
+    const { promptAndGenerateOkrs } = await import('../utils/okr-prompt.utils.js');
+    const evalRoot = getEvaluationRoot();
+    await promptAndGenerateOkrs(config, [commitAuthor], evalRoot);
+  }
 }

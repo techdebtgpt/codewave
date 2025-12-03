@@ -1,9 +1,9 @@
 import { AgentRegistry } from './agents/agent-registry';
-import { BusinessAnalystAgent } from './agents/business-analyst-agent';
-import { SDETAgent } from './agents/sdet-agent';
-import { DeveloperAuthorAgent } from './agents/developer-author-agent';
-import { SeniorArchitectAgent } from './agents/senior-architect-agent';
-import { DeveloperReviewerAgent } from './agents/developer-reviewer-agent';
+import { BusinessAnalystAgent } from './agents/implementations/business-analyst-agent';
+import { SDETAgent } from './agents/implementations/sdet-agent';
+import { DeveloperAuthorAgent } from './agents/implementations/developer-author-agent';
+import { SeniorArchitectAgent } from './agents/implementations/senior-architect-agent';
+import { DeveloperReviewerAgent } from './agents/implementations/developer-reviewer-agent';
 import { CommitEvaluationOrchestrator } from './orchestrator/commit-evaluation-orchestrator';
 
 import { loadConfig, configExists } from './config/config-loader';

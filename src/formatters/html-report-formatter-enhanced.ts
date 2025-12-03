@@ -259,7 +259,12 @@ function groupResultsByAgent(results: AgentResult[]): Map<string, AgentEvaluatio
     // Round is determined by how many times we've seen this agent
     const round = occurrences;
 
-    const concerns = extractConcerns(result.details || '');
+    // Use structured concerns from agent if available, fallback to regex extraction
+    const concerns =
+      result.concerns && result.concerns.length > 0
+        ? result.concerns
+        : extractConcerns(result.details || '');
+
     const references = extractReferences(result.summary || '', result.details || '');
 
     const evaluation: AgentEvaluation = {
@@ -301,38 +306,70 @@ function groupResultsByAgent(results: AgentResult[]): Map<string, AgentEvaluatio
 function calculateMetricEvolution(
   groupedResults: Map<string, AgentEvaluation[]>
 ): MetricEvolution[] {
-  // Import centralized pillar constants
-  const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+  // Import centralized pillar constants and weight functions
+  const {
+    SEVEN_PILLARS,
+    getAgentWeight,
+    calculateWeightedAverage,
+  } = require('../constants/agent-weights.constants');
 
   const metricMap = new Map<string, MetricEvolution>();
 
+  // Group all evaluations by round
+  const roundMap = new Map<number, AgentEvaluation[]>();
   groupedResults.forEach((evaluations) => {
     evaluations.forEach((evaluation) => {
-      if (evaluation.metrics) {
-        Object.entries(evaluation.metrics)
-          .filter(([metric]) => SEVEN_PILLARS.includes(metric))
-          .forEach(([metric, value]) => {
-            if (!metricMap.has(metric)) {
-              metricMap.set(metric, {
-                metric,
-                rounds: new Map<number, number>(),
-                changed: false,
-              });
-            }
-            const evolution = metricMap.get(metric)!;
-
-            // Store value for this round
-            evolution.rounds.set(evaluation.round, value);
-
-            // Check if value changed from first round
-            const firstRound = Math.min(...Array.from(evolution.rounds.keys()));
-            const firstValue = evolution.rounds.get(firstRound);
-            if (evaluation.round > firstRound && firstValue !== undefined) {
-              evolution.changed = evolution.changed || firstValue !== value;
-            }
-          });
+      if (!roundMap.has(evaluation.round)) {
+        roundMap.set(evaluation.round, []);
       }
+      roundMap.get(evaluation.round)!.push(evaluation);
     });
+  });
+
+  // For each metric, calculate consensus score per round
+  SEVEN_PILLARS.forEach((metric: string) => {
+    const metricEvolution: MetricEvolution = {
+      metric,
+      rounds: new Map<number, number>(),
+      changed: false,
+    };
+
+    // Process each round in order
+    Array.from(roundMap.keys())
+      .sort((a, b) => a - b)
+      .forEach((round) => {
+        const evaluationsInRound = roundMap.get(round)!;
+
+        // Build contributor list for this round and metric
+        const contributors: Array<{ agentName: string; score: number | null; weight: number }> = [];
+        evaluationsInRound.forEach((evaluation) => {
+          if (evaluation.metrics && metric in evaluation.metrics) {
+            const score = evaluation.metrics[metric];
+            const agentKey = evaluation.agentRole || evaluation.agentName;
+            const weight = getAgentWeight(agentKey, metric);
+            contributors.push({ agentName: evaluation.agentName, score, weight });
+          }
+        });
+
+        // Calculate weighted consensus for this round
+        if (contributors.length > 0) {
+          const consensusScore = calculateWeightedAverage(
+            contributors.map((c) => ({ agentName: c.agentName, score: c.score })),
+            metric
+          );
+          metricEvolution.rounds.set(round, consensusScore);
+
+          // Check if value changed from first round
+          const firstRound = Math.min(...Array.from(metricEvolution.rounds.keys()));
+          const firstValue = metricEvolution.rounds.get(firstRound);
+          if (round > firstRound && firstValue !== undefined) {
+            metricEvolution.changed =
+              metricEvolution.changed || Math.abs(firstValue - consensusScore) > 0.01;
+          }
+        }
+      });
+
+    metricMap.set(metric, metricEvolution);
   });
 
   return Array.from(metricMap.values());
@@ -341,11 +378,12 @@ function calculateMetricEvolution(
 /**
  * Calculate consensus values with contributor tracking
  */
-function calculateConsensusValues(
-  groupedResults: Map<string, AgentEvaluation[]>
-): Map<
+function calculateConsensusValues(groupedResults: Map<string, AgentEvaluation[]>): Map<
   string,
-  { value: number; contributors: Array<{ name: string; score: number; weight: number }> }
+  {
+    value: number | null;
+    contributors: Array<{ name: string; score: number | null; weight: number }>;
+  }
 > {
   const {
     getAgentWeight,
@@ -366,14 +404,15 @@ function calculateConsensusValues(
   });
 
   // Build agent-metric matrix and agentName -> agentRole mapping
-  const agentMetrics = new Map<string, Map<string, number>>();
+  const agentMetrics = new Map<string, Map<string, number | null>>();
   const agentRoleMap = new Map<string, string>();
   groupedResults.forEach((evaluations, agentName) => {
     const latestEval = evaluations[evaluations.length - 1];
     if (latestEval.metrics) {
       const filteredMetrics = Object.fromEntries(
         Object.entries(latestEval.metrics).filter(
-          ([metric, value]) => SEVEN_PILLARS.includes(metric) && typeof value === 'number'
+          ([metric, value]) =>
+            SEVEN_PILLARS.includes(metric) && (typeof value === 'number' || value === null)
         )
       );
       agentMetrics.set(agentName, new Map(Object.entries(filteredMetrics)));
@@ -386,13 +425,16 @@ function calculateConsensusValues(
   // Calculate weighted averages for final values
   const finalValues = new Map<
     string,
-    { value: number; contributors: Array<{ name: string; score: number; weight: number }> }
+    {
+      value: number | null;
+      contributors: Array<{ name: string; score: number | null; weight: number }>;
+    }
   >();
   allMetrics.forEach((metric) => {
-    const contributors: Array<{ name: string; score: number; weight: number }> = [];
+    const contributors: Array<{ name: string; score: number | null; weight: number }> = [];
     agentMetrics.forEach((metrics, agentName) => {
       if (metrics.has(metric)) {
-        const score = metrics.get(metric)!;
+        const score = metrics.get(metric)!; // Can be number or null
         const agentKey = agentRoleMap.get(agentName) || agentName;
         const weight = getAgentWeight(agentKey, metric);
         contributors.push({ name: agentName, score, weight });
@@ -421,7 +463,6 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
   const {
     getAgentWeight,
     calculateWeightedAverage,
-    AGENT_EXPERTISE_WEIGHTS,
     SEVEN_PILLARS,
   } = require('../constants/agent-weights.constants');
 
@@ -438,15 +479,16 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
   });
 
   // Build agent-metric matrix and agentName -> agentRole mapping
-  const agentMetrics = new Map<string, Map<string, number>>();
+  const agentMetrics = new Map<string, Map<string, number | null>>();
   const agentRoleMap = new Map<string, string>(); // Maps display name to technical key
   groupedResults.forEach((evaluations, agentName) => {
     const latestEval = evaluations[evaluations.length - 1]; // Use latest response
     if (latestEval.metrics) {
-      // Filter metrics to ONLY the 7 pillars and ensure they are numeric
+      // Filter metrics to ONLY the 7 pillars, allow both numbers and null
       const filteredMetrics = Object.fromEntries(
         Object.entries(latestEval.metrics).filter(
-          ([metric, value]) => SEVEN_PILLARS.includes(metric) && typeof value === 'number'
+          ([metric, value]) =>
+            SEVEN_PILLARS.includes(metric) && (typeof value === 'number' || value === null)
         )
       );
       agentMetrics.set(agentName, new Map(Object.entries(filteredMetrics)));
@@ -460,13 +502,16 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
   // Calculate weighted averages for final values (using weights from constants)
   const finalValues = new Map<
     string,
-    { value: number; contributors: Array<{ name: string; score: number; weight: number }> }
+    {
+      value: number | null;
+      contributors: Array<{ name: string; score: number | null; weight: number }>;
+    }
   >();
   allMetrics.forEach((metric) => {
-    const contributors: Array<{ name: string; score: number; weight: number }> = [];
+    const contributors: Array<{ name: string; score: number | null; weight: number }> = [];
     agentMetrics.forEach((metrics, agentName) => {
       if (metrics.has(metric)) {
-        const score = metrics.get(metric)!;
+        const score = metrics.get(metric)!; // Can be number or null
         // Use agentRole (technical key) for weight lookup, fallback to agentName
         const agentKey = agentRoleMap.get(agentName) || agentName;
         const weight = getAgentWeight(agentKey, metric);
@@ -579,9 +624,14 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
 function loadEvaluationHistory(outputDir: string): EvaluationHistoryEntry[] {
   try {
     const historyPath = path.join(outputDir, 'history.json');
+
+    if (!fs.existsSync(historyPath)) {
+      return [];
+    }
+
     const content = fs.readFileSync(historyPath, 'utf-8');
     return JSON.parse(content);
-  } catch {
+  } catch (error) {
     return [];
   }
 }
@@ -597,7 +647,14 @@ function calculateHistoryStatistics(
 
   metrics.forEach((metric) => {
     const values = history
-      .map((h) => (h.metrics as any)[metric])
+      .map((h) => {
+        let val = (h.metrics as any)[metric];
+        // Backward compatibility: default to 0 for debtReductionHours if not present in old evaluations
+        if (metric === 'debtReductionHours' && val === undefined) {
+          val = 0;
+        }
+        return val;
+      })
       .filter((v) => typeof v === 'number');
 
     if (values.length === 0) return;
@@ -648,15 +705,8 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
   }
 
   // Build comparison tables - Evaluations as ROWS, Metrics as COLUMNS
-  const allMetrics = [
-    'functionalImpact',
-    'idealTimeHours',
-    'testCoverage',
-    'codeQuality',
-    'codeComplexity',
-    'actualTimeHours',
-    'technicalDebtHours',
-  ];
+  const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
+  const allMetrics = SEVEN_PILLARS;
   const stats = calculateHistoryStatistics(history, allMetrics);
 
   // Build evaluation rows (each row is one evaluation with all metrics as columns)
@@ -670,14 +720,22 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
           <td><strong>Evaluation #${h.evaluationNumber}</strong><br/><small class="text-muted">${timestamp}</small><br/><small>${sourceLabel}</small></td>
       `;
 
-      allMetrics.forEach((metric) => {
-        const val = (h.metrics as any)[metric];
+      allMetrics.forEach((metric: string) => {
+        // Backward compatibility: default to 0 for debtReductionHours if not present in old evaluations
+        let val = (h.metrics as any)[metric];
+        if (metric === 'debtReductionHours' && val === undefined) {
+          val = 0;
+        }
         const displayVal = typeof val === 'number' ? val.toFixed(1) : 'N/A';
 
         // Calculate change from previous evaluation
         let changeHtml = '';
         if (evalIdx > 0) {
-          const prevVal = (history[evalIdx - 1].metrics as any)[metric];
+          let prevVal = (history[evalIdx - 1].metrics as any)[metric];
+          // Backward compatibility for previous eval as well
+          if (metric === 'debtReductionHours' && prevVal === undefined) {
+            prevVal = 0;
+          }
           if (typeof val === 'number' && typeof prevVal === 'number') {
             const diff = val - prevVal;
             const direction = diff > 0.05 ? '↑' : diff < -0.05 ? '↓' : '→';
@@ -695,11 +753,16 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
     })
     .join('');
 
-  // Build metric statistics rows
+  // Build metric statistics rows - show final consensus values and history statistics
+  const latestEntry = history[history.length - 1];
   const statsRows = allMetrics
-    .map((metric) => {
+    .map((metric: string) => {
       const stat = stats[metric];
       if (!stat) return '';
+
+      // Get final value from latest history entry (weighted consensus)
+      const finalValue = latestEntry.metrics ? (latestEntry.metrics as any)[metric] : 'N/A';
+      const finalValueStr = typeof finalValue === 'number' ? finalValue.toFixed(2) : 'N/A';
 
       return `
         <tr class="table-light">
@@ -707,12 +770,12 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
             .replace(/([A-Z])/g, ' $1')
             .replace(/^./, (s) => s.toUpperCase())
             .trim()}</strong></td>
+          <td class="text-center small"><span class="badge bg-success">final</span> ${finalValueStr}</td>
           <td class="text-center small"><span class="badge bg-info">avg</span> ${stat.avg}</td>
           <td class="text-center small"><span class="badge bg-secondary">med</span> ${stat.median}</td>
           <td class="text-center small"><span class="badge bg-warning text-dark">σ</span> ${stat.stdDev}</td>
           <td class="text-center small">${stat.min}</td>
           <td class="text-center small">${stat.max}</td>
-          <td class="text-center small"><span class="badge bg-light text-dark">${stat.range}</span></td>
           <td class="text-center"><strong>${stat.trend}</strong></td>
         </tr>
       `;
@@ -727,7 +790,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
   const convergenceTrend = convergenceScores[convergenceScores.length - 1] - convergenceScores[0];
 
   const metricHeaders = allMetrics
-    .map((m) => {
+    .map((m: string) => {
       const label = m
         .replace(/([A-Z])/g, ' $1')
         .replace(/^./, (s) => s.toUpperCase())
@@ -772,12 +835,12 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
             <thead class="table-light">
               <tr style="border-bottom: 2px solid #dee2e6;">
                 <th style="min-width: 140px;">Metric</th>
+                <th class="text-center"><small>Final (Weighted)</small></th>
                 <th class="text-center"><small>Average</small></th>
                 <th class="text-center"><small>Median</small></th>
                 <th class="text-center"><small>Std Dev (σ)</small></th>
                 <th class="text-center"><small>Min</small></th>
                 <th class="text-center"><small>Max</small></th>
-                <th class="text-center"><small>Range</small></th>
                 <th class="text-center"><small>Trend</small></th>
               </tr>
             </thead>
@@ -806,7 +869,7 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
             <tbody>
               ${history
                 .map(
-                  (h, idx) => `
+                  (h) => `
                 <tr>
                   <td><strong>Eval #${h.evaluationNumber}</strong> <small class="text-muted">${new Date(h.timestamp).toLocaleString()}</small></td>
                   <td class="text-center">${(h.tokens?.inputTokens || 0).toLocaleString()}</td>
@@ -908,6 +971,9 @@ export function generateEnhancedHtmlReport(
     commitMessage?: string;
     commitDate?: string;
     developerOverview?: string;
+    filesChanged?: number;
+    insertions?: number;
+    deletions?: number;
   }
 ) {
   const groupedResults = groupResultsByAgent(results);
@@ -934,21 +1000,45 @@ export function generateEnhancedHtmlReport(
 
   const historyHtml = generateHistoryHtml(evaluationHistory, modelInfo);
 
-  // Calculate consensus values and aggregate final pillar scores
+  // Calculate consensus values (for comprehensive metrics table)
   const consensusValues = calculateConsensusValues(groupedResults);
-  const finalPillarScores: Record<string, { value: number; agent: string }> = {};
+
+  // Extract final pillar scores using consensus-based weighted averages
+  // This ensures the 7-Pillar scores match the Final Agreed consensus values
+  const finalPillarScores: Record<string, { value: number | null; agent: string }> = {};
+
+  // Use consensus values directly - these are already weighted averages
   consensusValues.forEach((data, metric) => {
-    // Find the agent with the highest weight contribution to this metric
+    // Identify the top contributor for attribution
     const topContributor = data.contributors.reduce((max: any, current: any) =>
       current.weight > max.weight ? current : max
     );
     finalPillarScores[metric] = {
-      value: data.value, // Use the weighted average consensus value
-      agent: topContributor.name, // Use the agent with highest influence
+      value: data.value,
+      agent: topContributor.name,
     };
   });
 
   // Generate 7-Pillar Summary Card
+  // Calculate NET debt for display (technicalDebtHours - debtReductionHours)
+  const technicalDebtValue = finalPillarScores['technicalDebtHours']?.value || 0;
+  const debtReductionValue = finalPillarScores['debtReductionHours']?.value || 0;
+  const netDebtValue = technicalDebtValue - debtReductionValue;
+
+  // Filter out individual debt metrics and add NET debt instead
+  const displayMetrics = Object.entries(finalPillarScores).filter(
+    ([metric]) => metric !== 'technicalDebtHours' && metric !== 'debtReductionHours'
+  );
+
+  // Add NET debt as a composite metric
+  displayMetrics.push([
+    'netDebt',
+    {
+      value: netDebtValue,
+      agent: finalPillarScores['technicalDebtHours']?.agent || 'Team',
+    },
+  ]);
+
   const pillarSummaryHtml = `
     <div class="card mb-4 shadow-lg border-dark">
       <div class="card-header bg-dark text-white">
@@ -959,35 +1049,62 @@ export function generateEnhancedHtmlReport(
       </div>
       <div class="card-body">
         <div class="row">
-          ${Object.entries(finalPillarScores)
+          ${displayMetrics
             .map(([metric, data]) => {
-              const label = metric
-                .replace(/([A-Z])/g, ' $1')
-                .replace(/^./, (str) => str.toUpperCase())
-                .trim();
+              let label = metric;
+              if (metric === 'netDebt') {
+                label = 'Net Debt (−=improve)';
+              } else {
+                label = metric
+                  .replace(/([A-Z])/g, ' $1')
+                  .replace(/^./, (str) => str.toUpperCase())
+                  .trim();
+              }
               let badgeColor = 'secondary';
               let icon = '📊';
 
-              // Determine color and icon based on metric type
-              if (
-                metric.includes('Quality') ||
-                metric.includes('Coverage') ||
-                metric.includes('Impact')
-              ) {
-                badgeColor = data.value >= 7 ? 'success' : data.value >= 4 ? 'warning' : 'danger';
-                icon = data.value >= 7 ? '✅' : data.value >= 4 ? '⚠️' : '❌';
-              } else if (metric.includes('Complexity')) {
-                badgeColor = data.value <= 3 ? 'success' : data.value <= 6 ? 'warning' : 'danger';
-                icon = data.value <= 3 ? '✅' : data.value <= 6 ? '⚠️' : '❌';
-              } else if (metric.includes('Debt')) {
-                badgeColor = data.value <= 0 ? 'success' : data.value <= 4 ? 'warning' : 'danger';
-                icon = data.value <= 0 ? '✅' : data.value <= 4 ? '⚠️' : '❌';
+              // Handle null values
+              if (data.value === null) {
+                badgeColor = 'secondary';
+                icon = '➖';
+              } else {
+                // Determine color and icon based on metric type
+                if (
+                  metric.includes('Quality') ||
+                  metric.includes('Coverage') ||
+                  metric.includes('Impact')
+                ) {
+                  badgeColor = data.value >= 7 ? 'success' : data.value >= 4 ? 'warning' : 'danger';
+                  icon = data.value >= 7 ? '✅' : data.value >= 4 ? '⚠️' : '❌';
+                } else if (metric.includes('Complexity')) {
+                  badgeColor = data.value <= 3 ? 'success' : data.value <= 6 ? 'warning' : 'danger';
+                  icon = data.value <= 3 ? '✅' : data.value <= 6 ? '⚠️' : '❌';
+                } else if (metric === 'netDebt' || metric.includes('Debt')) {
+                  // For NET debt: positive = added debt (bad), negative = debt removed (good)
+                  badgeColor = data.value > 0 ? 'danger' : data.value < 0 ? 'success' : 'secondary';
+                  icon = data.value > 0 ? '❌' : data.value < 0 ? '✅' : '➖';
+                }
               }
 
               const metadata = METRIC_METADATA[metric as keyof typeof METRIC_METADATA];
-              const formattedValue = metadata ? metadata.format(data.value) : data.value.toFixed(1);
-              const scale = metadata ? metadata.scale : '';
-              const tooltip = metadata ? metadata.tooltip : '';
+              let formattedValue: string;
+              if (data.value === null) {
+                formattedValue = '-';
+              } else if (metric === 'netDebt') {
+                formattedValue = `${data.value > 0 ? '+' : ''}${data.value.toFixed(1)}h`;
+              } else {
+                formattedValue = metadata ? metadata.format(data.value) : data.value.toFixed(1);
+              }
+              const scale = metadata
+                ? metadata.scale
+                : metric === 'netDebt'
+                  ? 'Positive = added debt, Negative = removed debt'
+                  : '';
+              const tooltip = metadata
+                ? metadata.tooltip
+                : metric === 'netDebt'
+                  ? 'Net technical debt: debt introduced minus debt removed'
+                  : '';
 
               return `
               <div class="col-md-6 mb-2">
@@ -1033,35 +1150,35 @@ export function generateEnhancedHtmlReport(
           <div class="card-body">
             <h6 class="text-${latestEval.color} mb-2">📊 Metrics</h6>
             <div class="mb-3">
-              ${
-                latestEval.metrics
-                  ? Object.entries(latestEval.metrics)
-                      .map(([key, value]) => {
-                        const label = key
-                          .replace(/([A-Z])/g, ' $1')
-                          .replace(/^./, (str) => str.toUpperCase())
-                          .trim();
-                        return `<span class="badge bg-${latestEval.color} me-2">${label}: ${value}</span>`;
-                      })
-                      .join('')
-                  : '<em class="text-muted">No metrics</em>'
-              }
+        ${
+          latestEval.metrics
+            ? Object.entries(latestEval.metrics)
+                .map(([key, value]) => {
+                  const label = key
+                    .replace(/([A-Z])/g, ' $1')
+                    .replace(/^./, (str) => str.toUpperCase())
+                    .trim();
+                  return `<span class="badge bg-${latestEval.color} me-2">${label}: ${value}</span>`;
+                })
+                .join('')
+            : '<em class="text-muted">No metrics</em>'
+        }
             </div>
-            
+
             <h6 class="text-${latestEval.color} mb-2">💭 Final Assessment</h6>
             <p class="small">${latestEval.summary.substring(0, 200)}${latestEval.summary.length > 200 ? '...' : ''}</p>
-            
+
             ${
               latestEval.concernsRaised.length > 0
                 ? `
-              <h6 class="text-danger mb-2">⚠️ Concerns</h6>
+              <h6 class="text-danger mb-2">⚠️ Concerns (Round ${latestEval.round})</h6>
               <ul class="small">
                 ${latestEval.concernsRaised.map((concern) => `<li>${concern}</li>`).join('')}
               </ul>
             `
                 : ''
             }
-            
+
             <button class="btn btn-sm btn-outline-${latestEval.color}" onclick="showAgentDetails('${agentName}')">
               View Full Analysis →
             </button>
@@ -1094,12 +1211,12 @@ export function generateEnhancedHtmlReport(
   ];
 
   let currentRound = -1;
-  allEvaluations.forEach((evaluation, idx) => {
+  allEvaluations.forEach((evaluation) => {
     if (evaluation.round !== currentRound) {
       currentRound = evaluation.round;
       const roundIndex = currentRound - 1; // Convert to 0-based for phase lookup
       const phase = roundPhases[roundIndex] || {
-        title: `Round ${currentRound}`,
+        title: `Round ${currentRound} `,
         description: '',
         emoji: '🔄',
       };
@@ -1111,43 +1228,43 @@ export function generateEnhancedHtmlReport(
           </div>
           <p style="margin: 0; font-size: 0.9rem; color: #666;">${phase.description}</p>
         </div>
-      `;
+              `;
     }
 
     // Simplified card with only essential information
     const concernsHtml =
       evaluation.concernsRaised.length > 0
         ? `
-      <div style="margin-top: 0.75rem; padding: 0.75rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
-        <strong style="font-size: 0.85rem; color: #856404;">Concerns:</strong>
-        <ul style="margin: 0.5rem 0 0 1rem; padding: 0; font-size: 0.85rem; color: #856404;">
-          ${evaluation.concernsRaised.map((c) => `<li>${c}</li>`).join('')}
-        </ul>
-      </div>
+            <div style="margin-top: 0.75rem; padding: 0.75rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px;">
+              <strong style="font-size: 0.85rem; color: #856404;">Concerns:</strong>
+              <ul style="margin: 0.5rem 0 0 1rem; padding: 0; font-size: 0.85rem; color: #856404;">
+                ${evaluation.concernsRaised.map((c) => `<li>${c}</li>`).join('')}
+              </ul>
+            </div>
     `
         : '';
 
     const referencesHtml =
       evaluation.referencesTo.length > 0
         ? `
-      <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #0d6efd;">
-        💬 References: <strong>${evaluation.referencesTo.join(', ')}</strong>
-      </div>
+            <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #0d6efd;">
+              💬 References: <strong>${evaluation.referencesTo.join(', ')}</strong>
+            </div>
     `
         : '';
 
     timelineHtml += `
-      <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #0d6efd;">
-        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
-          <span style="font-size: 1.3rem;">${evaluation.icon}</span>
-          <strong style="font-size: 0.95rem;">${evaluation.agentName}</strong>
-          <span style="font-size: 0.8rem; color: #999; margin-left: auto;">Round ${evaluation.round}</span>
+        <div style="margin-bottom: 1.5rem; padding: 1rem; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #0d6efd;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <span style="font-size: 1.3rem;">${evaluation.icon}</span>
+            <strong style="font-size: 0.95rem;">${evaluation.agentName}</strong>
+            <span style="font-size: 0.8rem; color: #999; margin-left: auto;">Round ${evaluation.round}</span>
+          </div>
+          <p style="margin: 0 0 0.75rem 0; font-size: 0.9rem; line-height: 1.4; color: #333;">${evaluation.summary}</p>
+          ${concernsHtml}
+          ${referencesHtml}
         </div>
-        <p style="margin: 0 0 0.75rem 0; font-size: 0.9rem; line-height: 1.4; color: #333;">${evaluation.summary}</p>
-        ${concernsHtml}
-        ${referencesHtml}
-      </div>
-    `;
+  `;
   });
 
   timelineHtml = `<div style="background: white; padding: 0; border-radius: 8px;">${timelineHtml}</div>`;
@@ -1168,6 +1285,8 @@ export function generateEnhancedHtmlReport(
     codeComplexity: 'Code Complexity',
     actualTimeHours: 'Actual Time Spent',
     technicalDebtHours: 'Technical Debt',
+    debtReductionHours: 'Debt Reduction',
+    netDebt: 'NET Debt (−=improve)',
   };
 
   // Generate Metric Evolution Table - ROUNDS AS ROWS, METRICS AS COLUMNS
@@ -1190,6 +1309,7 @@ export function generateEnhancedHtmlReport(
                     return `<th style="text-align: center; min-width: 140px;">${fullName}</th>`;
                   })
                   .join('')}
+                <th style="text-align: center; min-width: 140px; font-weight: 700; color: #dc3545;">NET Debt (−=improve)</th>
               </tr>
             </thead>
             <tbody>
@@ -1211,11 +1331,17 @@ export function generateEnhancedHtmlReport(
                       const value = evolution.rounds.get(roundNum);
                       const previousValue =
                         roundNum > minRound ? evolution.rounds.get(roundNum - 1) : undefined;
-                      let cellContent = value !== undefined ? value.toFixed(1) : '—';
+                      let cellContent =
+                        value !== undefined && value !== null ? value.toFixed(1) : '—';
                       let cellStyle = '';
 
                       // Add change indicator
-                      if (value !== undefined && previousValue !== undefined) {
+                      if (
+                        value !== undefined &&
+                        value !== null &&
+                        previousValue !== undefined &&
+                        previousValue !== null
+                      ) {
                         const diff = value - previousValue;
                         if (Math.abs(diff) > 0.05) {
                           const arrow = diff > 0 ? '↑' : '↓';
@@ -1241,6 +1367,64 @@ export function generateEnhancedHtmlReport(
                       );
                     })
                     .join('')}
+                  <!-- NET Debt column -->
+                  ${(() => {
+                    const techDebtMetric = metricEvolution.find(
+                      (e) => e.metric === 'technicalDebtHours'
+                    );
+                    const debtReductionMetric = metricEvolution.find(
+                      (e) => e.metric === 'debtReductionHours'
+                    );
+                    const techDebtValue = techDebtMetric?.rounds.get(roundNum) ?? 0;
+                    const debtReductionValue = debtReductionMetric?.rounds.get(roundNum) ?? 0;
+                    const netDebt = techDebtValue - debtReductionValue;
+
+                    const prevTechDebt =
+                      roundNum > minRound
+                        ? (techDebtMetric?.rounds.get(roundNum - 1) ?? 0)
+                        : undefined;
+                    const prevDebtReduction =
+                      roundNum > minRound
+                        ? (debtReductionMetric?.rounds.get(roundNum - 1) ?? 0)
+                        : undefined;
+                    const prevNetDebt =
+                      prevTechDebt !== undefined && prevDebtReduction !== undefined
+                        ? prevTechDebt - prevDebtReduction
+                        : undefined;
+
+                    let netDebtContent = netDebt.toFixed(1);
+                    let netDebtStyle = '';
+                    let netDebtColor =
+                      netDebt > 0 ? '#dc3545' : netDebt < 0 ? '#28a745' : '#6c757d';
+
+                    // Add change indicator
+                    if (prevNetDebt !== undefined) {
+                      const diff = netDebt - prevNetDebt;
+                      if (Math.abs(diff) > 0.05) {
+                        const arrow = diff > 0 ? '↑' : '↓';
+                        const arrowColor = diff > 0 ? '#dc3545' : '#28a745';
+                        netDebtContent =
+                          '<span style="color: ' +
+                          arrowColor +
+                          '; font-weight: 600;">' +
+                          arrow +
+                          ' ' +
+                          netDebtContent +
+                          '</span>';
+                        netDebtStyle = 'background-color: rgba(0,0,0,0.02);';
+                      }
+                    }
+
+                    return (
+                      '<td style="text-align: center; color: ' +
+                      netDebtColor +
+                      '; font-weight: 600; ' +
+                      netDebtStyle +
+                      '; padding: 0.75rem 0.5rem;">' +
+                      netDebtContent +
+                      '</td>'
+                    );
+                  })()}
                 </tr>
               `;
               }).join('')}
@@ -1260,11 +1444,14 @@ export function generateEnhancedHtmlReport(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Commit Evaluation Report - Conversation View</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       min-height: 100vh;
       padding: 40px 0;
     }
@@ -1280,7 +1467,7 @@ export function generateEnhancedHtmlReport(
       text-align: center;
       margin-bottom: 40px;
       padding-bottom: 30px;
-      border-bottom: 3px solid #667eea;
+      border-bottom: 3px solid #4a5568;
       position: relative;
     }
     .report-header h1 {
@@ -1306,13 +1493,13 @@ export function generateEnhancedHtmlReport(
       top: 0;
       bottom: 0;
       width: 4px;
-      background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(180deg, #4a5568 0%, #2d3748 100%);
     }
     .timeline-round {
       margin: 3rem 0 2rem 0;
       padding: 1.5rem;
       background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
-      border-left: 4px solid #667eea;
+      border-left: 4px solid #4a5568;
       border-radius: 4px;
     }
     .round-header {
@@ -1360,18 +1547,18 @@ export function generateEnhancedHtmlReport(
     
     /* Tab Styles */
     .nav-tabs .nav-link {
-      color: #667eea;
+      color: #4a5568;
       font-weight: 600;
     }
     .nav-tabs .nav-link.active {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       color: white;
       border: none;
     }
     
     /* Modal for detailed view */
     .modal-header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
       color: white;
     }
   </style>
@@ -1380,7 +1567,7 @@ export function generateEnhancedHtmlReport(
   <div class="report-container">
     <div class="report-header">
       <div class="position-relative">
-        <a href="../index.html" class="btn btn-sm" style="position: absolute; top: 0; right: 0; background: white; color: #667eea; border: 2px solid white; font-weight: 600; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000;">
+        <a href="../index.html" class="btn btn-sm" style="position: absolute; top: 0; right: 0; background: white; color: #4a5568; border: 2px solid white; font-weight: 600; padding: 8px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000;">
           ← Back to Index
         </a>
         <div class="text-center">
@@ -1443,6 +1630,49 @@ export function generateEnhancedHtmlReport(
           <div class="col-12 mb-3">
             <strong>💬 Commit Message:</strong><br>
             <div class="mt-2 p-3 bg-light rounded" style="white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 0.9rem;">${metadata.commitMessage}</div>
+          </div>
+          `
+              : ''
+          }
+          ${
+            metadata?.filesChanged !== undefined ||
+            metadata?.insertions !== undefined ||
+            metadata?.deletions !== undefined
+              ? `
+          <div class="col-12 mb-3">
+            <strong>📊 Commit Statistics:</strong><br>
+            <div class="mt-2 p-3 bg-light rounded" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; text-align: center;">
+              ${
+                metadata?.filesChanged !== undefined
+                  ? `
+              <div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #4a5568;">${metadata.filesChanged}</div>
+                <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Files Changed</div>
+              </div>
+              `
+                  : ''
+              }
+              ${
+                metadata?.insertions !== undefined
+                  ? `
+              <div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #28a745;">+${metadata.insertions}</div>
+                <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Insertions</div>
+              </div>
+              `
+                  : ''
+              }
+              ${
+                metadata?.deletions !== undefined
+                  ? `
+              <div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: #dc3545;">-${metadata.deletions}</div>
+                <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Deletions</div>
+              </div>
+              `
+                  : ''
+              }
+            </div>
           </div>
           `
               : ''

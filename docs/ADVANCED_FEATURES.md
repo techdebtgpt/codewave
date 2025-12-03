@@ -5,6 +5,7 @@ Deep dive into CodeWave's sophisticated analysis capabilities: Developer Overvie
 ## Table of Contents
 
 - [Developer Overview](#developer-overview) - AI-generated commit summaries
+- [Developer Growth Profiles & OKRs](#developer-growth-profiles--okrs) - AI-generated growth plans
 - [Convergence Detection](#convergence-detection) - Agent consensus measurement
 - [Multi-Round Agent Discussion](#multi-round-agent-discussion) - Structured agent collaboration
 - [Agent RAG Query Tracking](#agent-rag-query-tracking) - Query monitoring and verification
@@ -100,6 +101,50 @@ for file in .evaluated-commits/*/results.json; do
   echo ""
 done > CHANGELOG_GENERATED.md
 ```
+
+---
+
+## Developer Growth Profiles & OKRs
+
+CodeWave leverages its deep understanding of code quality and developer patterns to generate personalized growth profiles and OKRs.
+
+### How It Works
+
+1.  **Data Aggregation**: The system aggregates metric data from all evaluated commits for a specific author over a configurable timeframe (default: 3 months).
+2.  **Pattern Recognition**: It identifies recurring patterns, such as:
+    - Consistently high code quality but low test coverage.
+    - Tendency to introduce technical debt in complex features.
+    - High impact but frequent estimation misses.
+3.  **LLM Analysis**: A specialized LLM agent analyzes this aggregated data to construct a "Growth Profile" and a set of actionable OKRs.
+4.  **OKR Generation**: The system generates 3-5 Objectives, each with 3-5 Key Results. These are:
+    - **Actionable**: Specific steps to take.
+    - **Measurable**: Tied to CodeWave metrics (e.g., "Maintain Code Quality > 8").
+    - **Time-bound**: Designed for the next quarter.
+
+### Configuration
+
+You can customize the OKR generation process:
+
+```bash
+# Set the lookback period
+codewave generate-okr --months 6
+
+# Filter by specific authors
+codewave generate-okr --authors "Alice,Bob"
+
+# Adjust LLM parameters (in config)
+# "llm": { "maxTokens": 16000 } # Ensure sufficient tokens for detailed output
+```
+
+### Integration with Batch Evaluation
+
+When running a batch evaluation, you can automatically generate OKRs at the end:
+
+```bash
+codewave batch --count 50 --generate-okr
+```
+
+This ensures that the OKRs are based on the most up-to-date analysis of the recent commits.
 
 ---
 

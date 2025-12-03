@@ -20,6 +20,7 @@ if (process.env.NODE_NO_DEPRECATION === undefined) {
 import { runEvaluateCommand } from './commands/evaluate-command';
 import { runConfigCommand } from './commands/config.command';
 import { runBatchEvaluateCommand } from './commands/batch-evaluate-command';
+import { runGenerateOkrCommand } from './commands/generate-okr-command';
 
 async function main() {
   const [, , command, ...args] = process.argv;
@@ -52,6 +53,9 @@ async function main() {
       case 'batch':
         await runBatchEvaluateCommand(args);
         break;
+      case 'generate-okr':
+        await runGenerateOkrCommand(args);
+        break;
       case 'config':
         await runConfigCommand(args);
         break;
@@ -83,6 +87,9 @@ function printUsage() {
   console.log(
     '  batch [options]                              Evaluate multiple commits in parallel'
   );
+  console.log(
+    '  generate-okr [options]                       Generate OKRs and action points from history'
+  );
   console.log('');
   console.log('Evaluate Options:');
   console.log('  <commit-hash>           Evaluate a specific commit (default)');
@@ -91,6 +98,7 @@ function printUsage() {
   console.log('  --staged                Evaluate staged changes (git diff --cached)');
   console.log('  --current               Evaluate all current changes (staged + unstaged)');
   console.log('  --repo <path>           Repository path (default: current directory)');
+  console.log('  --depth <mode>          Analysis depth: fast, normal, deep (default: normal)');
   console.log('  --no-stream             Disable streaming output (silent mode)');
   console.log('');
   console.log('Batch Options:');
@@ -99,6 +107,7 @@ function printUsage() {
   console.log('  --until <date>          Only commits before this date');
   console.log('  --count <number>        Number of recent commits to evaluate');
   console.log('  --branch <name>         Git branch to analyze (default: current branch)');
+  console.log('  --depth <mode>          Analysis depth: fast, normal, deep (default: normal)');
   console.log('  --no-stream             Disable streaming output (silent mode)');
   console.log('');
   console.log('Examples:');
@@ -114,13 +123,19 @@ function printUsage() {
   console.log('  # Evaluate staged changes');
   console.log('  codewave evaluate --staged');
   console.log('');
+  console.log('  # Evaluate with deep analysis');
+  console.log('  codewave evaluate HEAD --depth deep');
+  console.log('');
   console.log('  # Batch evaluate last 10 commits');
   console.log('  codewave batch --repo /path/to/repo --count 10');
   console.log('');
-  console.log('  # Batch evaluate date range');
-  console.log('  codewave batch --since "2024-01-01" --until "2024-01-31"');
+  console.log('  # Batch evaluate date range with fast mode');
+  console.log('  codewave batch --since "2024-01-01" --until "2024-01-31" --depth fast');
   console.log('');
   console.log('📖 Docs: https://github.com/techdebtgpt/codewave');
 }
 
-main();
+main().catch((error) => {
+  console.error('❌ Fatal error:', error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
