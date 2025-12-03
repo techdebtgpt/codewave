@@ -11,12 +11,16 @@ const DEFAULT_CONFIG = {
     openai: '',
     google: '',
     xai: '',
+    ollama: '',
+    'lm-studio': '',
+    groq: '',
   },
   llm: {
     provider: 'anthropic',
     model: 'claude-haiku-4-5-20251001', // Cost-optimized for multi-agent discussion (6x cheaper than Sonnet)
     temperature: 0.2,
     maxTokens: 16000, // Safety ceiling for all depth modes - depth modes control actual usage (2000/4500/8000)
+    baseUrl: '', // optional for local models like Ollama
   },
   agents: {
     // Enabled agents: business-analyst, sdet, developer-author, senior-architect, developer-reviewer
@@ -147,6 +151,16 @@ async function initializeConfig(): Promise<void> {
           value: 'xai',
           short: 'xAI',
         },
+        {
+          name: 'Ollama (local, free) - Run models like Llama3 and Mistral on your machine',
+          value: 'ollama',
+          short: 'Ollama',
+        },
+        {
+          name: 'LM Studio (local, free) - OpenAI-compatible local server',
+          value: 'lm-studio',
+          short: 'LM Studio',
+        },
       ],
       default: defaultProvider,
     },
@@ -213,6 +227,39 @@ async function initializeConfig(): Promise<void> {
       keyFormat: 'xai-...',
       url: 'https://console.x.ai/',
     },
+    ollama: {
+      defaultModel: 'gpt-oss-20b',
+      models: [
+        {
+          name: 'gpt-oss-20b (recommended) - Balanced reasoning and performance',
+          value: 'gpt-oss-20b',
+        },
+      ],
+      keyFormat: '(no API key required)',
+      url: 'https://ollama.com/library',
+    },
+    'lm-studio': {
+      defaultModel: 'local-model', // LM Studio often ignores the model name if only one is loaded
+      models: [
+        {
+          name: 'Load from LM Studio (uses currently loaded model)',
+          value: 'local-model',
+        },
+      ],
+      keyFormat: '(no API key required)',
+      url: 'http://localhost:1234',
+    },
+    groq: {
+      defaultModel: 'openai/gpt-oss-120b',
+      models: [
+        {
+          name: 'openai/gpt-oss-120b (recommended) - Balanced reasoning and performance',
+          value: 'openai/gpt-oss-120b',
+        },
+      ],
+      keyFormat: 'gsk_...',
+      url: 'https://console.groq.com/',
+    },
   };
 
   const info = providerInfo[provider as keyof typeof providerInfo];
@@ -276,32 +323,33 @@ async function initializeConfig(): Promise<void> {
     }
   }
 
-  // Prompt for API key with validation
-  console.log(chalk.gray(`\nGet your API key at: ${info.url}\n`));
+  let apiKey = '';
+  if (provider !== 'ollama' && provider !== 'lm-studio') {
+    console.log(chalk.gray(`\nGet your API key at: ${info.url}\n`));
 
-  const existingApiKey = config.apiKeys[provider];
-  const apiKeyPromptMessage = existingApiKey
-    ? `Enter ${provider} API key (${info.keyFormat}) [press Enter to keep existing]:`
-    : `Enter ${provider} API key (${info.keyFormat}):`;
+    const existingApiKey = config.apiKeys[provider];
+    const apiKeyPromptMessage = existingApiKey
+      ? `Enter ${provider} API key (${info.keyFormat}) [press Enter to keep existing]:`
+      : `Enter ${provider} API key (${info.keyFormat}):`;
 
-  const { apiKey } = await inquirer.prompt([
-    {
-      type: 'password',
-      name: 'apiKey',
-      message: apiKeyPromptMessage,
-      validate: (input: string) => {
-        // If user pressed Enter and there's an existing key, that's valid
-        if (!input || input.trim().length === 0) {
-          if (existingApiKey) {
-            return true;
-          }
-          return 'API key is required';
-        }
-        return true;
+    const response = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: apiKeyPromptMessage,
+        validate: (input: string) => {
+          if (!input && existingApiKey) return true;
+          if (!input && !existingApiKey) return 'API key is required';
+          return true;
+        },
+        mask: '*',
       },
-      mask: '*',
-    },
-  ]);
+    ]);
+
+    apiKey = response.apiKey;
+  } else {
+    console.log(chalk.gray('\n(Local models do not require an API key.)\n'));
+  }
 
   // Configure provider - use new key if provided, otherwise keep existing
   if (apiKey && apiKey.trim().length > 0) {

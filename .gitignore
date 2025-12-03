@@ -18,3 +18,5 @@ index.html
 
 # ArchDoc configuration (contains API keys)
 .archdoc.config.json
+
+.idea
