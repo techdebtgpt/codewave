@@ -257,6 +257,8 @@ async function initializeConfig(): Promise<void> {
           value: 'openai/gpt-oss-120b',
         },
       ],
+      keyFormat: 'gsk_...',
+      url: 'https://console.groq.com/',
     },
   };
 
