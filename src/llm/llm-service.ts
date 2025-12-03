@@ -3,6 +3,7 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { ChatOllama } from '@langchain/ollama';
 import { ChatGroq } from '@langchain/groq';
+import { ChatXAI } from '@langchain/xai';
 import { AppConfig } from '../config/config.interface';
 
 export class LLMService {
@@ -76,14 +77,11 @@ export class LLMService {
         });
 
       case 'xai':
-        return new ChatOpenAI({
-          openAIApiKey: apiKey,
+        return new ChatXAI({
+          apiKey,
           temperature,
           maxTokens,
-          modelName: model,
-          configuration: {
-            baseURL: 'https://api.x.ai/v1',
-          },
+          model,
         });
       case 'groq': {
         return new ChatGroq({

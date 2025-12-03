@@ -433,9 +433,8 @@ export async function createEvaluationDirectory(
  * Calculate averaged metrics from agent results using weighted averaging (matching report calculations)
  */
 async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
-  const { MetricsCalculationService } = await import(
-    '../../src/services/metrics-calculation.service.js'
-  );
+  const { MetricsCalculationService } =
+    await import('../../src/services/metrics-calculation.service.js');
   return MetricsCalculationService.loadMetricsFromDirectory(evaluationDir);
 }
 
