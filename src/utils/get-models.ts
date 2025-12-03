@@ -3,6 +3,10 @@ import { AppConfig } from 'config/config.interface';
 interface GenericModel {
   name: string;
   value: string;
+  inputTokenLimit?: number;
+  outputTokenLimit?: number;
+  pricePerInputToken?: number;
+  pricePerOutputToken?: number;
 }
 
 export async function getModels(config: AppConfig): Promise<GenericModel[]> {
@@ -27,6 +31,15 @@ export async function getModels(config: AppConfig): Promise<GenericModel[]> {
       break;
     case 'anthropic':
       models = await getAnthropicModels(config.apiKeys.anthropic);
+      break;
+    case 'openai':
+      models = await getOpenAIModels(config.apiKeys.openai);
+      break;
+    case 'google':
+      models = await getGoogleModels(config.apiKeys.google);
+      break;
+    case 'xai':
+      models = await getXAIModels(config.apiKeys.xai);
       break;
   }
 
@@ -114,4 +127,64 @@ async function getAnthropicModels(apiKey: string): Promise<GenericModel[]> {
   }));
 }
 
-async function getOpenAIModels(apiKey: string): Promise<GenericModel[]> {}
+interface OpenAIModel {
+  id: string;
+}
+
+async function getOpenAIModels(apiKey: string): Promise<GenericModel[]> {
+  const response = await fetch('https://api.openai.com/v1/models', {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch models from OpenAI`);
+  }
+  const data = (await response.json()) as { data: OpenAIModel[] };
+  return data.data.map((model) => ({
+    name: model.id,
+    value: model.id,
+  }));
+}
+
+interface GoogleModel {
+  name: string;
+  displayName: string;
+  baseModelId: string;
+  inputTokenLimit: number;
+  outputTokenLimit: number;
+}
+async function getGoogleModels(apiKey: string): Promise<GenericModel[]> {
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+    headers: {
+      'x-goog-api-key': apiKey,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch models from Google`);
+  }
+  const data = (await response.json()) as { models: GoogleModel[] };
+  return data.models.map((model) => ({
+    name: model.displayName,
+    value: model.name,
+  }));
+}
+
+interface XAIModel {
+  id: string;
+}
+async function getXAIModels(apiKey: string): Promise<GenericModel[]> {
+  const response = await fetch('https://api.x.ai/v1/models', {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch models from XAI`);
+  }
+  const data = (await response.json()) as { data: XAIModel[] };
+  return data.data.map((model) => ({
+    name: model.id,
+    value: model.id,
+  }));
+}
