@@ -149,7 +149,7 @@ export async function runEvaluateCommand(args: string[]) {
 
   // Get API key for selected provider
   const provider = config.llm.provider;
-  const apiKey = config.apiKeys[provider];
+  const apiKey = config.apiKeys?.[provider as keyof typeof config.apiKeys];
 
   if (!apiKey) {
     console.log(chalk.red(`\n❌ No API key configured for provider: ${provider}\n`));

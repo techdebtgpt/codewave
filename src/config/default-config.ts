@@ -9,8 +9,6 @@ export const DEFAULT_CONFIG: AppConfig = {
     openai: '',
     google: '',
     xai: '',
-    ollama: '',
-    'lm-studio': '',
     groq: '',
   },
   llm: {

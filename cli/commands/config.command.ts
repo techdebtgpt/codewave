@@ -240,9 +240,25 @@ async function initializeConfig(): Promise<void> {
       message: `Choose ${provider} model:`,
       choices: models,
       default: models[0].value,
+      loop: false,
     },
   ]);
   config.llm.model = selectedModel;
+  const metadata = models.find((model) => model.value === selectedModel);
+
+  if (metadata) {
+    const inputPricePerToken = parseFloat(metadata.pricing.input);
+    const outputPricePerToken = parseFloat(metadata.pricing.output);
+    const cost = (inputPricePerToken + outputPricePerToken) * DEFAULT_CONFIG.llm.maxTokens * 3;
+    if (cost) {
+      console.log(chalk.gray(`\n✓ Selected: ${chalk.cyanBright(selectedModel)}`));
+      console.log(
+        chalk.gray(
+          `   Cost: ${chalk.green(`$${cost.toFixed(2)} USD`)} per 3-round multi-agent discussion (estimated)`
+        )
+      );
+    }
+  }
 
   console.log(chalk.green(`\n✅ Configured to use: ${provider} (${selectedModel})`));
 
