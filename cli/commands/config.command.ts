@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
+import { getModels } from '../../src/utils/get-models';
 
 const CONFIG_FILE = '.codewave.config.json';
 
@@ -161,176 +162,20 @@ async function initializeConfig(): Promise<void> {
           value: 'lm-studio',
           short: 'LM Studio',
         },
+        { name: 'Groq', value: 'groq', short: 'Groq' },
       ],
       default: defaultProvider,
     },
   ]);
 
-  // Provider-specific configuration with available models
-  const providerInfo = {
-    anthropic: {
-      defaultModel: 'claude-haiku-4-5-20251001',
-      models: [
-        {
-          name: 'claude-haiku-4-5-20251001 (recommended) - Cost-optimized for multi-agent discussion (ultra-fast)',
-          value: 'claude-haiku-4-5-20251001',
-        },
-        {
-          name: 'claude-sonnet-4-5-20250929 - Latest generation (best quality)',
-          value: 'claude-sonnet-4-5-20250929',
-        },
-        {
-          name: 'claude-opus-4-1-20250805 - Most powerful (maximum accuracy)',
-          value: 'claude-opus-4-1-20250805',
-        },
-      ],
-      keyFormat: 'sk-ant-...',
-      url: 'https://console.anthropic.com/',
-    },
-    openai: {
-      defaultModel: 'gpt-4o-mini',
-      models: [
-        { name: 'gpt-4o-mini (recommended) - Fast and cost-effective', value: 'gpt-4o-mini' },
-        { name: 'gpt-4o - Latest multimodal model', value: 'gpt-4o' },
-        { name: 'o3-mini - Advanced reasoning (cost-efficient)', value: 'o3-mini-2025-01-31' },
-        { name: 'o3 - Most powerful reasoning model', value: 'o3' },
-      ],
-      keyFormat: 'sk-...',
-      url: 'https://platform.openai.com/',
-    },
-    google: {
-      defaultModel: 'gemini-2.5-flash',
-      models: [
-        {
-          name: 'gemini-2.5-flash (recommended) - Best cost-performance ratio',
-          value: 'gemini-2.5-flash',
-        },
-        {
-          name: 'gemini-2.5-flash-lite - Fastest and most efficient',
-          value: 'gemini-2.5-flash-lite',
-        },
-        { name: 'gemini-2.5-pro - Best reasoning capabilities', value: 'gemini-2.5-pro' },
-      ],
-      keyFormat: 'AIza...',
-      url: 'https://ai.google.dev/',
-    },
-    xai: {
-      defaultModel: 'grok-4-fast-non-reasoning',
-      models: [
-        {
-          name: 'grok-4-fast-non-reasoning (recommended) - Latest with 40% fewer tokens',
-          value: 'grok-4-fast-non-reasoning',
-        },
-        { name: 'grok-4.2 - Polished and refined', value: 'grok-4.2' },
-        { name: 'grok-4 - Advanced reasoning model', value: 'grok-4-0709' },
-      ],
-      keyFormat: 'xai-...',
-      url: 'https://console.x.ai/',
-    },
-    ollama: {
-      defaultModel: 'gpt-oss-20b',
-      models: [
-        {
-          name: 'gpt-oss-20b (recommended) - Balanced reasoning and performance',
-          value: 'gpt-oss-20b',
-        },
-      ],
-      keyFormat: '(no API key required)',
-      url: 'https://ollama.com/library',
-    },
-    'lm-studio': {
-      defaultModel: 'local-model', // LM Studio often ignores the model name if only one is loaded
-      models: [
-        {
-          name: 'Load from LM Studio (uses currently loaded model)',
-          value: 'local-model',
-        },
-      ],
-      keyFormat: '(no API key required)',
-      url: 'http://localhost:1234',
-    },
-    groq: {
-      defaultModel: 'openai/gpt-oss-120b',
-      models: [
-        {
-          name: 'openai/gpt-oss-120b (recommended) - Balanced reasoning and performance',
-          value: 'openai/gpt-oss-120b',
-        },
-      ],
-      keyFormat: 'gsk_...',
-      url: 'https://console.groq.com/',
-    },
-  };
+  config.llm.provider = provider;
 
-  const info = providerInfo[provider as keyof typeof providerInfo];
-
-  // Select model for the chosen provider
-  console.log(chalk.cyan(`\n🎯 Available ${provider} models:\n`));
-  console.log(
-    chalk.gray('💡 CodeWave uses multi-agent discussion (3 rounds) to refine evaluations.')
-  );
-  console.log(
-    chalk.gray('   Cheaper models like Haiku achieve 95%+ quality through discussion refinement.\n')
-  );
-
-  // Use existing model as default if it's valid for this provider, otherwise use provider default
-  let defaultModel = info.defaultModel;
-  if (config.llm.model && info.models.some((m) => m.value === config.llm.model)) {
-    defaultModel = config.llm.model;
-  }
-
-  const { selectedModel } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'selectedModel',
-      message: `Choose ${provider} model:`,
-      choices: info.models,
-      default: defaultModel,
-    },
-  ]);
-
-  // Show cost comparison for selected provider
-  const costByProvider = {
-    anthropic: {
-      'claude-haiku-4-5-20251001': '$0.025/commit',
-      'claude-sonnet-4-5-20250929': '$0.15/commit',
-      'claude-opus-4-1-20250805': '$0.40/commit',
-    },
-    openai: {
-      'gpt-4o-mini': '$0.008/commit',
-      'gpt-4o': '$0.10/commit',
-      'o3-mini-2025-01-31': '$0.20/commit',
-      o3: '$0.40/commit',
-    },
-    google: {
-      'gemini-2.5-flash': '$0.010/commit',
-      'gemini-2.5-flash-lite': '$0.006/commit',
-      'gemini-2.5-pro': '$0.06/commit',
-    },
-    xai: {
-      'grok-4-fast-non-reasoning': '$0.08/commit',
-      'grok-4.2': '$0.08/commit',
-      'grok-4-0709': '$0.08/commit',
-    },
-  };
-
-  const providerCosts = costByProvider[provider as keyof typeof costByProvider];
-  if (providerCosts) {
-    const cost = providerCosts[selectedModel as keyof typeof providerCosts];
-    if (cost) {
-      console.log(chalk.gray(`\n✓ Selected: ${selectedModel}`));
-      console.log(chalk.gray(`   Cost: ${cost} (estimated for 3-round multi-agent discussion)`));
-    }
-  }
-
-  let apiKey = '';
+  let apiKey = null;
   if (provider !== 'ollama' && provider !== 'lm-studio') {
-    console.log(chalk.gray(`\nGet your API key at: ${info.url}\n`));
-
     const existingApiKey = config.apiKeys[provider];
     const apiKeyPromptMessage = existingApiKey
-      ? `Enter ${provider} API key (${info.keyFormat}) [press Enter to keep existing]:`
-      : `Enter ${provider} API key (${info.keyFormat}):`;
+      ? `Enter ${provider} API key [press Enter to keep existing]:`
+      : `Enter ${provider} API key:`;
 
     const response = await inquirer.prompt([
       {
@@ -355,8 +200,65 @@ async function initializeConfig(): Promise<void> {
   if (apiKey && apiKey.trim().length > 0) {
     config.apiKeys[provider] = apiKey.trim();
   }
-  config.llm.provider = provider;
+
+  if (provider === 'ollama' || provider === 'lm-studio') {
+    let existingBaseUrl = config.llm.baseUrl;
+    const baseUrlPromptMessage = existingBaseUrl
+      ? `Enter ${provider} base URL [press Enter to keep existing] (${existingBaseUrl}):`
+      : `Enter ${provider} base URL:`;
+
+    if (!existingBaseUrl) {
+      existingBaseUrl =
+        provider === 'ollama' ? 'http://localhost:11434' : 'http://localhost:1234/v1';
+    }
+    const { baseUrl } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'baseUrl',
+        message: baseUrlPromptMessage,
+        default: existingBaseUrl,
+      },
+    ]);
+    config.llm.baseUrl = baseUrl;
+  }
+
+  const models = await getModels(config);
+
+  // Select model for the chosen provider
+  console.log(chalk.cyan(`\n🎯 Available ${provider} models:\n`));
+  console.log(
+    chalk.gray('💡 CodeWave uses multi-agent discussion (3 rounds) to refine evaluations.')
+  );
+  console.log(
+    chalk.gray('   Cheaper models like Haiku achieve 95%+ quality through discussion refinement.\n')
+  );
+
+  const { selectedModel } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'selectedModel',
+      message: `Choose ${provider} model:`,
+      choices: models,
+      default: models[0].value,
+      loop: false,
+    },
+  ]);
   config.llm.model = selectedModel;
+  const metadata = models.find((model) => model.value === selectedModel);
+
+  if (metadata) {
+    const inputPricePerToken = parseFloat(metadata.pricing.input);
+    const outputPricePerToken = parseFloat(metadata.pricing.output);
+    const cost = (inputPricePerToken + outputPricePerToken) * DEFAULT_CONFIG.llm.maxTokens * 3;
+    if (cost) {
+      console.log(chalk.gray(`\n✓ Selected: ${chalk.cyanBright(selectedModel)}`));
+      console.log(
+        chalk.gray(
+          `   Cost: ${chalk.green(`$${cost.toFixed(2)} USD`)} per 3-round multi-agent discussion (estimated)`
+        )
+      );
+    }
+  }
 
   console.log(chalk.green(`\n✅ Configured to use: ${provider} (${selectedModel})`));
 

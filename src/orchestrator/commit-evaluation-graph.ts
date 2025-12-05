@@ -276,9 +276,8 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
 
       console.log('📝 Generating developer overview from commit diff...');
 
-      const { DeveloperOverviewGenerator } = await import(
-        '../services/developer-overview-generator.js'
-      );
+      const { DeveloperOverviewGenerator } =
+        await import('../services/developer-overview-generator.js');
       const { LLMService } = await import('../llm/llm-service.js');
       const generator = new DeveloperOverviewGenerator(config);
 

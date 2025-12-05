@@ -9,8 +9,6 @@ export interface AppConfig {
     openai: string;
     google: string;
     xai: string;
-    ollama: string;
-    'lm-studio': string;
     groq: string;
   };
   llm: {
@@ -18,7 +16,7 @@ export interface AppConfig {
     model: string;
     temperature: number;
     maxTokens: number;
-    baseUrl?: string;
+    baseUrl?: string | undefined;
   };
   agents: {
     enabled: string[];

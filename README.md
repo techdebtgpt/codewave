@@ -972,6 +972,7 @@ Choose your LLM provider and model based on your needs and budget:
 - **Alternatives**: openai/gpt-oss-20b
 
 **Ollama (Local LLMs — Free)**
+
 - Run models entirely on your machine (no API key required)
 - Supports **Llama 3**, **Mistral**, **Gemma 2**, and more
 - Works offline once the model is pulled
