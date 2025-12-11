@@ -539,6 +539,29 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     overallMetrics.totalTechDebt = Number(overallMetrics.totalTechDebt.toFixed(2));
   }
 
+  // Calculate BACI scores for all authors
+  const allMetrics: any[] = [];
+  index.forEach((item) => {
+    if (item.metrics && item.commitAuthor) {
+      allMetrics.push({
+        createdBy: item.commitAuthor,
+        commitScore: item.metrics.commitScore || 0,
+        testingQuality: item.metrics.testCoverage || 0,
+        technicalDebtRate: 0, // Not available in current data
+        deliveryRate: 0, // Not available in current data
+        functionalImpact: item.metrics.functionalImpact || 0,
+        codeQuality: item.metrics.codeQuality || 0,
+        codeComplexity: item.metrics.codeComplexity || 0,
+        actualTimeHours: item.metrics.actualTimeHours || 0,
+        idealTimeHours: item.metrics.idealTimeHours || 0,
+        technicalDebtHours: item.metrics.technicalDebtHours || 0,
+      });
+    }
+  });
+
+  const teamBaciScores =
+    allMetrics.length > 0 ? MetricsCalculationService.calculateTeamBaciScores(allMetrics) : {};
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -597,6 +620,18 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
         #commitsTable th:nth-child(13) { min-width: 90px; } /* Tech Debt */
         #commitsTable th:nth-child(14) { min-width: 75px; } /* Action */
         #commitsTable td:nth-child(3) { max-width: 280px; word-wrap: break-word; overflow-wrap: break-word; } /* Message text wrapping */
+        /* Authors table column sizing */
+        .table-authors th:nth-child(1) { min-width: 120px; } /* Author */
+        .table-authors th:nth-child(2) { min-width: 80px; } /* Commits */
+        .table-authors th:nth-child(3) { min-width: 90px; } /* Score */
+        .table-authors th:nth-child(4) { min-width: 90px; } /* Avg Quality */
+        .table-authors th:nth-child(5) { min-width: 95px; } /* Avg Complexity */
+        .table-authors th:nth-child(6) { min-width: 80px; } /* Avg Tests */
+        .table-authors th:nth-child(7) { min-width: 85px; } /* Avg Impact */
+        .table-authors th:nth-child(8) { min-width: 95px; } /* Avg Commit Score */
+        .table-authors th:nth-child(9) { min-width: 80px; } /* Avg Time */
+        .table-authors th:nth-child(10) { min-width: 90px; } /* Total Tech Debt */
+        .table-authors th:nth-child(11) { min-width: 110px; } /* Action */
     </style>
 </head>
 <body>
@@ -681,6 +716,7 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                     <tr>
                         <th>Author</th>
                         <th style="text-align: center;">Commits</th>
+                        <th style="text-align: center;">Score</th>
                         <th style="text-align: center;">Avg Quality</th>
                         <th style="text-align: center;">Avg Complexity</th>
                         <th style="text-align: center;">Avg Tests</th>
@@ -704,10 +740,10 @@ ${Array.from(byAuthor.entries())
       }
     });
     const avgCommitScore = count > 0 ? totalScore / count : 0;
-    
+
     return { author, commits, avgCommitScore };
   })
-  .sort((a, b) => b.avgCommitScore - a.avgCommitScore) // Sort by pre-calculated average
+  .sort((a, b) => (teamBaciScores[b.author] || 0) - (teamBaciScores[a.author] || 0)) // Sort by BACI score
   .map(({ author, commits }) => {
     // Sort commits by commit date (newest first)
     commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
@@ -763,6 +799,12 @@ ${Array.from(byAuthor.entries())
                     <tr>
                         <td>👤 ${author}</td>
                         <td class="metric-cell">${commits.length}</td>
+                        <td class="metric-cell">${(() => {
+                          const baciScore = teamBaciScores[author] || 0;
+                          return baciScore > 0
+                            ? `<span class="metric-${baciScore >= 7 ? 'good' : baciScore >= 4 ? 'medium' : 'bad'}">${baciScore.toFixed(1)}/10</span>`
+                            : 'N/A';
+                        })()}</td>
                         <td class="metric-cell">${avgQuality !== 'N/A' ? `<span class="metric-${parseFloat(avgQuality) >= 7 ? 'good' : parseFloat(avgQuality) >= 4 ? 'medium' : 'bad'}">${avgQuality}/10</span>` : 'N/A'}</td>
                         <td class="metric-cell">${avgComplexity !== 'N/A' ? `<span class="metric-${parseFloat(avgComplexity) <= 3 ? 'good' : parseFloat(avgComplexity) <= 6 ? 'medium' : 'bad'}">${avgComplexity}/10</span>` : 'N/A'}</td>
                         <td class="metric-cell">${avgTestCoverage !== 'N/A' ? `<span class="metric-${parseFloat(avgTestCoverage) >= 7 ? 'good' : parseFloat(avgTestCoverage) >= 4 ? 'medium' : 'bad'}">${avgTestCoverage}/10</span>` : 'N/A'}</td>

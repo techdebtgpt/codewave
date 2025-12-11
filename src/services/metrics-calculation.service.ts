@@ -22,6 +22,7 @@ export interface AuthorMetrics {
   time: number;
   techDebt: number;
   commitScore: number;
+  baciScore?: number;
 }
 
 export interface BaciDataPoint {
@@ -331,8 +332,7 @@ export class MetricsCalculationService {
    */
   static calculateEnhancedAuthorStats(
     metrics: any[], // Raw metrics data
-    evaluations?: any[] // Optional evaluation data for cross-validation
-  ): Record<string, AuthorMetrics & { baciScore?: number }> {
+  ): Record<string, AuthorMetrics> {
     const groupedByUser = _.groupBy(metrics, 'createdBy');
 
     return _.mapValues(groupedByUser, (userMetrics: any[], user: string) => {
@@ -377,7 +377,7 @@ export class MetricsCalculationService {
    * Calculate team summary with commit scores and BACI rankings
    */
   static calculateTeamSummary(metrics: any[]): {
-    teamStats: Record<string, AuthorMetrics & { baciScore?: number }>;
+    teamStats: Record<string, AuthorMetrics>;
     teamBaci: Record<string, number>;
     rankings: {
       byCommitScore: Array<{ user: string; score: number }>;
