@@ -331,7 +331,7 @@ export class MetricsCalculationService {
    * This method integrates commit score calculations into comprehensive stats
    */
   static calculateEnhancedAuthorStats(
-    metrics: any[], // Raw metrics data
+    metrics: any[] // Raw metrics data
   ): Record<string, AuthorMetrics> {
     const groupedByUser = _.groupBy(metrics, 'createdBy');
 
@@ -387,6 +387,12 @@ export class MetricsCalculationService {
   } {
     const teamStats = this.calculateEnhancedAuthorStats(metrics);
     const teamBaci = this.calculateTeamBaciScores(metrics);
+
+    Object.keys(teamStats).forEach((user) => {
+      if (teamBaci[user] !== undefined) {
+        teamStats[user].baciScore = teamBaci[user];
+      }
+    });
 
     // Create rankings
     const users = Object.keys(teamStats);

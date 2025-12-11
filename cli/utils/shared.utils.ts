@@ -539,7 +539,6 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     overallMetrics.totalTechDebt = Number(overallMetrics.totalTechDebt.toFixed(2));
   }
 
-  // Calculate BACI scores for all authors
   const allMetrics: any[] = [];
   index.forEach((item) => {
     if (item.metrics && item.commitAuthor) {
@@ -547,20 +546,39 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
         createdBy: item.commitAuthor,
         commitScore: item.metrics.commitScore || 0,
         testingQuality: item.metrics.testCoverage || 0,
-        technicalDebtRate: 0, // Not available in current data
-        deliveryRate: 0, // Not available in current data
+        technicalDebtRate: 0,
+        deliveryRate: 0,
         functionalImpact: item.metrics.functionalImpact || 0,
         codeQuality: item.metrics.codeQuality || 0,
         codeComplexity: item.metrics.codeComplexity || 0,
         actualTimeHours: item.metrics.actualTimeHours || 0,
         idealTimeHours: item.metrics.idealTimeHours || 0,
         technicalDebtHours: item.metrics.technicalDebtHours || 0,
+        debtReductionHours: item.metrics.debtReductionHours || 0,
       });
     }
   });
 
-  const teamBaciScores =
-    allMetrics.length > 0 ? MetricsCalculationService.calculateTeamBaciScores(allMetrics) : {};
+  // Get comprehensive team summary (includes enhanced stats, BACI scores, and rankings)
+  const teamSummary =
+    allMetrics.length > 0
+      ? MetricsCalculationService.calculateTeamSummary(allMetrics)
+      : {
+          teamStats: {},
+          teamBaci: {},
+          rankings: { byBaci: [], byCommitScore: [], byProductivity: [] },
+        };
+
+  // Calculate average BACI score from team summary
+  const teamStats = Object.values(teamSummary.teamStats);
+  const avgBaciScore =
+    teamStats.length > 0
+      ? Number(
+          (
+            teamStats.reduce((sum, stat) => sum + (stat.baciScore || 0), 0) / teamStats.length
+          ).toFixed(1)
+        )
+      : 0;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -662,6 +680,11 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
               overallMetrics.count > 0
                 ? `
             <div class="stat-card">
+                <div class="stat-number">${avgBaciScore}</div>
+                <div class="stat-label">Avg Score</div>
+                <div class="stat-mini">out of 10</div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-number">${overallMetrics.avgQuality}</div>
                 <div class="stat-label">Avg Quality</div>
                 <div class="stat-mini">out of 10</div>
@@ -743,7 +766,11 @@ ${Array.from(byAuthor.entries())
 
     return { author, commits, avgCommitScore };
   })
-  .sort((a, b) => (teamBaciScores[b.author] || 0) - (teamBaciScores[a.author] || 0)) // Sort by BACI score
+  .sort(
+    (a, b) =>
+      (teamSummary.teamStats[b.author]?.baciScore || 0) -
+      (teamSummary.teamStats[a.author]?.baciScore || 0)
+  ) // Sort by BACI score
   .map(({ author, commits }) => {
     // Sort commits by commit date (newest first)
     commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
@@ -800,7 +827,7 @@ ${Array.from(byAuthor.entries())
                         <td>👤 ${author}</td>
                         <td class="metric-cell">${commits.length}</td>
                         <td class="metric-cell">${(() => {
-                          const baciScore = teamBaciScores[author] || 0;
+                          const baciScore = teamSummary.teamStats[author]?.baciScore || 0;
                           return baciScore > 0
                             ? `<span class="metric-${baciScore >= 7 ? 'good' : baciScore >= 4 ? 'medium' : 'bad'}">${baciScore.toFixed(1)}/10</span>`
                             : 'N/A';
@@ -808,7 +835,7 @@ ${Array.from(byAuthor.entries())
                         <td class="metric-cell">${avgQuality !== 'N/A' ? `<span class="metric-${parseFloat(avgQuality) >= 7 ? 'good' : parseFloat(avgQuality) >= 4 ? 'medium' : 'bad'}">${avgQuality}/10</span>` : 'N/A'}</td>
                         <td class="metric-cell">${avgComplexity !== 'N/A' ? `<span class="metric-${parseFloat(avgComplexity) <= 3 ? 'good' : parseFloat(avgComplexity) <= 6 ? 'medium' : 'bad'}">${avgComplexity}/10</span>` : 'N/A'}</td>
                         <td class="metric-cell">${avgTestCoverage !== 'N/A' ? `<span class="metric-${parseFloat(avgTestCoverage) >= 7 ? 'good' : parseFloat(avgTestCoverage) >= 4 ? 'medium' : 'bad'}">${avgTestCoverage}/10</span>` : 'N/A'}</td>
-                        <td class="metric-cell">${avgFunctionalImpact !== 'N/A' ? `<span class="metric-${parseFloat(avgFunctionalImpact) >= 7 ? 'bad' : parseFloat(avgFunctionalImpact) >= 4 ? 'medium' : 'good'}">${avgFunctionalImpact}/10</span>` : 'N/A'}</td>
+                        <td class="metric-cell">${avgFunctionalImpact !== 'N/A' ? `<span class="metric-${parseFloat(avgFunctionalImpact) >= 7 ? 'good' : parseFloat(avgFunctionalImpact) >= 4 ? 'medium' : 'bad'}">${avgFunctionalImpact}/10</span>` : 'N/A'}</td>
                         <td class="metric-cell">${displayAvgCommitScore !== 'N/A' ? `<span class="metric-${parseFloat(displayAvgCommitScore) >= 7 ? 'good' : parseFloat(displayAvgCommitScore) >= 4 ? 'medium' : 'bad'}">${displayAvgCommitScore}/10</span>` : 'N/A'}</td>
                         <td class="metric-cell">${avgActualTime !== 'N/A' ? `${avgActualTime}h` : 'N/A'}</td>
                         <td class="metric-cell">${totalTechDebt !== 'N/A' ? `<span class="metric-${parseFloat(totalTechDebt) > 0 ? 'bad' : parseFloat(totalTechDebt) < 0 ? 'good' : 'medium'}">${parseFloat(totalTechDebt) > 0 ? '+' : ''}${totalTechDebt}h</span>` : 'N/A'}</td>
@@ -853,7 +880,7 @@ ${index
     const testsColor =
       metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
     const impactColor =
-      metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
+      metrics.functionalImpact >= 7 ? 'good' : metrics.functionalImpact >= 4 ? 'medium' : 'bad';
     const commitScoreColor =
       metrics.commitScore >= 7 ? 'good' : metrics.commitScore >= 4 ? 'medium' : 'bad';
     const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
@@ -1432,7 +1459,7 @@ ${commits
     const testsColor =
       metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
     const impactColor =
-      metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
+      metrics.functionalImpact >= 7 ? 'good' : metrics.functionalImpact >= 4 ? 'medium' : 'bad';
     const debtColor =
       metrics.technicalDebtHours > 0 ? 'bad' : metrics.technicalDebtHours < 0 ? 'good' : 'medium';
 
