@@ -8,7 +8,8 @@
 import { BaseAgent } from '../core/base-agent';
 import { AgentMetadata, AgentExpertise } from '../core/agent-metadata';
 import { PromptContext } from '../prompts/prompt-builder.interface';
-
+import { CombinedRAGHelper } from '../../utils/combined-rag-helper';
+import { getInitialQueriesForRole } from '../../utils/gap-to-rag-query-mapper';
 export class SeniorArchitectAgent extends BaseAgent {
   // ============================================================================
   // AGENT IDENTITY & EXPERTISE
@@ -68,8 +69,6 @@ Return your analysis as JSON with all 7 metrics, even if some are outside your p
     // Use RAG if available
     let contentSection = '';
     if (context.vectorStore || context.documentationStore) {
-      const { CombinedRAGHelper } = await import('../../utils/combined-rag-helper.js');
-      const { getInitialQueriesForRole } = await import('../../utils/gap-to-rag-query-mapper.js');
 
       const rag = new CombinedRAGHelper(context.vectorStore, context.documentationStore);
       rag.setAgentName(this.metadata.role);

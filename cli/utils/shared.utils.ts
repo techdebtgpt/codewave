@@ -10,15 +10,14 @@ import { DeveloperReviewerAgent } from '../../src/agents/implementations/develop
 import { AppConfig } from '../../src/config/config.interface';
 import { generateEnhancedHtmlReport } from '../../src/formatters/html-report-formatter-enhanced';
 import { generateConversationTranscript } from '../../src/formatters/conversation-transcript-formatter';
+import { MetricsCalculationService } from '../../src/services/metrics-calculation.service';
 import { AgentResult } from '../../src/agents/agent.interface';
-import {
-  TokenSnapshot,
-  MetricsSnapshot,
-  EvaluationHistoryEntry,
-} from '../../src/types/output.types';
+import { TokenSnapshot, EvaluationHistoryEntry } from '../../src/types/output.types';
 import fs from 'fs/promises';
 import * as fsSync from 'fs';
 import path from 'path';
+import chalk from 'chalk';
+import { AuthorStatsAggregatorService } from '../../src/services/author-stats-aggregator.service';
 
 /**
  * Generate timestamp in yyyyMMddHHmmss format
@@ -183,56 +182,22 @@ export async function saveEvaluationReports(options: SaveReportsOptions): Promis
 
 /**
  * Extract metrics from final round agent results (last 5 agents)
+ * Extracts individual agent scores and applies weighted averaging based on agent expertise
+ * commitScore is calculated statically from the resulting weighted metrics
  */
-function extractMetricsSnapshot(agentResults: AgentResult[]): MetricsSnapshot {
-  // Get final round agents (last 5)
-  const finalAgents = agentResults.slice(-5);
-
-  // Import weight functions for weighted averaging
-  const {
-    calculateWeightedAverage,
-    SEVEN_PILLARS,
-  } = require('../../src/constants/agent-weights.constants');
-
-  const metrics = SEVEN_PILLARS;
-
-  const result: any = {};
-
-  // Calculate weighted average for each metric
-  metrics.forEach((metricName: string) => {
-    const contributors: Array<{ agentName: string; score: number | null }> = [];
-    finalAgents.forEach((agent) => {
-      if (agent.metrics && metricName in agent.metrics) {
-        const score = agent.metrics[metricName];
-        contributors.push({
-          agentName: agent.agentName || agent.agentRole || 'Unknown',
-          score: score !== null && score !== undefined ? score : null,
-        });
-      }
-    });
-
-    if (contributors.length > 0) {
-      const weightedValue = calculateWeightedAverage(contributors, metricName);
-      // Determine decimal places based on metric
-      if (metricName.includes('Hours') || metricName.includes('Time')) {
-        result[metricName] = Number(weightedValue.toFixed(2));
-      } else {
-        result[metricName] = Number(weightedValue.toFixed(1));
-      }
-    } else {
-      result[metricName] = 0;
-    }
-  });
-
+function extractMetricsSnapshot(agentResults: AgentResult[]): any {
+  // Use the centralized metrics calculation service for consistency
+  const metrics = MetricsCalculationService.calculateWeightedMetrics(agentResults);
   return {
-    functionalImpact: result.functionalImpact,
-    idealTimeHours: result.idealTimeHours,
-    testCoverage: result.testCoverage,
-    codeQuality: result.codeQuality,
-    codeComplexity: result.codeComplexity,
-    actualTimeHours: result.actualTimeHours,
-    technicalDebtHours: result.technicalDebtHours,
-    debtReductionHours: result.debtReductionHours,
+    functionalImpact: metrics.functionalImpact || 0,
+    idealTimeHours: metrics.idealTimeHours || 0,
+    testCoverage: metrics.testCoverage || 0,
+    codeQuality: metrics.codeQuality || 0,
+    codeComplexity: metrics.codeComplexity || 0,
+    actualTimeHours: metrics.actualTimeHours || 0,
+    technicalDebtHours: metrics.technicalDebtHours || 0,
+    debtReductionHours: metrics.debtReductionHours || 0,
+    commitScore: metrics.commitScore || 0,
   };
 }
 
@@ -329,6 +294,7 @@ async function trackEvaluationHistory(
           actualTimeHours: 0,
           technicalDebtHours: 0,
           debtReductionHours: 0,
+          commitScore: 0,
         },
     tokens: agentResults
       ? extractTokenSnapshot(agentResults)
@@ -433,9 +399,6 @@ export async function createEvaluationDirectory(
  * Calculate averaged metrics from agent results using weighted averaging (matching report calculations)
  */
 async function calculateAveragedMetrics(evaluationDir: string): Promise<any> {
-  const { MetricsCalculationService } = await import(
-    '../../src/services/metrics-calculation.service.js'
-  );
   return MetricsCalculationService.loadMetricsFromDirectory(evaluationDir);
 }
 
@@ -533,6 +496,7 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     avgFunctionalImpact: 0,
     avgTestCoverage: 0,
     avgActualTime: 0,
+    avgCommitScore: 0,
     totalTechDebt: 0,
     count: 0,
   };
@@ -544,6 +508,7 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
       overallMetrics.avgFunctionalImpact += item.metrics.functionalImpact || 0;
       overallMetrics.avgTestCoverage += item.metrics.testCoverage || 0;
       overallMetrics.avgActualTime += item.metrics.actualTimeHours || 0;
+      overallMetrics.avgCommitScore += item.metrics.commitScore || 0;
       // Calculate NET debt (debt introduced - debt reduction)
       const netDebt =
         (item.metrics.technicalDebtHours || 0) - (item.metrics.debtReductionHours || 0);
@@ -567,6 +532,9 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     );
     overallMetrics.avgActualTime = Number(
       (overallMetrics.avgActualTime / overallMetrics.count).toFixed(2)
+    );
+    overallMetrics.avgCommitScore = Number(
+      (overallMetrics.avgCommitScore / overallMetrics.count).toFixed(1)
     );
     overallMetrics.totalTechDebt = Number(overallMetrics.totalTechDebt.toFixed(2));
   }
@@ -624,9 +592,10 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
         #commitsTable th:nth-child(8) { min-width: 95px; } /* Complexity */
         #commitsTable th:nth-child(9) { min-width: 80px; } /* Tests */
         #commitsTable th:nth-child(10) { min-width: 85px; } /* Impact */
-        #commitsTable th:nth-child(11) { min-width: 80px; } /* Time */
-        #commitsTable th:nth-child(12) { min-width: 90px; } /* Tech Debt */
-        #commitsTable th:nth-child(13) { min-width: 75px; } /* Action */
+        #commitsTable th:nth-child(11) { min-width: 95px; } /* Commit Score */
+        #commitsTable th:nth-child(12) { min-width: 80px; } /* Time */
+        #commitsTable th:nth-child(13) { min-width: 90px; } /* Tech Debt */
+        #commitsTable th:nth-child(14) { min-width: 75px; } /* Action */
         #commitsTable td:nth-child(3) { max-width: 280px; word-wrap: break-word; overflow-wrap: break-word; } /* Message text wrapping */
     </style>
 </head>
@@ -678,6 +647,11 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                 <div class="stat-mini">out of 10</div>
             </div>
             <div class="stat-card">
+                <div class="stat-number">${overallMetrics.avgCommitScore}</div>
+                <div class="stat-label">Avg Commit Score</div>
+                <div class="stat-mini">out of 10</div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-number">${overallMetrics.avgActualTime}h</div>
                 <div class="stat-label">Avg Time</div>
                 <div class="stat-mini">per commit</div>
@@ -711,6 +685,7 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                         <th style="text-align: center;">Avg Complexity</th>
                         <th style="text-align: center;">Avg Tests</th>
                         <th style="text-align: center;">Avg Impact</th>
+                        <th style="text-align: center;">Avg Commit Score</th>
                         <th style="text-align: center;">Avg Time</th>
                         <th style="text-align: center;">Total Tech Debt</th>
                         <th>Action</th>
@@ -718,8 +693,22 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
                 </thead>
                 <tbody>
 ${Array.from(byAuthor.entries())
-  .sort((a, b) => b[1].length - a[1].length)
   .map(([author, commits]) => {
+    // Calculate average commit score once
+    let totalScore = 0;
+    let count = 0;
+    commits.forEach((c) => {
+      if (c.metrics && typeof c.metrics.commitScore === 'number') {
+        totalScore += c.metrics.commitScore;
+        count++;
+      }
+    });
+    const avgCommitScore = count > 0 ? totalScore / count : 0;
+    
+    return { author, commits, avgCommitScore };
+  })
+  .sort((a, b) => b.avgCommitScore - a.avgCommitScore) // Sort by pre-calculated average
+  .map(({ author, commits }) => {
     // Sort commits by commit date (newest first)
     commits.sort((a, b) => new Date(b.commitDate).getTime() - new Date(a.commitDate).getTime());
     const authorMetrics = {
@@ -727,6 +716,7 @@ ${Array.from(byAuthor.entries())
       complexity: 0,
       testCoverage: 0,
       functionalImpact: 0,
+      commitScore: 0,
       actualTime: 0,
       techDebt: 0,
       count: 0,
@@ -737,6 +727,7 @@ ${Array.from(byAuthor.entries())
         authorMetrics.complexity += c.metrics.codeComplexity || 0;
         authorMetrics.testCoverage += c.metrics.testCoverage || 0;
         authorMetrics.functionalImpact += c.metrics.functionalImpact || 0;
+        authorMetrics.commitScore += c.metrics.commitScore || 0;
         authorMetrics.actualTime += c.metrics.actualTimeHours || 0;
         // Calculate NET debt (debt introduced - debt reduction)
         const netDebt = (c.metrics.technicalDebtHours || 0) - (c.metrics.debtReductionHours || 0);
@@ -757,6 +748,10 @@ ${Array.from(byAuthor.entries())
       authorMetrics.count > 0
         ? (authorMetrics.functionalImpact / authorMetrics.count).toFixed(1)
         : 'N/A';
+    const displayAvgCommitScore =
+      authorMetrics.count > 0
+        ? (authorMetrics.commitScore / authorMetrics.count).toFixed(1)
+        : 'N/A';
     const avgActualTime =
       authorMetrics.count > 0 ? (authorMetrics.actualTime / authorMetrics.count).toFixed(2) : 'N/A';
     const totalTechDebt = authorMetrics.count > 0 ? authorMetrics.techDebt.toFixed(2) : 'N/A';
@@ -772,6 +767,7 @@ ${Array.from(byAuthor.entries())
                         <td class="metric-cell">${avgComplexity !== 'N/A' ? `<span class="metric-${parseFloat(avgComplexity) <= 3 ? 'good' : parseFloat(avgComplexity) <= 6 ? 'medium' : 'bad'}">${avgComplexity}/10</span>` : 'N/A'}</td>
                         <td class="metric-cell">${avgTestCoverage !== 'N/A' ? `<span class="metric-${parseFloat(avgTestCoverage) >= 7 ? 'good' : parseFloat(avgTestCoverage) >= 4 ? 'medium' : 'bad'}">${avgTestCoverage}/10</span>` : 'N/A'}</td>
                         <td class="metric-cell">${avgFunctionalImpact !== 'N/A' ? `<span class="metric-${parseFloat(avgFunctionalImpact) >= 7 ? 'bad' : parseFloat(avgFunctionalImpact) >= 4 ? 'medium' : 'good'}">${avgFunctionalImpact}/10</span>` : 'N/A'}</td>
+                        <td class="metric-cell">${displayAvgCommitScore !== 'N/A' ? `<span class="metric-${parseFloat(displayAvgCommitScore) >= 7 ? 'good' : parseFloat(displayAvgCommitScore) >= 4 ? 'medium' : 'bad'}">${displayAvgCommitScore}/10</span>` : 'N/A'}</td>
                         <td class="metric-cell">${avgActualTime !== 'N/A' ? `${avgActualTime}h` : 'N/A'}</td>
                         <td class="metric-cell">${totalTechDebt !== 'N/A' ? `<span class="metric-${parseFloat(totalTechDebt) > 0 ? 'bad' : parseFloat(totalTechDebt) < 0 ? 'good' : 'medium'}">${parseFloat(totalTechDebt) > 0 ? '+' : ''}${totalTechDebt}h</span>` : 'N/A'}</td>
                         <td><a href="${authorPageUrl}" class="btn btn-sm btn-outline-primary">View Dashboard</a></td>
@@ -798,6 +794,7 @@ ${Array.from(byAuthor.entries())
                             <th style="text-align: center;">Complexity</th>
                             <th style="text-align: center;">Tests</th>
                             <th style="text-align: center;">Impact</th>
+                            <th style="text-align: center;">Commit Score</th>
                             <th style="text-align: center;">Time</th>
                             <th style="text-align: center;">Tech Debt</th>
                             <th>Action</th>
@@ -815,6 +812,8 @@ ${index
       metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
     const impactColor =
       metrics.functionalImpact >= 7 ? 'bad' : metrics.functionalImpact >= 4 ? 'medium' : 'good';
+    const commitScoreColor =
+      metrics.commitScore >= 7 ? 'good' : metrics.commitScore >= 4 ? 'medium' : 'bad';
     const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
     const debtColor = netDebt > 0 ? 'bad' : netDebt < 0 ? 'good' : 'medium';
 
@@ -835,6 +834,7 @@ ${index
                             <td class="metric-cell ${item.metrics ? `metric-${complexityColor}` : ''}">${item.metrics ? `${metrics.codeComplexity}/10` : 'N/A'}</td>
                             <td class="metric-cell ${item.metrics ? `metric-${testsColor}` : ''}">${item.metrics ? `${metrics.testCoverage}/10` : 'N/A'}</td>
                             <td class="metric-cell ${item.metrics ? `metric-${impactColor}` : ''}">${item.metrics ? `${metrics.functionalImpact}/10` : 'N/A'}</td>
+                            <td class="metric-cell ${item.metrics ? `metric-${commitScoreColor}` : ''}">${item.metrics && typeof metrics.commitScore === 'number' ? `${metrics.commitScore}/10` : 'N/A'}</td>
                             <td class="metric-cell">${item.metrics ? `${metrics.actualTimeHours}h` : 'N/A'}</td>
                             <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${netDebt > 0 ? '+' : ''}${netDebt.toFixed(1)}h` : 'N/A'}</td>
                             <td><a href="${item.directory}/report-enhanced.html" class="btn btn-primary btn-sm">View</a></td>
@@ -936,9 +936,6 @@ export async function generateAuthorPage(
   const authorPagePath = path.join(evaluationsRoot, `author-${authorSlug}.html`);
 
   // Use centralized metrics calculation service for consistency with OKR generation
-  const {
-    AuthorStatsAggregatorService,
-  } = require('../../src/services/author-stats-aggregator.service');
   const authorData = await AuthorStatsAggregatorService.aggregateAuthorStats(evaluationsRoot, {
     targetAuthor: author,
   });
@@ -1466,8 +1463,6 @@ export function buildIndexUrl(): string {
  */
 export function printEvaluateCompletionMessage(outputDir: string): void {
   try {
-    const chalk = require('chalk').default;
-
     console.log(chalk.green(`\n✅ Evaluation complete!`));
     console.log(chalk.cyan(`📁 Output directory: ${chalk.bold(outputDir)}`));
     console.log(

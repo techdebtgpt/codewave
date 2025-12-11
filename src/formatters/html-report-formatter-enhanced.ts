@@ -4,6 +4,12 @@ import fs from 'fs';
 import path from 'path';
 import { AgentResult } from '../agents/agent.interface';
 import { EvaluationHistoryEntry } from '../types/output.types';
+import {
+  SEVEN_PILLARS,
+  getAgentWeight,
+  calculateWeightedAverage,
+  PillarName,
+} from '../constants/agent-weights.constants';
 
 interface AgentEvaluation {
   agentName: string;
@@ -306,13 +312,6 @@ function groupResultsByAgent(results: AgentResult[]): Map<string, AgentEvaluatio
 function calculateMetricEvolution(
   groupedResults: Map<string, AgentEvaluation[]>
 ): MetricEvolution[] {
-  // Import centralized pillar constants and weight functions
-  const {
-    SEVEN_PILLARS,
-    getAgentWeight,
-    calculateWeightedAverage,
-  } = require('../constants/agent-weights.constants');
-
   const metricMap = new Map<string, MetricEvolution>();
 
   // Group all evaluations by round
@@ -327,7 +326,7 @@ function calculateMetricEvolution(
   });
 
   // For each metric, calculate consensus score per round
-  SEVEN_PILLARS.forEach((metric: string) => {
+  SEVEN_PILLARS.forEach((metric: PillarName) => {
     const metricEvolution: MetricEvolution = {
       metric,
       rounds: new Map<number, number>(),
@@ -356,7 +355,7 @@ function calculateMetricEvolution(
           const consensusScore = calculateWeightedAverage(
             contributors.map((c) => ({ agentName: c.agentName, score: c.score })),
             metric
-          );
+          ) || 0;
           metricEvolution.rounds.set(round, consensusScore);
 
           // Check if value changed from first round
@@ -385,19 +384,13 @@ function calculateConsensusValues(groupedResults: Map<string, AgentEvaluation[]>
     contributors: Array<{ name: string; score: number | null; weight: number }>;
   }
 > {
-  const {
-    getAgentWeight,
-    calculateWeightedAverage,
-    SEVEN_PILLARS,
-  } = require('../constants/agent-weights.constants');
-
   // Collect metrics
   const allMetrics = new Set<string>();
   groupedResults.forEach((evaluations) => {
     evaluations.forEach((evaluation) => {
       if (evaluation.metrics) {
         Object.keys(evaluation.metrics)
-          .filter((metric) => SEVEN_PILLARS.includes(metric))
+          .filter((metric) => SEVEN_PILLARS.includes(metric as PillarName))
           .forEach((metric) => allMetrics.add(metric));
       }
     });
@@ -412,7 +405,8 @@ function calculateConsensusValues(groupedResults: Map<string, AgentEvaluation[]>
       const filteredMetrics = Object.fromEntries(
         Object.entries(latestEval.metrics).filter(
           ([metric, value]) =>
-            SEVEN_PILLARS.includes(metric) && (typeof value === 'number' || value === null)
+            SEVEN_PILLARS.includes(metric as PillarName) &&
+            (typeof value === 'number' || value === null)
         )
       );
       agentMetrics.set(agentName, new Map(Object.entries(filteredMetrics)));
@@ -436,7 +430,7 @@ function calculateConsensusValues(groupedResults: Map<string, AgentEvaluation[]>
       if (metrics.has(metric)) {
         const score = metrics.get(metric)!; // Can be number or null
         const agentKey = agentRoleMap.get(agentName) || agentName;
-        const weight = getAgentWeight(agentKey, metric);
+        const weight = getAgentWeight(agentKey, metric as PillarName);
         contributors.push({ name: agentName, score, weight });
       }
     });
@@ -446,7 +440,7 @@ function calculateConsensusValues(groupedResults: Map<string, AgentEvaluation[]>
           agentName: agentRoleMap.get(c.name) || c.name,
           score: c.score,
         })),
-        metric
+        metric as PillarName
       );
       finalValues.set(metric, { value: weightedAvg, contributors });
     }
@@ -459,20 +453,13 @@ function calculateConsensusValues(groupedResults: Map<string, AgentEvaluation[]>
  * Build comprehensive metrics table showing all agent contributions
  */
 function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): string {
-  // Import agent weights and centralized pillar constants
-  const {
-    getAgentWeight,
-    calculateWeightedAverage,
-    SEVEN_PILLARS,
-  } = require('../constants/agent-weights.constants');
-
   // Collect metrics, filtering to ONLY the 7 pillars
   const allMetrics = new Set<string>();
   groupedResults.forEach((evaluations) => {
     evaluations.forEach((evaluation) => {
       if (evaluation.metrics) {
         Object.keys(evaluation.metrics)
-          .filter((metric) => SEVEN_PILLARS.includes(metric))
+          .filter((metric) => SEVEN_PILLARS.includes(metric as PillarName))
           .forEach((metric) => allMetrics.add(metric));
       }
     });
@@ -488,7 +475,8 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
       const filteredMetrics = Object.fromEntries(
         Object.entries(latestEval.metrics).filter(
           ([metric, value]) =>
-            SEVEN_PILLARS.includes(metric) && (typeof value === 'number' || value === null)
+            SEVEN_PILLARS.includes(metric as PillarName) &&
+            (typeof value === 'number' || value === null)
         )
       );
       agentMetrics.set(agentName, new Map(Object.entries(filteredMetrics)));
@@ -514,7 +502,7 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
         const score = metrics.get(metric)!; // Can be number or null
         // Use agentRole (technical key) for weight lookup, fallback to agentName
         const agentKey = agentRoleMap.get(agentName) || agentName;
-        const weight = getAgentWeight(agentKey, metric);
+        const weight = getAgentWeight(agentKey, metric as PillarName);
         contributors.push({ name: agentName, score, weight });
       }
     });
@@ -525,7 +513,7 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
           agentName: agentRoleMap.get(c.name) || c.name, // Use agentRole for weight lookup
           score: c.score,
         })),
-        metric
+        metric as PillarName
       );
       finalValues.set(metric, { value: weightedAvg, contributors });
     }
@@ -567,7 +555,7 @@ function buildMetricsTable(groupedResults: Map<string, AgentEvaluation[]>): stri
                       const value = agentMetrics.get(agent)?.get(metric);
                       // Use agentRole for weight lookup
                       const agentKey = agentRoleMap.get(agent) || agent;
-                      const weight = getAgentWeight(agentKey, metric);
+                      const weight = getAgentWeight(agentKey, metric as PillarName);
 
                       // Ensure weight is a number before calling toFixed
                       if (typeof weight !== 'number') {
@@ -705,9 +693,8 @@ function generateHistoryHtml(history: EvaluationHistoryEntry[], modelInfo?: stri
   }
 
   // Build comparison tables - Evaluations as ROWS, Metrics as COLUMNS
-  const { SEVEN_PILLARS } = require('../constants/agent-weights.constants');
   const allMetrics = SEVEN_PILLARS;
-  const stats = calculateHistoryStatistics(history, allMetrics);
+  const stats = calculateHistoryStatistics(history, [...allMetrics]);
 
   // Build evaluation rows (each row is one evaluation with all metrics as columns)
   const evaluationRows = history

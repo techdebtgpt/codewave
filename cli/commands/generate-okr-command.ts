@@ -9,6 +9,7 @@ import {
 } from '../../src/services/author-stats-aggregator.service';
 import { OkrOrchestrator } from '../../src/orchestrator/okr-orchestrator';
 import { OkrProgressTracker } from '../utils/okr-progress-tracker';
+import { consoleManager } from '../../src/common/utils/console-manager';
 
 /**
  * CLI command for generating OKRs
@@ -62,7 +63,7 @@ export async function runGenerateOkrCommand(args: string[]) {
   console.log(chalk.gray(`⚡ Using concurrency: ${concurrency}`));
 
   // Suppress logs that interfere with progress bar
-  const { consoleManager } = await import('../../src/common/utils/console-manager.js');
+
   const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 
   (process.stdout.write as any) = function (str: string, ...args: any[]): boolean {

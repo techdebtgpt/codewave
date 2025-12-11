@@ -151,7 +151,8 @@ export function generateHtmlReport(
           if (
             key.toLowerCase().includes('quality') ||
             key.toLowerCase().includes('coverage') ||
-            key.toLowerCase().includes('impact')
+            key.toLowerCase().includes('impact') ||
+            key.toLowerCase().includes('commitscore')
           ) {
             badge = value >= 7 ? 'success' : value >= 4 ? 'warning' : 'danger';
           }

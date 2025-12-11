@@ -21,6 +21,8 @@ import { runEvaluateCommand } from './commands/evaluate-command';
 import { runConfigCommand } from './commands/config.command';
 import { runBatchEvaluateCommand } from './commands/batch-evaluate-command';
 import { runGenerateOkrCommand } from './commands/generate-okr-command';
+import * as path from 'path';
+import * as fs from 'fs';
 
 async function main() {
   const [, , command, ...args] = process.argv;
@@ -34,10 +36,9 @@ async function main() {
   if (command === '--version' || command === '-v') {
     try {
       // Try to load package.json from the project root
-      const path = require('path');
       // __dirname is dist/cli, so go up 2 levels to reach root
       const packagePath = path.resolve(__dirname, '../../package.json');
-      const packageJson = require(packagePath);
+      const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf-8'));
       console.log(`codewave version ${packageJson.version}`);
     } catch (error) {
       console.log('codewave version unknown');

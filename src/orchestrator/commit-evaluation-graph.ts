@@ -4,7 +4,14 @@ import { AgentResult } from '../agents/agent.interface';
 import { ConversationMessage, PillarScores } from '../types/agent.types';
 import { AppConfig } from '../config/config.interface';
 import { calculateCost } from '../utils/token-tracker';
-import { SEVEN_PILLARS, PillarName } from '../constants/agent-weights.constants';
+import {
+  SEVEN_PILLARS,
+  PillarName,
+  calculateWeightedAverage,
+  getAgentWeight,
+} from '../constants/agent-weights.constants';
+import { DeveloperOverviewGenerator } from '../services/developer-overview-generator';
+import { LLMService } from '../llm/llm-service';
 
 /**
  * LangGraph State Definition for Commit Evaluation
@@ -276,10 +283,6 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
 
       console.log('📝 Generating developer overview from commit diff...');
 
-      const { DeveloperOverviewGenerator } = await import(
-        '../services/developer-overview-generator.js'
-      );
-      const { LLMService } = await import('../llm/llm-service.js');
       const generator = new DeveloperOverviewGenerator(config);
 
       const overview = await generator.generateOverview(
@@ -501,11 +504,6 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
       );
     }
 
-    // Import centralized constants and utilities
-    const {
-      SEVEN_PILLARS,
-      calculateWeightedAverage,
-    } = require('../constants/agent-weights.constants');
 
     // Sanitize results: filter metrics to ONLY the 7 pillars
     const results = validResponses.map((r) => {
@@ -557,7 +555,6 @@ export function createCommitEvaluationGraph(agentRegistry: AgentRegistry, config
     }
 
     // Validate: Warn if agents return null for their PRIMARY metrics (weight >= 0.4)
-    const { getAgentWeight } = require('../constants/agent-weights.constants');
     for (const result of results) {
       const agentName = result.agentRole || result.agentName || 'unknown';
       if (result.metrics) {

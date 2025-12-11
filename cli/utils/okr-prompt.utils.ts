@@ -3,6 +3,11 @@ import { AppConfig } from '../../src/config/config.interface';
 import { OkrOrchestrator } from '../../src/orchestrator/okr-orchestrator';
 import { AggregationOptions } from '../../src/services/author-stats-aggregator.service';
 import { OkrProgressTracker } from './okr-progress-tracker';
+import inquirer from 'inquirer';
+import fs from 'fs';
+import path from 'path';
+import { generateAuthorPage } from './shared.utils';
+import { consoleManager } from '../../src/common/utils/console-manager';
 
 /**
  * Prompt user and generate OKRs for authors
@@ -31,7 +36,6 @@ export async function promptAndGenerateOkrs(
   console.log(chalk.gray(`Estimated cost: $${estimatedCost.toFixed(4)}`));
   console.log(chalk.gray(`Authors: ${authors.join(', ')}`));
 
-  const { default: inquirer } = await import('inquirer');
   const { proceed } = await inquirer.prompt([
     {
       type: 'confirm',
@@ -59,7 +63,7 @@ export async function promptAndGenerateOkrs(
   tracker.initialize(authors);
 
   // Suppress logs that interfere with progress bar
-  const { consoleManager } = await import('../../src/common/utils/console-manager.js');
+
   const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 
   (process.stdout.write as any) = function (str: string, ...args: any[]): boolean {
@@ -105,10 +109,6 @@ export async function promptAndGenerateOkrs(
  * Regenerate author pages to include latest OKR data
  */
 async function regenerateAuthorPages(evalRoot: string, authors: string[]): Promise<void> {
-  const fs = await import('fs');
-  const path = await import('path');
-  const { generateAuthorPage } = await import('./shared.utils.js');
-
   // Read index.json to get commit data for each author
   const indexPath = path.join(evalRoot, 'index.json');
   if (!fs.existsSync(indexPath)) {
