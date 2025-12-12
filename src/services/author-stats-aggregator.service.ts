@@ -13,6 +13,7 @@ export interface AuthorStats {
   impact: number;
   time: number;
   techDebt: number;
+  commitScore: number;
 }
 
 export interface AggregationOptions {

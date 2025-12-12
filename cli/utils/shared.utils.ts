@@ -481,11 +481,6 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     byAuthor.get(author)!.push(item);
   });
 
-  // Generate author pages for each author
-  const evaluationsRoot = path.dirname(indexPath);
-  for (const [author, commits] of byAuthor.entries()) {
-    await generateAuthorPage(evaluationsRoot, author, commits);
-  }
 
   // Calculate overall metrics for display
   // Note: item.metrics already contains weighted consensus values from MetricsCalculationService
@@ -579,6 +574,12 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
           ).toFixed(1)
         )
       : 0;
+
+  // Generate author pages for each author (after team summary for BACI score consistency)
+  const evaluationsRoot = path.dirname(indexPath);
+  for (const [author, commits] of byAuthor.entries()) {
+    await generateAuthorPage(evaluationsRoot, author, commits, teamSummary);
+  }
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -999,7 +1000,8 @@ export function generateBatchIdentifier(options: {
 export async function generateAuthorPage(
   evaluationsRoot: string,
   author: string,
-  commits: any[]
+  commits: any[],
+  teamSummary?: any
 ): Promise<void> {
   const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '_');
   const authorPagePath = path.join(evaluationsRoot, `author-${authorSlug}.html`);
@@ -1030,7 +1032,58 @@ export async function generateAuthorPage(
   const avgFunctionalImpact = analysis ? analysis.stats.impact.toFixed(1) : 'N/A';
   const avgActualTime = analysis ? analysis.stats.time.toFixed(2) : 'N/A';
   const totalTechDebt = analysis ? analysis.stats.techDebt.toFixed(2) : 'N/A';
+  const avgCommitScore = analysis ? analysis.stats.commitScore.toFixed(1) : 'N/A';
   const commitCount = deduplicatedCommits.length; // Use deduplicated count
+
+  // Calculate BACI score for this author using the provided team context
+  let avgBaciScore = 'N/A';
+  if (teamSummary && teamSummary.teamStats && teamSummary.teamStats[author]?.baciScore) {
+    avgBaciScore = teamSummary.teamStats[author].baciScore.toFixed(1);
+  } else {
+    // Fallback: Calculate BACI score using FULL TEAM CONTEXT (for backward compatibility)
+    try {
+      const allAuthorData =
+        await AuthorStatsAggregatorService.aggregateAuthorStats(evaluationsRoot);
+      const allTeamMetrics: any[] = [];
+
+      // Convert all authors' evaluations to metrics format
+      for (const [authorName, authorEvaluations] of allAuthorData.entries()) {
+        const authorMetrics = authorEvaluations.map((evaluation) => {
+          // Calculate averaged metrics from agent results if not already present
+          let averagedMetrics = evaluation.averagedMetrics;
+          if (!averagedMetrics && evaluation.agents) {
+            averagedMetrics = MetricsCalculationService.calculateWeightedMetrics(evaluation.agents);
+          }
+
+          return {
+            createdBy: authorName,
+            commitScore: averagedMetrics?.commitScore || 0,
+            testingQuality: averagedMetrics?.testCoverage || 0,
+            technicalDebtRate: 0,
+            deliveryRate: 0,
+            functionalImpact: averagedMetrics?.functionalImpact || 0,
+            codeQuality: averagedMetrics?.codeQuality || 0,
+            codeComplexity: averagedMetrics?.codeComplexity || 0,
+            actualTimeHours: averagedMetrics?.actualTimeHours || 0,
+            idealTimeHours: averagedMetrics?.idealTimeHours || 0,
+            technicalDebtHours: averagedMetrics?.technicalDebtHours || 0,
+            debtReductionHours: averagedMetrics?.debtReductionHours || 0,
+          };
+        });
+        allTeamMetrics.push(...authorMetrics);
+      }
+
+      // Now calculate team summary with FULL team context
+      if (allTeamMetrics.length > 0) {
+        const fallbackTeamSummary = MetricsCalculationService.calculateTeamSummary(allTeamMetrics);
+        if (fallbackTeamSummary.teamStats[author]?.baciScore) {
+          avgBaciScore = fallbackTeamSummary.teamStats[author].baciScore.toFixed(1);
+        }
+      }
+    } catch (error) {
+      // BACI calculation failed, keep N/A
+    }
+  }
 
   // Check for OKR files and load latest OKR data
   const okrsDir = path.join(evaluationsRoot, '.okrs', authorSlug);
@@ -1389,6 +1442,11 @@ export async function generateAuthorPage(
                 <div class="stat-label">Total Commits</div>
             </div>
             <div class="stat-card">
+                <div class="stat-number">${avgBaciScore}</div>
+                <div class="stat-label">Avg Score</div>
+                <div class="stat-mini">out of 10</div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-number">${avgQuality}</div>
                 <div class="stat-label">Avg Quality</div>
                 <div class="stat-mini">out of 10</div>
@@ -1406,6 +1464,11 @@ export async function generateAuthorPage(
             <div class="stat-card">
                 <div class="stat-number">${avgFunctionalImpact}</div>
                 <div class="stat-label">Avg Impact</div>
+                <div class="stat-mini">out of 10</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${avgCommitScore}</div>
+                <div class="stat-label">Avg Commit Score</div>
                 <div class="stat-mini">out of 10</div>
             </div>
             <div class="stat-card">
@@ -1443,6 +1506,7 @@ export async function generateAuthorPage(
                             <th style="text-align: center;">Complexity</th>
                             <th style="text-align: center;">Tests</th>
                             <th style="text-align: center;">Impact</th>
+                            <th style="text-align: center;">Commit Score</th>
                             <th style="text-align: center;">Time</th>
                             <th style="text-align: center;">Tech Debt</th>
                             <th>Action</th>
@@ -1460,6 +1524,8 @@ ${commits
       metrics.testCoverage >= 7 ? 'good' : metrics.testCoverage >= 4 ? 'medium' : 'bad';
     const impactColor =
       metrics.functionalImpact >= 7 ? 'good' : metrics.functionalImpact >= 4 ? 'medium' : 'bad';
+    const commitScoreColor =
+      metrics.commitScore >= 7 ? 'good' : metrics.commitScore >= 4 ? 'medium' : 'bad';
     const debtColor =
       metrics.technicalDebtHours > 0 ? 'bad' : metrics.technicalDebtHours < 0 ? 'good' : 'medium';
 
@@ -1479,8 +1545,9 @@ ${commits
                             <td class="metric-cell ${item.metrics ? `metric-${complexityColor}` : ''}">${item.metrics ? `${metrics.codeComplexity}/10` : 'N/A'}</td>
                             <td class="metric-cell ${item.metrics ? `metric-${testsColor}` : ''}">${item.metrics ? `${metrics.testCoverage}/10` : 'N/A'}</td>
                             <td class="metric-cell ${item.metrics ? `metric-${impactColor}` : ''}">${item.metrics ? `${metrics.functionalImpact}/10` : 'N/A'}</td>
+                            <td class="metric-cell ${item.metrics ? `metric-${commitScoreColor}` : ''}">${item.metrics ? `${metrics.commitScore}/10` : 'N/A'}</td>
                             <td class="metric-cell">${item.metrics ? `${metrics.actualTimeHours}h` : 'N/A'}</td>
-                            <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${metrics.technicalDebtHours > 0 ? '+' : ''}${metrics.technicalDebtHours}h` : 'N/A'}</td>
+                            <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${metrics.technicalDebtHours > 0 ? '+' : ''}${metrics.technicalDebtHours - metrics.debtReductionHours}h` : 'N/A'}</td>
                             <td><a href="${item.directory}/report-enhanced.html" class="btn btn-primary btn-sm">View</a></td>
                         </tr>`;
   })

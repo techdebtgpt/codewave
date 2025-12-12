@@ -146,7 +146,6 @@ export class MetricsCalculationService {
         stats.tests += metrics.testCoverage || 0;
         stats.impact += metrics.functionalImpact || 0;
         stats.time += actualTime;
-        //TODO: confirm tech debt calculation
         const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
         stats.techDebt += netDebt;
         commitScoreSum += commitScore;
