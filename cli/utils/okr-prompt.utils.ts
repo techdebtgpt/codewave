@@ -1,7 +1,11 @@
 import chalk from 'chalk';
 import { AppConfig } from '../../src/config/config.interface';
 import { OkrOrchestrator } from '../../src/orchestrator/okr-orchestrator';
-import { AggregationOptions } from '../../src/services/author-stats-aggregator.service';
+import {
+  AggregationOptions,
+  AuthorStatsAggregatorService,
+} from '../../src/services/author-stats-aggregator.service';
+import { MetricsCalculationService } from '../../src/services/metrics-calculation.service';
 import { OkrProgressTracker } from './okr-progress-tracker';
 import inquirer from 'inquirer';
 import fs from 'fs';
@@ -107,6 +111,7 @@ export async function promptAndGenerateOkrs(
 
 /**
  * Regenerate author pages to include latest OKR data
+ * Uses consistent team summary calculation for BACI score accuracy
  */
 async function regenerateAuthorPages(evalRoot: string, authors: string[]): Promise<void> {
   // Read index.json to get commit data for each author
@@ -128,11 +133,75 @@ async function regenerateAuthorPages(evalRoot: string, authors: string[]): Promi
     byAuthor.get(author)!.push(item);
   });
 
-  // Regenerate pages only for authors with new OKRs
+  // Calculate team summary once for BACI score consistency (same approach as generateIndexHtml)
+  let allMetrics: any[] = [];
+  try {
+    const allAuthorData = await AuthorStatsAggregatorService.aggregateAuthorStats(evalRoot);
+
+    // Convert all authors' evaluations to metrics format (same as index generation)
+    for (const [authorName, authorEvaluations] of allAuthorData.entries()) {
+      const authorMetrics = authorEvaluations.map((evaluation) => {
+        // Calculate averaged metrics from agent results if not already present
+        let averagedMetrics = evaluation.averagedMetrics;
+        if (!averagedMetrics && evaluation.agents) {
+          averagedMetrics = MetricsCalculationService.calculateWeightedMetrics(evaluation.agents);
+        }
+
+        return {
+          createdBy: authorName,
+          commitScore: averagedMetrics?.commitScore || 0,
+          testingQuality: averagedMetrics?.testCoverage || 0,
+          technicalDebtRate: 0,
+          deliveryRate: 0,
+          functionalImpact: averagedMetrics?.functionalImpact || 0,
+          codeQuality: averagedMetrics?.codeQuality || 0,
+          codeComplexity: averagedMetrics?.codeComplexity || 0,
+          actualTimeHours: averagedMetrics?.actualTimeHours || 0,
+          idealTimeHours: averagedMetrics?.idealTimeHours || 0,
+          technicalDebtHours: averagedMetrics?.technicalDebtHours || 0,
+          debtReductionHours: averagedMetrics?.debtReductionHours || 0,
+        };
+      });
+      allMetrics.push(...authorMetrics);
+    }
+  } catch (error) {
+    // Fallback to index-based data if aggregation fails
+    console.log(chalk.gray('   ℹ️  Using index data for team context calculation'));
+    indexData.forEach((item: any) => {
+      if (item.metrics && item.commitAuthor) {
+        allMetrics.push({
+          createdBy: item.commitAuthor,
+          commitScore: item.metrics.commitScore || 0,
+          testingQuality: item.metrics.testCoverage || 0,
+          technicalDebtRate: 0,
+          deliveryRate: 0,
+          functionalImpact: item.metrics.functionalImpact || 0,
+          codeQuality: item.metrics.codeQuality || 0,
+          codeComplexity: item.metrics.codeComplexity || 0,
+          actualTimeHours: item.metrics.actualTimeHours || 0,
+          idealTimeHours: item.metrics.idealTimeHours || 0,
+          technicalDebtHours: item.metrics.technicalDebtHours || 0,
+          debtReductionHours: item.metrics.debtReductionHours || 0,
+        });
+      }
+    });
+  }
+
+  // Get comprehensive team summary (includes enhanced stats, BACI scores, and rankings)
+  const teamSummary =
+    allMetrics.length > 0
+      ? MetricsCalculationService.calculateTeamSummary(allMetrics)
+      : {
+          teamStats: {},
+          teamBaci: {},
+          rankings: { byBaci: [], byCommitScore: [], byProductivity: [] },
+        };
+
+  // Regenerate pages with consistent team summary for BACI score accuracy
   for (const author of authors) {
     const commits = byAuthor.get(author);
     if (commits && commits.length > 0) {
-      await generateAuthorPage(evalRoot, author, commits);
+      await generateAuthorPage(evalRoot, author, commits, teamSummary);
       console.log(chalk.gray(`   ✓ Updated dashboard for ${author}`));
     }
   }

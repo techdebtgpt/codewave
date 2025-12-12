@@ -1001,7 +1001,7 @@ export async function generateAuthorPage(
   evaluationsRoot: string,
   author: string,
   commits: any[],
-  teamSummary?: any
+  teamSummary: any
 ): Promise<void> {
   const authorSlug = author.toLowerCase().replace(/[^a-z0-9]/g, '_');
   const authorPagePath = path.join(evaluationsRoot, `author-${authorSlug}.html`);
