@@ -133,69 +133,38 @@ async function regenerateAuthorPages(evalRoot: string, authors: string[]): Promi
     byAuthor.get(author)!.push(item);
   });
 
-  // Calculate team summary once for BACI score consistency (same approach as generateIndexHtml)
-  let allMetrics: any[] = [];
-  try {
-    const allAuthorData = await AuthorStatsAggregatorService.aggregateAuthorStats(evalRoot);
+  // Calculate team summary for BACI score consistency
+  const allAuthorData = await AuthorStatsAggregatorService.aggregateAuthorStats(evalRoot);
+  const allMetrics: any[] = [];
 
-    // Convert all authors' evaluations to metrics format (same as index generation)
-    for (const [authorName, authorEvaluations] of allAuthorData.entries()) {
-      const authorMetrics = authorEvaluations.map((evaluation) => {
-        // Calculate averaged metrics from agent results if not already present
-        let averagedMetrics = evaluation.averagedMetrics;
-        if (!averagedMetrics && evaluation.agents) {
-          averagedMetrics = MetricsCalculationService.calculateWeightedMetrics(evaluation.agents);
-        }
+  // Convert all authors' evaluations to metrics format
+  for (const [authorName, authorEvaluations] of allAuthorData.entries()) {
+    const authorMetrics = authorEvaluations.map((evaluation) => {
+      // Calculate averaged metrics from agent results
+      const averagedMetrics =
+        evaluation.averagedMetrics ||
+        MetricsCalculationService.calculateWeightedMetrics(evaluation.agents);
 
-        return {
-          createdBy: authorName,
-          commitScore: averagedMetrics?.commitScore || 0,
-          testingQuality: averagedMetrics?.testCoverage || 0,
-          technicalDebtRate: 0,
-          deliveryRate: 0,
-          functionalImpact: averagedMetrics?.functionalImpact || 0,
-          codeQuality: averagedMetrics?.codeQuality || 0,
-          codeComplexity: averagedMetrics?.codeComplexity || 0,
-          actualTimeHours: averagedMetrics?.actualTimeHours || 0,
-          idealTimeHours: averagedMetrics?.idealTimeHours || 0,
-          technicalDebtHours: averagedMetrics?.technicalDebtHours || 0,
-          debtReductionHours: averagedMetrics?.debtReductionHours || 0,
-        };
-      });
-      allMetrics.push(...authorMetrics);
-    }
-  } catch (error) {
-    // Fallback to index-based data if aggregation fails
-    console.log(chalk.gray('   ℹ️  Using index data for team context calculation'));
-    indexData.forEach((item: any) => {
-      if (item.metrics && item.commitAuthor) {
-        allMetrics.push({
-          createdBy: item.commitAuthor,
-          commitScore: item.metrics.commitScore || 0,
-          testingQuality: item.metrics.testCoverage || 0,
-          technicalDebtRate: 0,
-          deliveryRate: 0,
-          functionalImpact: item.metrics.functionalImpact || 0,
-          codeQuality: item.metrics.codeQuality || 0,
-          codeComplexity: item.metrics.codeComplexity || 0,
-          actualTimeHours: item.metrics.actualTimeHours || 0,
-          idealTimeHours: item.metrics.idealTimeHours || 0,
-          technicalDebtHours: item.metrics.technicalDebtHours || 0,
-          debtReductionHours: item.metrics.debtReductionHours || 0,
-        });
-      }
+      return {
+        createdBy: authorName,
+        commitScore: averagedMetrics?.commitScore || 0,
+        testingQuality: averagedMetrics?.testCoverage || 0,
+        technicalDebtRate: 0,
+        deliveryRate: 0,
+        functionalImpact: averagedMetrics?.functionalImpact || 0,
+        codeQuality: averagedMetrics?.codeQuality || 0,
+        codeComplexity: averagedMetrics?.codeComplexity || 0,
+        actualTimeHours: averagedMetrics?.actualTimeHours || 0,
+        idealTimeHours: averagedMetrics?.idealTimeHours || 0,
+        technicalDebtHours: averagedMetrics?.technicalDebtHours || 0,
+        debtReductionHours: averagedMetrics?.debtReductionHours || 0,
+      };
     });
+    allMetrics.push(...authorMetrics);
   }
 
-  // Get comprehensive team summary (includes enhanced stats, BACI scores, and rankings)
-  const teamSummary =
-    allMetrics.length > 0
-      ? MetricsCalculationService.calculateTeamSummary(allMetrics)
-      : {
-          teamStats: {},
-          teamBaci: {},
-          rankings: { byBaci: [], byCommitScore: [], byProductivity: [] },
-        };
+  // Get comprehensive team summary
+  const teamSummary = MetricsCalculationService.calculateTeamSummary(allMetrics);
 
   // Regenerate pages with consistent team summary for BACI score accuracy
   for (const author of authors) {

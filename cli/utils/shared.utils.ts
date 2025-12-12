@@ -481,7 +481,6 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     byAuthor.get(author)!.push(item);
   });
 
-
   // Calculate overall metrics for display
   // Note: item.metrics already contains weighted consensus values from MetricsCalculationService
   // This is just aggregating those pre-calculated values for the summary stats
@@ -534,35 +533,39 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
     overallMetrics.totalTechDebt = Number(overallMetrics.totalTechDebt.toFixed(2));
   }
 
+  // Calculate team metrics using aggregated author data for consistency
+  const evalRoot = path.dirname(indexPath);
+  const allAuthorData = await AuthorStatsAggregatorService.aggregateAuthorStats(evalRoot);
   const allMetrics: any[] = [];
-  index.forEach((item) => {
-    if (item.metrics && item.commitAuthor) {
-      allMetrics.push({
-        createdBy: item.commitAuthor,
-        commitScore: item.metrics.commitScore || 0,
-        testingQuality: item.metrics.testCoverage || 0,
+
+  // Convert all authors' evaluations to metrics format
+  for (const [authorName, authorEvaluations] of allAuthorData.entries()) {
+    const authorMetrics = authorEvaluations.map((evaluation) => {
+      // Calculate averaged metrics from agent results
+      const averagedMetrics =
+        evaluation.averagedMetrics ||
+        MetricsCalculationService.calculateWeightedMetrics(evaluation.agents);
+
+      return {
+        createdBy: authorName,
+        commitScore: averagedMetrics?.commitScore || 0,
+        testingQuality: averagedMetrics?.testCoverage || 0,
         technicalDebtRate: 0,
         deliveryRate: 0,
-        functionalImpact: item.metrics.functionalImpact || 0,
-        codeQuality: item.metrics.codeQuality || 0,
-        codeComplexity: item.metrics.codeComplexity || 0,
-        actualTimeHours: item.metrics.actualTimeHours || 0,
-        idealTimeHours: item.metrics.idealTimeHours || 0,
-        technicalDebtHours: item.metrics.technicalDebtHours || 0,
-        debtReductionHours: item.metrics.debtReductionHours || 0,
-      });
-    }
-  });
+        functionalImpact: averagedMetrics?.functionalImpact || 0,
+        codeQuality: averagedMetrics?.codeQuality || 0,
+        codeComplexity: averagedMetrics?.codeComplexity || 0,
+        actualTimeHours: averagedMetrics?.actualTimeHours || 0,
+        idealTimeHours: averagedMetrics?.idealTimeHours || 0,
+        technicalDebtHours: averagedMetrics?.technicalDebtHours || 0,
+        debtReductionHours: averagedMetrics?.debtReductionHours || 0,
+      };
+    });
+    allMetrics.push(...authorMetrics);
+  }
 
   // Get comprehensive team summary (includes enhanced stats, BACI scores, and rankings)
-  const teamSummary =
-    allMetrics.length > 0
-      ? MetricsCalculationService.calculateTeamSummary(allMetrics)
-      : {
-          teamStats: {},
-          teamBaci: {},
-          rankings: { byBaci: [], byCommitScore: [], byProductivity: [] },
-        };
+  const teamSummary = MetricsCalculationService.calculateTeamSummary(allMetrics);
 
   // Calculate average BACI score from team summary
   const teamStats = Object.values(teamSummary.teamStats);
@@ -576,9 +579,8 @@ async function generateIndexHtml(indexPath: string, index: any[]): Promise<void>
       : 0;
 
   // Generate author pages for each author (after team summary for BACI score consistency)
-  const evaluationsRoot = path.dirname(indexPath);
   for (const [author, commits] of byAuthor.entries()) {
-    await generateAuthorPage(evaluationsRoot, author, commits, teamSummary);
+    await generateAuthorPage(evalRoot, author, commits, teamSummary);
   }
 
   const html = `<!DOCTYPE html>
@@ -1035,55 +1037,8 @@ export async function generateAuthorPage(
   const avgCommitScore = analysis ? analysis.stats.commitScore.toFixed(1) : 'N/A';
   const commitCount = deduplicatedCommits.length; // Use deduplicated count
 
-  // Calculate BACI score for this author using the provided team context
-  let avgBaciScore = 'N/A';
-  if (teamSummary && teamSummary.teamStats && teamSummary.teamStats[author]?.baciScore) {
-    avgBaciScore = teamSummary.teamStats[author].baciScore.toFixed(1);
-  } else {
-    // Fallback: Calculate BACI score using FULL TEAM CONTEXT (for backward compatibility)
-    try {
-      const allAuthorData =
-        await AuthorStatsAggregatorService.aggregateAuthorStats(evaluationsRoot);
-      const allTeamMetrics: any[] = [];
-
-      // Convert all authors' evaluations to metrics format
-      for (const [authorName, authorEvaluations] of allAuthorData.entries()) {
-        const authorMetrics = authorEvaluations.map((evaluation) => {
-          // Calculate averaged metrics from agent results if not already present
-          let averagedMetrics = evaluation.averagedMetrics;
-          if (!averagedMetrics && evaluation.agents) {
-            averagedMetrics = MetricsCalculationService.calculateWeightedMetrics(evaluation.agents);
-          }
-
-          return {
-            createdBy: authorName,
-            commitScore: averagedMetrics?.commitScore || 0,
-            testingQuality: averagedMetrics?.testCoverage || 0,
-            technicalDebtRate: 0,
-            deliveryRate: 0,
-            functionalImpact: averagedMetrics?.functionalImpact || 0,
-            codeQuality: averagedMetrics?.codeQuality || 0,
-            codeComplexity: averagedMetrics?.codeComplexity || 0,
-            actualTimeHours: averagedMetrics?.actualTimeHours || 0,
-            idealTimeHours: averagedMetrics?.idealTimeHours || 0,
-            technicalDebtHours: averagedMetrics?.technicalDebtHours || 0,
-            debtReductionHours: averagedMetrics?.debtReductionHours || 0,
-          };
-        });
-        allTeamMetrics.push(...authorMetrics);
-      }
-
-      // Now calculate team summary with FULL team context
-      if (allTeamMetrics.length > 0) {
-        const fallbackTeamSummary = MetricsCalculationService.calculateTeamSummary(allTeamMetrics);
-        if (fallbackTeamSummary.teamStats[author]?.baciScore) {
-          avgBaciScore = fallbackTeamSummary.teamStats[author].baciScore.toFixed(1);
-        }
-      }
-    } catch (error) {
-      // BACI calculation failed, keep N/A
-    }
-  }
+  // Get BACI score from the provided team summary
+  const avgBaciScore = teamSummary?.teamStats?.[author]?.baciScore?.toFixed(1) || 'N/A';
 
   // Check for OKR files and load latest OKR data
   const okrsDir = path.join(evaluationsRoot, '.okrs', authorSlug);

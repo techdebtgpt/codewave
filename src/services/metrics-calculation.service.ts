@@ -373,16 +373,11 @@ export class MetricsCalculationService {
   }
 
   /**
-   * Calculate team summary with commit scores and BACI rankings
+   * Calculate team summary with commit scores and BACI scores
    */
   static calculateTeamSummary(metrics: any[]): {
     teamStats: Record<string, AuthorMetrics>;
     teamBaci: Record<string, number>;
-    rankings: {
-      byCommitScore: Array<{ user: string; score: number }>;
-      byBaci: Array<{ user: string; score: number }>;
-      byProductivity: Array<{ user: string; commits: number; avgCommitScore: number }>;
-    };
   } {
     const teamStats = this.calculateEnhancedAuthorStats(metrics);
     const teamBaci = this.calculateTeamBaciScores(metrics);
@@ -393,34 +388,9 @@ export class MetricsCalculationService {
       }
     });
 
-    // Create rankings
-    const users = Object.keys(teamStats);
-
-    const byCommitScore = users
-      .map((user) => ({ user, score: teamStats[user].commitScore }))
-      .sort((a, b) => b.score - a.score);
-
-    const byBaci = users
-      .filter((user) => teamBaci[user] !== undefined)
-      .map((user) => ({ user, score: teamBaci[user] }))
-      .sort((a, b) => b.score - a.score);
-
-    const byProductivity = users
-      .map((user) => ({
-        user,
-        commits: teamStats[user].commits,
-        avgCommitScore: teamStats[user].commitScore,
-      }))
-      .sort((a, b) => b.commits * b.avgCommitScore - a.commits * a.avgCommitScore);
-
     return {
       teamStats,
       teamBaci,
-      rankings: {
-        byCommitScore,
-        byBaci,
-        byProductivity,
-      },
     };
   }
 

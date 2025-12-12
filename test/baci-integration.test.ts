@@ -239,14 +239,14 @@ describe('BACI Integration Tests', () => {
 
       expect(summary).toHaveProperty('teamStats');
       expect(summary).toHaveProperty('teamBaci');
-      expect(summary).toHaveProperty('rankings');
+      // Note: rankings were removed from calculateTeamSummary as they weren't used in production
 
-      expect(summary.rankings.byCommitScore).toHaveLength(2);
-      expect(summary.rankings.byBaci).toHaveLength(2);
-      expect(summary.rankings.byProductivity).toHaveLength(2);
+      // Verify team stats and BACI scores are populated
+      expect(Object.keys(summary.teamStats)).toHaveLength(2);
+      expect(Object.keys(summary.teamBaci)).toHaveLength(2);
 
-      // Alice should rank higher due to better metrics and more commits
-      expect(summary.rankings.byProductivity[0].user).toBe('alice');
+      // Alice should have higher BACI score due to better metrics and more commits
+      expect(summary.teamBaci.alice).toBeGreaterThan(summary.teamBaci.bob);
     });
   });
 });
