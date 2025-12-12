@@ -65,7 +65,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
   // Load configuration
   const config = loadConfig();
   if (!config) {
-    console.error('❌ Config file not found. Run `npm run config` to create one.');
+    console.error('❌ Config file not found. Run `codewave config --init` to create one.');
     process.exit(1);
   }
   validateConfig(config);
