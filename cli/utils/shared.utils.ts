@@ -1471,6 +1471,9 @@ export async function generateAuthorPage(
 ${commits
   .map((item) => {
     const metrics = item.metrics || {};
+         // Calculate NET debt (debt introduced - debt reduction)
+      const netDebt = (metrics.technicalDebtHours || 0) - (metrics.debtReductionHours || 0);
+
     const qualityColor =
       metrics.codeQuality >= 7 ? 'good' : metrics.codeQuality >= 4 ? 'medium' : 'bad';
     const complexityColor =
@@ -1482,7 +1485,7 @@ ${commits
     const commitScoreColor =
       metrics.commitScore >= 7 ? 'good' : metrics.commitScore >= 4 ? 'medium' : 'bad';
     const debtColor =
-      metrics.technicalDebtHours > 0 ? 'bad' : metrics.technicalDebtHours < 0 ? 'good' : 'medium';
+      netDebt > 0 ? 'bad' : netDebt < 0 ? 'good' : 'medium';
 
     return `
                         <tr>
@@ -1502,7 +1505,7 @@ ${commits
                             <td class="metric-cell ${item.metrics ? `metric-${impactColor}` : ''}">${item.metrics ? `${metrics.functionalImpact}/10` : 'N/A'}</td>
                             <td class="metric-cell ${item.metrics ? `metric-${commitScoreColor}` : ''}">${item.metrics ? `${metrics.commitScore}/10` : 'N/A'}</td>
                             <td class="metric-cell">${item.metrics ? `${metrics.actualTimeHours}h` : 'N/A'}</td>
-                            <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${metrics.technicalDebtHours > 0 ? '+' : ''}${metrics.technicalDebtHours - metrics.debtReductionHours}h` : 'N/A'}</td>
+                            <td class="metric-cell ${item.metrics ? `metric-${debtColor}` : ''}">${item.metrics ? `${netDebt > 0 ? '+' : ''}${netDebt.toFixed(1)}h` : 'N/A'}</td>
                             <td><a href="${item.directory}/report-enhanced.html" class="btn btn-primary btn-sm">View</a></td>
                         </tr>`;
   })
