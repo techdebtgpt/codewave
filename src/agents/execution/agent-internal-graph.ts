@@ -177,10 +177,12 @@ async function refineAnalysis(
   const response = (await model.invoke(messages)) as any;
   const tokenUsage = extractTokenUsage(response);
 
+  // Return only the NEW messages - the reducer will append them to state.messages
+  // Previously this was [...state.messages, user, assistant] which caused duplication
+  // because the reducer does [...oldState, ...update]
   return {
     currentAnalysis: response,
     messages: [
-      ...state.messages,
       { role: 'user', content: refinementPrompt },
       { role: 'assistant', content: response.content },
     ] as any,
