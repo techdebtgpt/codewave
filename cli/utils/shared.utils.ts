@@ -213,8 +213,10 @@ function extractMetricsSnapshot(agentResults: AgentResult[]): MetricsSnapshot {
 
     if (contributors.length > 0) {
       const weightedValue = calculateWeightedAverage(contributors, metricName);
-      // Determine decimal places based on metric
-      if (metricName.includes('Hours') || metricName.includes('Time')) {
+      // Handle null when all agents returned null for this metric
+      if (weightedValue === null) {
+        result[metricName] = 0; // Default to 0 when all agents returned null
+      } else if (metricName.includes('Hours') || metricName.includes('Time')) {
         result[metricName] = Number(weightedValue.toFixed(2));
       } else {
         result[metricName] = Number(weightedValue.toFixed(1));

@@ -62,8 +62,8 @@ export class LLMService {
 
       case 'openai':
         return new ChatOpenAI({
-          openAIApiKey: apiKey,
-          temperature,
+          apiKey,
+          // temperature,
           maxTokens,
           modelName: model,
         });

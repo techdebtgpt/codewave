@@ -23,7 +23,11 @@
     "prepublishOnly": "npm run validate:publish",
     "prepack": "npm run build",
     "postpack": "echo '✅ Package created successfully'",
-    "batch": "node ./dist/cli/index.js batch --count 3"
+    "batch": "node ./dist/cli/index.js batch --count 3",
+    "benchmark": "node ./dist/cli/index.js benchmark",
+    "benchmark:list": "node ./dist/cli/index.js benchmark list",
+    "benchmark:compare": "node ./dist/cli/index.js benchmark compare --all",
+    "generate-dataset": "node ./dist/cli/index.js generate-dataset"
   },
   "bin": {
     "codewave": "./dist/cli/index.js"

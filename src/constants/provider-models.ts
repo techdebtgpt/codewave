@@ -157,6 +157,22 @@ export const PROVIDER_MODELS = {
   ],
   openai: [
     {
+      name: 'gpt-5.2 - [High Intelligence, High Cost, Standard Speed, Reasoning]',
+      value: 'gpt-5.2',
+      pricing: {
+        input: '0.00000175',
+        output: '0.000014',
+      },
+    },
+    {
+      name: 'gpt-5.2-chat-latest - [Medium-High Intelligence, High Cost, Fast Speed, No Reasoning]',
+      value: 'gpt-5.2-chat-latest',
+      pricing: {
+        input: '0.00000175',
+        output: '0.000014',
+      },
+    },
+    {
       name: 'gpt-4 - [Medium Intelligence, High Cost, Standard Speed]',
       value: 'gpt-4',
       pricing: {
@@ -170,14 +186,6 @@ export const PROVIDER_MODELS = {
       pricing: {
         input: '0.0000005',
         output: '0.0000015',
-      },
-    },
-    {
-      name: 'gpt-5.1-codex-mini - [Medium-High Intelligence, Medium Cost, Fast Speed]',
-      value: 'gpt-5.1-codex-mini',
-      pricing: {
-        input: '0.00000025',
-        output: '0.000002',
       },
     },
     {

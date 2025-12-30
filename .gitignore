@@ -20,3 +20,5 @@ index.html
 .archdoc.config.json
 
 .idea
+
+benchmarks/runs/*.json

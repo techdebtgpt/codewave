@@ -21,6 +21,8 @@ import { runEvaluateCommand } from './commands/evaluate-command';
 import { runConfigCommand } from './commands/config.command';
 import { runBatchEvaluateCommand } from './commands/batch-evaluate-command';
 import { runGenerateOkrCommand } from './commands/generate-okr-command';
+import { runBenchmarkCommandHandler } from './commands/benchmark-command';
+import { runGenerateDatasetCommand } from './commands/generate-dataset-command';
 
 async function main() {
   const [, , command, ...args] = process.argv;
@@ -59,6 +61,12 @@ async function main() {
       case 'config':
         await runConfigCommand(args);
         break;
+      case 'benchmark':
+        await runBenchmarkCommandHandler(args);
+        break;
+      case 'generate-dataset':
+        await runGenerateDatasetCommand(args);
+        break;
       default:
         printUsage();
         process.exit(1);
@@ -90,6 +98,12 @@ function printUsage() {
   console.log(
     '  generate-okr [options]                       Generate OKRs and action points from history'
   );
+  console.log(
+    '  benchmark [options]                          Run benchmark against labeled dataset'
+  );
+  console.log(
+    '  generate-dataset [options]                   Generate dataset CSV for manual labeling'
+  );
   console.log('');
   console.log('Evaluate Options:');
   console.log('  <commit-hash>           Evaluate a specific commit (default)');
@@ -109,6 +123,21 @@ function printUsage() {
   console.log('  --branch <name>         Git branch to analyze (default: current branch)');
   console.log('  --depth <mode>          Analysis depth: fast, normal, deep (default: normal)');
   console.log('  --no-stream             Disable streaming output (silent mode)');
+  console.log('');
+  console.log('Benchmark Options:');
+  console.log('  --dataset <path>        Path to ground truth CSV dataset');
+  console.log('  --name <name>           Custom name for this benchmark run');
+  console.log('  --output <path>         Path to save JSON results');
+  console.log('  --depth <mode>          Analysis depth: fast, normal, deep');
+  console.log('  compare --runs <names>  Compare comma-separated benchmark runs');
+  console.log('  compare --all           Compare all saved benchmark runs');
+  console.log('  list                    List all saved benchmark runs');
+  console.log('');
+  console.log('Generate Dataset Options:');
+  console.log('  --commits <hashes>      Comma-separated commit hashes to evaluate');
+  console.log('  --commits-file <path>   File with commit hashes (one per line)');
+  console.log('  --repo <path>           Repository path (default: current directory)');
+  console.log('  --output <path>         Output CSV path (default: ./benchmark-dataset.csv)');
   console.log('');
   console.log('Examples:');
   console.log('  # Setup configuration');
@@ -131,6 +160,16 @@ function printUsage() {
   console.log('');
   console.log('  # Batch evaluate date range with fast mode');
   console.log('  codewave batch --since "2024-01-01" --until "2024-01-31" --depth fast');
+  console.log('');
+  console.log('  # Generate dataset from commits for manual labeling');
+  console.log('  codewave generate-dataset --commits abc123,def456 --output ./data.csv');
+  console.log('');
+  console.log('  # Run benchmark against ground truth dataset');
+  console.log('  codewave benchmark --dataset ./ground-truth.csv --name "claude-baseline"');
+  console.log('');
+  console.log('  # Compare benchmark runs');
+  console.log('  codewave benchmark compare --runs claude-baseline,gpt4-test');
+  console.log('  codewave benchmark list');
   console.log('');
   console.log('📖 Docs: https://github.com/techdebtgpt/codewave');
 }

@@ -71,8 +71,10 @@ export class MetricsCalculationService {
 
       if (contributors.length > 0) {
         const weightedValue = calculateWeightedAverage(contributors, metricName);
-        // Determine decimal places based on metric
-        if (metricName.includes('Hours') || metricName.includes('Time')) {
+        // Handle null when all agents returned null for this metric
+        if (weightedValue === null) {
+          // Skip setting this metric - leave it undefined
+        } else if (metricName.includes('Hours') || metricName.includes('Time')) {
           averagedMetrics[metricName] = Number(weightedValue.toFixed(2)) as any;
         } else {
           averagedMetrics[metricName] = Number(weightedValue.toFixed(1)) as any;
