@@ -16,9 +16,9 @@ export interface TokenSnapshot {
 }
 
 /**
- * Metrics snapshot for a specific evaluation
+ * Metrics scores for a specific evaluation
  */
-export interface MetricsSnapshot {
+export interface MetricScores {
   functionalImpact: number;
   idealTimeHours: number;
   testCoverage: number;
@@ -27,8 +27,8 @@ export interface MetricsSnapshot {
   actualTimeHours: number;
   technicalDebtHours: number;
   debtReductionHours: number;
+  commitScore: number;
 }
-
 /**
  * Single entry in evaluation history
  * Stores all important metrics from a re-evaluation
@@ -37,7 +37,7 @@ export interface EvaluationHistoryEntry {
   timestamp: string;
   source: string;
   evaluationNumber: number;
-  metrics: MetricsSnapshot;
+  metrics: MetricScores;
   tokens: TokenSnapshot;
   convergenceScore: number;
 }

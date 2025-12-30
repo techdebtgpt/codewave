@@ -43,7 +43,7 @@ export const AgentInternalState = Annotation.Root({
 
   // Messages for LLM conversation
   messages: Annotation<BaseMessage[]>({
-    reducer: (state: BaseMessage[], update: BaseMessage[]) => [...state, ...update],
+    reducer: (state: BaseMessage[], update: BaseMessage[]) => (update.length > 0 ? update : state),
     default: () => [],
   }),
 

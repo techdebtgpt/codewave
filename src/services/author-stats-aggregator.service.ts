@@ -3,6 +3,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { MetricsCalculationService } from './metrics-calculation.service';
 
 export interface AuthorStats {
   commits: number;
@@ -12,6 +13,7 @@ export interface AuthorStats {
   impact: number;
   time: number;
   techDebt: number;
+  commitScore: number;
 }
 
 export interface AggregationOptions {
@@ -139,7 +141,6 @@ export class AuthorStatsAggregatorService {
    * Delegates to centralized MetricsCalculationService
    */
   static calculateAverageMetrics(evaluations: any[]): AuthorStats {
-    const { MetricsCalculationService } = require('./metrics-calculation.service');
     return MetricsCalculationService.calculateSimpleAverageMetrics(evaluations);
   }
 

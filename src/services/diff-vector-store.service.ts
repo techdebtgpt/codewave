@@ -145,7 +145,17 @@ export class DiffVectorStoreService {
     const docData = this.parseDiffIntoDocuments(commitDiff);
 
     if (docData.length === 0) {
-      throw new Error('No documents extracted from diff');
+      console.log('⚠️  No documents extracted from diff - likely empty or metadata-only commit');
+      //TODO: check if this is correct
+      // Create a minimal document to avoid breaking the system
+      docData.push({
+        content: 'Empty or metadata-only commit',
+        metadata: {
+          type: 'empty-commit',
+          file: 'N/A',
+          commitTag: this.commitTag,
+        },
+      });
     }
 
     // Build vocabulary from all content

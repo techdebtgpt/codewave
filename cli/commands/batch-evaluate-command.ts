@@ -9,6 +9,7 @@ import {
   createEvaluationDirectory,
   EvaluationMetadata,
   printBatchCompletionMessage,
+  getEvaluationRoot,
 } from '../utils/shared.utils';
 import { ProgressTracker } from '../utils/progress-tracker';
 import { CostEstimatorService } from '../../src/services/cost-estimator.service';
@@ -17,6 +18,14 @@ import { consoleManager } from '../../src/common/utils/console-manager';
 import { getCommitDiff, extractFilesFromDiff } from '../utils/git-utils';
 import { isDiagnosticLog } from '../utils/diagnostic-filter';
 import { spawnSync } from 'child_process';
+import {
+  calculateWeightedAverage,
+  PillarName,
+  SEVEN_PILLARS,
+} from '../../src/constants/agent-weights.constants';
+import { promptAndGenerateOkrs } from '../utils/okr-prompt.utils';
+import inquirer from 'inquirer';
+import pLimit from 'p-limit';
 
 interface CommitInfo {
   hash: string;
@@ -56,7 +65,7 @@ export async function runBatchEvaluateCommand(args: string[]) {
   // Load configuration
   const config = loadConfig();
   if (!config) {
-    console.error('❌ Config file not found. Run `npm run config` to create one.');
+    console.error('❌ Config file not found. Run `codewave config --init` to create one.');
     process.exit(1);
   }
   validateConfig(config);
@@ -89,7 +98,6 @@ export async function runBatchEvaluateCommand(args: string[]) {
   if (costEstimate !== null) {
     estimator.printEstimate(costEstimate, commits.length);
 
-    const { default: inquirer } = await import('inquirer');
     const { proceed } = await inquirer.prompt([
       {
         type: 'confirm',
@@ -112,7 +120,6 @@ export async function runBatchEvaluateCommand(args: string[]) {
   const orchestrator = new CommitEvaluationOrchestrator(agentRegistry, config);
 
   // Configure concurrency limit (10 concurrent evaluations)
-  const { default: pLimit } = await import('p-limit');
   const limit = pLimit(10);
 
   // Buffer for storing suppressed output (warnings, errors)
@@ -248,8 +255,6 @@ export async function runBatchEvaluateCommand(args: string[]) {
 
     const authors = Array.from(uniqueAuthors);
     if (authors.length > 0) {
-      const { promptAndGenerateOkrs } = await import('../utils/okr-prompt.utils.js');
-      const { getEvaluationRoot } = await import('../utils/shared.utils.js');
       const evalRoot = getEvaluationRoot();
       await promptAndGenerateOkrs(config, authors, evalRoot, {
         sinceDate: options.since ? new Date(options.since) : undefined,
@@ -540,7 +545,7 @@ async function getCommitsToEvaluate(options: any): Promise<CommitInfo[]> {
 }
 
 function calculateAggregateMetrics(agentResults: any[]): any {
-  const metrics: any = {
+  const metrics: Record<PillarName, number> = {
     functionalImpact: 0,
     idealTimeHours: 0,
     testCoverage: 0,
@@ -552,7 +557,6 @@ function calculateAggregateMetrics(agentResults: any[]): any {
   };
 
   // Import weighted aggregation
-  const { calculateWeightedAverage } = require('../../src/constants/agent-weights.constants');
 
   // Get latest metrics from each agent
   const agentMetricsMap = new Map<string, any>();
@@ -563,8 +567,7 @@ function calculateAggregateMetrics(agentResults: any[]): any {
   });
 
   // Calculate weighted average for each metric
-  const metricNames = Object.keys(metrics);
-  metricNames.forEach((metricName) => {
+  SEVEN_PILLARS.forEach((metricName: PillarName) => {
     const contributors: Array<{ agentName: string; score: number }> = [];
     agentMetricsMap.forEach((agentMetrics, agentRole) => {
       if (agentMetrics[metricName] !== undefined) {
@@ -576,7 +579,10 @@ function calculateAggregateMetrics(agentResults: any[]): any {
     });
 
     if (contributors.length > 0) {
-      metrics[metricName] = calculateWeightedAverage(contributors, metricName);
+      const weightedValue = calculateWeightedAverage(contributors, metricName);
+      if (weightedValue !== null) {
+        metrics[metricName] = weightedValue;
+      }
     }
   });
 

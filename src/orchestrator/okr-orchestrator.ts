@@ -9,6 +9,7 @@ import {
 import { OkrAgentService } from '../services/okr-agent.service';
 import { formatOKRToMarkdown } from '../formatters/okr-formatter';
 import { formatOKRToHTML } from '../formatters/okr-html-formatter';
+import pLimit from 'p-limit';
 
 /**
  * Progress information for a single author's OKR generation
@@ -65,7 +66,6 @@ export class OkrOrchestrator {
     silent: boolean = false,
     onProgress?: (author: string, progress: OkrProgress) => void
   ): Promise<Map<string, any>> {
-    const pLimit = (await import('p-limit')).default;
     const limit = pLimit(concurrency);
 
     // Initialize progress tracking

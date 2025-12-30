@@ -14,7 +14,15 @@ index.html
 .claude/
 
 # IDE configuration
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # ArchDoc configuration (contains API keys)
 .archdoc.config.json

@@ -13,6 +13,7 @@ import {
   getEvaluationRoot,
 } from '../utils/shared.utils';
 import { parseCommitStats } from '../../src/common/utils/commit-utils';
+import { promptAndGenerateOkrs } from '../utils/okr-prompt.utils';
 import {
   getCommitDiff,
   getDiffFromStaged,
@@ -384,7 +385,6 @@ export async function runEvaluateCommand(args: string[]) {
   printEvaluateCompletionMessage(outputDir);
 
   if (commitAuthor) {
-    const { promptAndGenerateOkrs } = await import('../utils/okr-prompt.utils.js');
     const evalRoot = getEvaluationRoot();
     await promptAndGenerateOkrs(config, [commitAuthor], evalRoot);
   }

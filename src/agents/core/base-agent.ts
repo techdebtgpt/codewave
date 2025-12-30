@@ -14,6 +14,7 @@
 
 import { Agent, AgentContext, AgentResult, AgentExecutionOptions } from '../agent.interface';
 import { AgentMetadata, AgentExpertise, categorizeExpertise } from './agent-metadata';
+import { AgentExecutor } from '../execution/agent-executor';
 import { PromptContext } from '../prompts/prompt-builder.interface';
 import {
   AGENT_METRIC_DEFINITIONS,
@@ -115,9 +116,6 @@ export abstract class BaseAgent implements Agent {
    * This delegates to AgentExecutor for actual execution
    */
   async execute(context: AgentContext, options?: AgentExecutionOptions): Promise<AgentResult> {
-    // Lazy-load the executor to avoid circular dependencies
-    const { AgentExecutor } = await import('../execution/agent-executor.js');
-
     const executor = new AgentExecutor(this.config, this.metadata, this.systemInstructions);
 
     // Build prompt context with categorized expertise
